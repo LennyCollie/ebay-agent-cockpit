@@ -2,8 +2,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session
 import subprocess
 
-app = Flask(__name__)
-
+app = Flask(__name__, template_folder='template')
 # Ein geheimes Passwort, das nur du kennst. Ändere das!
 # Dieses Passwort wird für den Login auf der Webseite gebraucht.
 COCKPIT_PASSWORT = "sepshhtclwtrjwoz"
