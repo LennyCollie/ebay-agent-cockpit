@@ -177,8 +177,35 @@ def loesche_auftrag(auftrag_id):
     lade_und_committe_auftraege(session['user_id'], f"Auftrag gelöscht: {geloeschter_name}")
 
     return redirect(url_for('dashboard'))
+# ... (der Code für @app.route('/delete/...') bleibt unverändert) ...
+
+# =============================================================
+# NEU: Die geheime API-Hintertür für unseren Such-Agenten
+# =============================================================
+@app.route('/api/get_all_jobs')
+def get_all_jobs():
+    # Hier könnte man später einen geheimen API-Schlüssel einbauen
+    # Für den Moment ist die URL selbst unser "Passwort"
+    
+    alle_auftraege = Auftrag.query.all()
+    
+    # Wir formatieren die Daten so, wie unser Agent sie erwartet
+    auftragsliste_fuer_agent = []
+    for auftrag in alle_auftraege:
+        auftragsliste_fuer_agent.append({
+            "name": auftrag.name,
+            "keywords": auftrag.keywords,
+            "filter": auftrag.filter,
+            "user_email": auftrag.author.email # HIER DIE NEUE ZEILE!
+        })
+        
+    # Wir importieren jsonify hier, da es nur hier gebraucht wird
+    from flask import jsonify
+    return jsonify(auftragsliste_fuer_agent)
+
 
 # --- Datenbank initialisieren ---
+
 with app.app_context():
     db.create_all()
 
