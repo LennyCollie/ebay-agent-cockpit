@@ -118,9 +118,3 @@ def loesche_auftrag(name):
     return redirect(url_for('dashboard'))
 ```3.  **Ändere das Passwort** in Zeile 9 und **commite** die Änderungen.
 
-**FERTIG!**
-
-Render wird deine App neu starten. Gehe jetzt zu deinem Cockpit auf `...onrender.com`. Füge einen neuen Test-Auftrag hinzu oder lösche einen alten. Gehe dann zu deinem GitHub-Repository und lade die Seite neu. Du wirst sehen, dass sich die `auftraege.json`-Datei dort wie von Geisterhand aktualisiert hat, mit einer Commit-Nachricht wie "Neuen Auftrag hinzugefügt: Test".
-
-Dein Cockpit ist jetzt die offizielle Fernbedienung für deinen Such-Agenten
-  
