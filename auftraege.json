@@ -1,25 +1,5 @@
 [
   {
-    "name": "PS5 Konsole (Neu, bis 550€)",
-    "keywords": "Playstation 5",
-    "filter": "price:[400..550],priceCurrency:EUR,conditions:{NEW}"
-  },
-  {
-    "name": "Gebrauchtes Macbook",
-    "keywords": "Macbook Pro M2",
-    "filter": "conditions:{USED}"
-  },
-  {
-    "name": "iPhone Hüllen (Alle)",
-    "keywords": "iPhone 14 Pro Hülle",
-    "filter": ""
-  },
-  {
-    "name": "Tonbandgerät",
-    "keywords": "Akai GX 625",
-    "filter": ""
-  },
-  {
     "name": "Tonbandgerät",
     "keywords": "Akai GX 635 DB",
     "filter": ""
