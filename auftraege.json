@@ -1,7 +1,7 @@
 [
   {
-    "name": "Mein Finaler Test",
-    "keywords": "seltene Briefmarke Deutschland",
+    "name": "Tonbandgerät",
+    "keywords": "Akai GX 635 DB",
     "filter": "price:[..10],priceCurrency:EUR"
   }
 ]
