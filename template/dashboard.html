@@ -1,55 +1,13 @@
       
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <title>Dashboard</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px 40px; }
-        h1, h2 { color: #007bff; border-bottom: 2px solid #eee; padding-bottom: 10px;}
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .form-container { background: #f9f9f9; border: 1px solid #ddd; padding: 20px; margin-top: 30px; border-radius: 8px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input[type="text"] { width: 95%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
-        input[type="submit"] { padding: 10px 20px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    </style>
-</head>
+<!-- ... (head-Bereich bleibt gleich) ... -->
 <body>
     <h1>Willkommen im Super-Agenten Cockpit!</h1>
+    <a href="{{ url_for('logout') }}">Logout</a>
+    <!-- ... (Formular zum Hinzufügen bleibt gleich) ... -->
     
-    <!-- Bereich zum Hinzufügen neuer Aufträge -->
-    <div class="form-container">
-        <h2>Neuen Suchauftrag hinzufügen</h2>
-        <form method="post" action="{{ url_for('neuer_auftrag') }}">
-            <div class="form-group">
-                <label for="name">Name des Auftrags:</label>
-                <input type="text" id="name" name="name" required placeholder="z.B. Seltene Grafikkarte">
-            </div>
-            <div class="form-group">
-                <label for="keywords">Suchbegriffe (Keywords):</label>
-                <input type="text" id="keywords" name="keywords" required placeholder="z.B. RTX 4090 gebraucht">
-            </div>
-            <div class="form-group">
-                <label for="filter">Filter (optional):</label>
-                <input type="text" id="filter" name="filter" placeholder="z.B. price:[..1000],priceCurrency:EUR">
-            </div>
-            <input type="submit" value="Auftrag Hinzufügen">
-        </form>
-    </div>
-
     <h2>Aktive Suchaufträge</h2>
     <table>
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Keywords</th>
-                <th>Filter</th>
-                <th>Aktionen</th>
-            </tr>
-        </thead>
+       <!-- ... (Tabellen-Kopf bleibt gleich) ... -->
         <tbody>
             {% for auftrag in auftragsliste %}
             <tr>
@@ -57,20 +15,20 @@
                 <td>{{ auftrag.keywords }}</td>
                 <td>{{ auftrag.filter if auftrag.filter else 'Keine' }}</td>
                 <td>
-                    <form method="post" action="{{ url_for('loesche_auftrag', name=auftrag.name) }}" style="display:inline;">
+                    <form method="post" action="{{ url_for('loesche_auftrag', auftrag_id=auftrag.id) }}" style="display:inline;">
                          <input type="submit" value="Löschen" style="background-color: #dc3545;">
                     </form>
                 </td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="4">Keine Aufträge gefunden.</td>
+                <td colspan="4">Du hast noch keine Suchaufträge erstellt.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
-    
 </body>
 </html>
 
+    
     
