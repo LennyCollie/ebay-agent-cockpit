@@ -20,6 +20,10 @@
         input[type="submit"] { padding: 12px 20px; color: white; border: none; border-radius: 4px; cursor: pointer; }
         .btn-add { background-color: #28a745; }
         .btn-delete { background-color: #dc3545; }
+          .fund-header-row td { background-color: #e2eafc; font-style: italic; }
+.fund-row td { background-color: #f8f9fa; }
+.fund-row a { color: #333; text-decoration: none; }
+.fund-row a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -60,27 +64,40 @@
                 </tr>
             </thead>
             <tbody>
-                {% for auftrag in auftragsliste %}
-                <tr>
-                    <td>{{ auftrag.name }}</td>
-                    <td>{{ auftrag.keywords }}</td>
-                    <td>{{ auftrag.filter if auftrag.filter else 'Keine' }}</td>
-                    <td>
-                        <form method="post" action="{{ url_for('loesche_auftrag', auftrag_id=auftrag.id) }}" style="display:inline;">
-                             <input type="submit" value="Löschen" class="btn-delete">
-                        </form>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="4">Du hast noch keine Suchaufträge erstellt.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</body>
-</html>
+                     
+<tbody>
+    {% for auftrag in auftragsliste %}
+    <tr>
+        <td><strong>{{ auftrag.name }}</strong></td>
+        <td>{{ auftrag.keywords }}</td>
+        <td>{{ auftrag.filter if auftrag.filter else 'Keine' }}</td>
+        <td>
+            <form method="post" action="{{ url_for('loesche_auftrag', auftrag_id=auftrag.id) }}" style="display:inline;">
+                 <input type="submit" value="Löschen" class="btn-delete">
+            </form>
+        </td>
+    </tr>
+    <!-- NEU: Zeige die letzten 5 Funde für diesen Auftrag an -->
+    {% if auftrag.funde|sort(attribute='timestamp', reverse=True)|list %}
+        <tr class="fund-header-row">
+            <td colspan="4"><strong>Letzte Funde für diesen Auftrag:</strong></td>
+        </tr>
+        {% for fund in auftrag.funde|sort(attribute='timestamp', reverse=True)|truncate(5) %}
+        <tr class="fund-row">
+            <td colspan="3"><a href="{{ fund.item_url }}" target="_blank">{{ fund.title }}</a></td>
+            <td><strong>{{ fund.price }}</strong></td>
+        </tr>
+        {% endfor %}
+    {% endif %}
+
+    {% else %}
+    <tr>
+        <td colspan="4">Du hast noch keine Suchaufträge erstellt.</td>
+    </tr>
+    {% endfor %}
+</tbody>
+
+    
 
     
     
