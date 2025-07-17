@@ -6,7 +6,7 @@ import base64   # Für das Kodieren der Datei
 
 app = Flask(__name__, template_folder='template')
 
-COCKPIT_PASSWORT = "DeinSuperGeheimesPasswort123"
+COCKPIT_PASSWORT = "sepshhtclwtrjwoz"
 app.secret_key = 'irgendeine-zufaellige-und-geheime-zeichenkette'
 
 AUFTRAGS_DATEI = 'auftraege.json'
@@ -123,5 +123,4 @@ def loesche_auftrag(name):
 Render wird deine App neu starten. Gehe jetzt zu deinem Cockpit auf `...onrender.com`. Füge einen neuen Test-Auftrag hinzu oder lösche einen alten. Gehe dann zu deinem GitHub-Repository und lade die Seite neu. Du wirst sehen, dass sich die `auftraege.json`-Datei dort wie von Geisterhand aktualisiert hat, mit einer Commit-Nachricht wie "Neuen Auftrag hinzugefügt: Test".
 
 Dein Cockpit ist jetzt die offizielle Fernbedienung für deinen Such-Agenten
-    
   
