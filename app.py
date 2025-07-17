@@ -124,4 +124,32 @@ def loesche_auftrag(auftrag_id):
 
 # Einmaliger Befehl, um die Datenbank zu erstellen
 with app.app_context():
+    # ... (der ganze Code von vorher bleibt unverändert) ...
+
+# =============================================================
+# NEU: Die geheime API-Hintertür für unseren Such-Agenten
+# =============================================================
+@app.route('/api/get_all_jobs')
+def get_all_jobs():
+    # Hier könnte man später einen geheimen API-Schlüssel einbauen
+    # Für den Moment ist die URL selbst unser "Passwort"
+    
+    alle_auftraege = Auftrag.query.all()
+    
+    # Wir formatieren die Daten so, wie unser Agent sie erwartet
+    auftragsliste_fuer_agent = []
+    for auftrag in alle_auftraege:
+        auftragsliste_fuer_agent.append({
+            "name": auftrag.name,
+            "keywords": auftrag.keywords,
+            "filter": auftrag.filter
+        })
+        
+    # Wir geben die Liste als sauberen JSON-Text zurück
+    return jsonify(auftragsliste_fuer_agent)
+
+
+# Einmaliger Befehl, um die Datenbank zu erstellen
+with app.app_context():
+    db.create_all()
     db.create_all()
