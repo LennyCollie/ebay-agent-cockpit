@@ -5,6 +5,7 @@ import os
 import json
 import requests
 import base64
+from datetime import datetime
 
 # --- App & Datenbank Konfiguration ---
 app = Flask(__name__, template_folder='template')
@@ -35,7 +36,16 @@ class Auftrag(db.Model):
     filter = db.Column(db.String(300), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-
+class Fund(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.String(20), unique=True, nullable=False) # Die eBay-Artikelnummer
+    title = db.Column(db.String(200), nullable=False)
+    price = db.Column(db.String(50), nullable=False)
+    item_url = db.Column(db.String(500), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    # Fremdschlüssel zum Auftrag-Modell
+    auftrag_id = db.Column(db.Integer, db.ForeignKey('auftrag.id'), nullable=False)
+    
 # --- Hilfsfunktionen ---
 def lade_und_committe_auftraege(user_id, commit_nachricht):
     """Lädt alle Aufträge aus der DB, speichert sie als JSON und committet sie zu GitHub."""
@@ -205,6 +215,42 @@ def get_all_jobs():
 
 
 # --- Datenbank initialisieren ---
+
+@app.route('/api/report_fund', methods=['POST'])
+def report_fund():
+    # Hier brauchen wir einen geheimen Schlüssel, damit nicht jeder Funde melden kann
+    # Wir speichern ihn sicher als Umgebungsvariable
+    API_SECRET_KEY = os.getenv("API_SECRET_KEY", "ein-default-geheimnis")
+    
+    # Prüfe den geheimen Schlüssel
+    if request.headers.get('X-API-Secret') != API_SECRET_KEY:
+        return "Nicht autorisiert", 401
+
+    data = request.get_json()
+    if not data:
+        return "Keine Daten erhalten", 400
+
+    # Finde den passenden Auftrag in der Datenbank
+    auftrag = Auftrag.query.filter_by(name=data['auftrags_name'], user_id=data['user_id']).first()
+    
+    if auftrag:
+        # Prüfe, ob dieser Fund (anhand der eBay item_id) schon existiert
+        existierender_fund = Fund.query.filter_by(item_id=data['item_id']).first()
+        if not existierender_fund:
+            neuer_fund = Fund(
+                item_id=data['item_id'],
+                title=data['title'],
+                price=data['price'],
+                item_url=data['item_url'],
+                auftrag_id=auftrag.id
+            )
+            db.session.add(neuer_fund)
+            db.session.commit()
+            return "Fund gespeichert", 201
+        else:
+            return "Fund bereits bekannt", 200
+    
+    return "Passender Auftrag nicht gefunden", 404
 
 with app.app_context():
     db.create_all()
