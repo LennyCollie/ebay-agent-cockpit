@@ -1,18 +1,46 @@
+      
 <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
     <title>Dashboard</title>
-     <style>
+    <style>
         body { font-family: sans-serif; margin: 40px; }
-        h1 { color: #007bff; }
+        h1, h2 { color: #007bff; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
     </style>
 </head>
 <body>
     <h1>Willkommen im Super-Agenten Cockpit!</h1>
     <p>Der Agent ist aktiv und sucht nach deinen Artikeln.</p>
-
-    <!-- Hier werden wir später die Liste der Suchaufträge anzeigen -->
-
+    
+    <h2>Aktive Suchaufträge</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Name des Auftrags</th>
+                <th>Suchbegriffe (Keywords)</th>
+                <th>Filter</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for auftrag in auftragsliste %}
+            <tr>
+                <td>{{ auftrag.name }}</td>
+                <td>{{ auftrag.keywords }}</td>
+                <td>{{ auftrag.filter if auftrag.filter else 'Keine' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="3">Keine Aufträge gefunden.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
 </body>
 </html>
+
+    
