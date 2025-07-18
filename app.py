@@ -114,9 +114,15 @@ def index():
 def dashboard():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
+    
+    # Lade den User mit seinen Aufträgen UND den zugehörigen Funden
     user = User.query.get(session['user_id'])
-    return render_template('dashboard.html', auftragsliste=user.auftraege)
-
+    
+    # Die Aufträge sind schon geladen (user.auftraege)
+    # Und für jeden Auftrag sind die Funde auch schon geladen (auftrag.funde)
+    # SQLAlchemy macht das automatisch für uns!
+    
+    return render_template('dashboard.html', user=user)
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
