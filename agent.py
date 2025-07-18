@@ -5,7 +5,7 @@ import os
 import time
 
 # === KONFIGURATION ===
-MY_APP_ID = "MarkusSc-Producti-PRD-ec5701265-b8cbab3x"
+MY_APP_ID = "MarkusSc-Producti-PRD-ec5701265-b8cbab3a"
 MY_CERT_ID = "PRD-c5701265d502-a21a-4d72-aca5-2817"
 
 # === FUNKTIONEN ===
