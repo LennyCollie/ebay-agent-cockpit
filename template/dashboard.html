@@ -66,8 +66,8 @@
             <tbody>
                      
 <tbody>
-    {% for auftrag in auftragsliste %}
-    <tr>
+   {% for auftrag in user.auftraege|sort(attribute='id', reverse=True) %}
+    <tr class="auftrag-row">
         <td><strong>{{ auftrag.name }}</strong></td>
         <td>{{ auftrag.keywords }}</td>
         <td>{{ auftrag.filter if auftrag.filter else 'Keine' }}</td>
@@ -78,16 +78,20 @@
         </td>
     </tr>
     <!-- NEU: Zeige die letzten 5 Funde für diesen Auftrag an -->
-    {% if auftrag.funde|sort(attribute='timestamp', reverse=True)|list %}
+    {% if auftrag.funde %}
         <tr class="fund-header-row">
             <td colspan="4"><strong>Letzte Funde für diesen Auftrag:</strong></td>
         </tr>
-        {% for fund in auftrag.funde|sort(attribute='timestamp', reverse=True)|truncate(5) %}
+        {% for fund in auftrag.funde|sort(attribute='timestamp', reverse=True)|list|truncate(5) %}
         <tr class="fund-row">
             <td colspan="3"><a href="{{ fund.item_url }}" target="_blank">{{ fund.title }}</a></td>
             <td><strong>{{ fund.price }}</strong></td>
         </tr>
         {% endfor %}
+    {% else %}
+        <tr class="fund-row">
+            <td colspan="4"><em>Für diesen Auftrag wurden noch keine neuen Artikel gefunden.</em></td>
+        </tr>
     {% endif %}
 
     {% else %}
@@ -96,7 +100,6 @@
     </tr>
     {% endfor %}
 </tbody>
-
     
 
     
