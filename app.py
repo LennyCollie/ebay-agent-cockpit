@@ -71,16 +71,19 @@ def agenten_job():
 
     # Dieser Block wird nur einmal beim Start der App ausgeführt.
     with app.app_context():
-        db.create_all()
-    
-    # Konfiguriere und starte den Wecker
-    scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(agenten_job, 'interval', minutes=10)
-    scheduler.start()
-    
-    # Hinweis: In einer Produktionsumgebung wie Render wird 'app.run()' nicht direkt aufgerufen.
-    # Der Gunicorn-Server startet die 'app'. Dieser Block ist eher für lokales Testen.
-    # Wir lassen ihn hier weg, um Verwirrung zu vermeiden.
+    db.create_all()
 
-# Führe die Initialisierung aus, wenn die App startet
+# Schritt 2: Definiere den Job, den der Wecker ausführen soll.
+# Wir brauchen eine "Wrapper"-Funktion, damit der Job auch auf die Datenbank zugreifen kann.
+def agenten_job_wrapper():
+    with app.app_context():
+        agenten_job()
+
+# Schritt 3: Konfiguriere und starte den Wecker.
+# Dieser Code stellt sicher, dass der Wecker nicht bei internen Build-Prozessen doppelt startet.
+if __name__ != '__main__':
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10)
+    scheduler.start()
+    print(">>> Wecker (APScheduler) wurde erfolgreich gestartet und läuft im Hintergrund.")
 
