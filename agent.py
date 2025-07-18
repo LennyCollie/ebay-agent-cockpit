@@ -5,7 +5,6 @@ import json
 import os
 import smtplib
 from email.mime.text import MIMEText
-from dotenv import load_dotenv
 import time
 import urllib.parse
 
