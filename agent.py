@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 import time
 import urllib.parse
 
-load_dotenv()
+
 
 
 MEMORY_FILE = "gesehene_artikel.json"
