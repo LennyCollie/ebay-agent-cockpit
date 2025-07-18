@@ -18,7 +18,7 @@ BASE_DIR = "/home/LennyColli"
 
 
 load_dotenv()
-load_dotenv(dotenv_path=dotenv_path)
+
 
 MEMORY_FILE = "gesehene_artikel.json"
 
