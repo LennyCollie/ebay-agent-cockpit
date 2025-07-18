@@ -9,14 +9,6 @@ from dotenv import load_dotenv
 import time
 import urllib.parse
 
-
-
-
-
-
-BASE_DIR = "/home/LennyColli"
-
-
 load_dotenv()
 
 
