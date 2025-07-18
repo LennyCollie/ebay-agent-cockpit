@@ -82,7 +82,7 @@ def melde_fund_an_cockpit(item_details, auftrag):
 def search_items(token, auftrag, gesehene_ids_fuer_suche):
     keywords = auftrag["keywords"]
     filters = auftrag.get("filter", "")
-    print(f"\n>>> Führe Auftrag aus: '{auftrag['name']}'")
+    print(f"\n>>> **STARTE AUFTRAG:** '{auftrag['name']}'")
     params = {'q': keywords, 'limit': 20}
     if filters: params['filter'] = filters
     url = f"https://api.ebay.com/buy/browse/v1/item_summary/search?{urllib.parse.urlencode(params)}"
