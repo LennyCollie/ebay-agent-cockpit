@@ -68,7 +68,7 @@ def agenten_job():
 # ... (alle Routen von @app.route('/') bis @app.route('/delete/...') bleiben exakt gleich)
 
 # === Hauptteil des Programms ===
-def run_app():
+
     # Dieser Block wird nur einmal beim Start der App ausgeführt.
     with app.app_context():
         db.create_all()
@@ -83,4 +83,4 @@ def run_app():
     # Wir lassen ihn hier weg, um Verwirrung zu vermeiden.
 
 # Führe die Initialisierung aus, wenn die App startet
-run_app()
+
