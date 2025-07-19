@@ -19,7 +19,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 # --- Agenten Konfiguration ---
-MEMORY_FILE = "gesehene_artikel.json"
+MEMORY_FILE = "gesehene_artikel.json" # Wird nur noch für die lokale Struktur benutzt, nicht mehr für GitHub
 MY_APP_ID = os.getenv("EBAY_APP_ID")
 MY_CERT_ID = os.getenv("EBAY_CERT_ID")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
@@ -50,29 +50,23 @@ class Fund(db.Model):
     auftrag_id = db.Column(db.Integer, db.ForeignKey('auftrag.id'), nullable=False)
 
 # --- Agenten Funktionen ---
-def get_oauth_token():
-    # ... (Code bleibt gleich)
-    pass
-def sende_benachrichtigungs_email(neue_funde, auftrag):
-    # ... (Code bleibt gleich)
-    pass
-def search_items(token, auftrag, gesehene_ids_fuer_suche, app_context):
-    # ... (Code bleibt gleich)
-    pass
-def agenten_job():
-    # ... (Code bleibt gleich)
-    pass
+# ... (Hier kommen die Agenten-Funktionen, sauber eingerückt)
 
-
+# --- Webseiten Routen ---
 @app.route('/')
-with app.app_context():
+# ... (Hier kommen die Web-Routen, sauber eingerückt)
+
+# === INITIALISIERUNG (ohne Einrückung) ===
+with app.app.context():
     db.create_all()
 
 def agenten_job_wrapper():
-    with app.app_context():
-        agenten_job()
+    with app.app.context():
+        # Hier muss die agenten_job() Funktion aufgerufen werden
+        pass 
 
 if __name__ != '__main__':
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10)
     scheduler.start()
+    print(">>> APScheduler wurde gestartet.")
