@@ -63,14 +63,10 @@ def agenten_job():
     # ... (Code bleibt gleich)
     pass
 
-# === Webseiten Routen ===
+
 @app.route('/')
-# ... (alle Routen von @app.route('/') bis @app.route('/delete/...') bleiben exakt gleich)
 
-# === Hauptteil des Programms ===
-
-    # Dieser Block wird nur einmal beim Start der App ausgeführt.
-   with app.app_context():
+  with app.app_context():
     db.create_all()
 
 def agenten_job_wrapper():
