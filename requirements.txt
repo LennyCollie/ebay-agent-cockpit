@@ -4,3 +4,4 @@ requests
 Flask-SQLAlchemy
 Werkzeug
 APScheduler
+psycopg2-binary
