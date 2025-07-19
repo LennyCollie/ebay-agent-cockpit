@@ -65,8 +65,7 @@ def agenten_job():
 
 
 @app.route('/')
-
-  with app.app_context():
+with app.app_context():
     db.create_all()
 
 def agenten_job_wrapper():
