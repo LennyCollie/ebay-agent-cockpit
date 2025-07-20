@@ -270,8 +270,13 @@ def make_me_premium():
 with app.app_context():
     db.create_all()
 
-if os.environ.get('GUNICORN_PID'):
-    scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(agenten_job, 'interval', minutes=10)
-    scheduler.start()
-    print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
+
+def agenten_job_wrapper():
+    with app.app_context():
+        agenten_job()
+
+
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10)
+scheduler.start()
+print(">>> APScheduler (Wecker) wurde initialisiert.")
