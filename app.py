@@ -42,21 +42,19 @@ class User(db.Model):
 
 class Auftrag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    keywords = db.Column(db.String(200), nullable=False)
-    filter = db.Column(db.String(300), nullable=True)
+    name = db.Column(db.String(200), nullable=False) # Größer
+    keywords = db.Column(db.String(300), nullable=False) # Größer
+    filter = db.Column(db.String(500), nullable=True) # Größer
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     funde = db.relationship('Fund', backref='auftrag', lazy=True, cascade="all, delete-orphan")
-
 class Fund(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    item_id = db.Column(db.String(20), unique=True, nullable=False)
-    title = db.Column(db.String(200), nullable=False)
+     id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.String(30), unique=True, nullable=False) # Etwas größer
+    title = db.Column(db.String(300), nullable=False) # Deutlich größer
     price = db.Column(db.String(50), nullable=False)
-    item_url = db.Column(db.String(500), nullable=False)
+    item_url = db.Column(db.String(1000), nullable=False) # URLs können sehr lang sein
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     auftrag_id = db.Column(db.Integer, db.ForeignKey('auftrag.id'), nullable=False)
-
 # --- Agenten Funktionen ---
 def lade_gesehene_artikel():
     try:
