@@ -49,7 +49,7 @@ class Auftrag(db.Model):
     funde = db.relationship('Fund', backref='auftrag', lazy=True, cascade="all, delete-orphan")
 class Fund(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    item_id = db.Column(db.String(30), unique=True, nullable=False) # Etwas größer
+    item_id = db.Column(db.String(50), unique=True, nullable=False) # Etwas größer
     title = db.Column(db.String(300), nullable=False) # Deutlich größer
     price = db.Column(db.String(50), nullable=False)
     item_url = db.Column(db.String(1000), nullable=False) # URLs können sehr lang sein
