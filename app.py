@@ -6,6 +6,7 @@ import requests
 import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime
+import urllib.parse
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
