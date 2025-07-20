@@ -143,8 +143,17 @@ def neuer_auftrag():
 
 @app.route('/delete/<int:auftrag_id>', methods=['POST'])
 def loesche_auftrag(auftrag_id):
-    # ... (Inhalt unverändert)
-    pass
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    
+    auftrag = Auftrag.query.get_or_404(auftrag_id)
+    if auftrag.author.id != session['user_id']:
+        return "Nicht autorisiert", 403
+        
+    db.session.delete(auftrag)
+    db.session.commit()
+    
+    # DIESE ZEILE HAT GEFEHLT!
+    return redirect(url_for('dashboard'))
     
 @app.route('/upgrade')
 def upgrade_seite():
