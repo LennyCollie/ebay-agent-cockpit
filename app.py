@@ -251,6 +251,18 @@ def upgrade_seite():
         return redirect(url_for('login'))
     return render_template('upgrade.html')
 
+@app.route('/make_me_premium/<email>')
+def make_me_premium(email):
+    # Finde den User anhand der E-Mail
+    user = User.query.filter_by(email=email).first()
+    if user:
+        user.plan = 'premium' # Setze den Plan auf 'premium'
+        db.session.commit()
+        flash(f"Benutzer {email} wurde auf Premium hochgestuft!")
+    else:
+        flash(f"Benutzer {email} nicht gefunden.")
+    return redirect(url_for('dashboard'))
+
 # === INITIALISIERUNG ===
 # Erstellt die DB-Tabellen nur einmal beim App-Start im Hauptprozess
 with app.app_context():
