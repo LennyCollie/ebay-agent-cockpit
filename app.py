@@ -202,6 +202,26 @@ def login():
         return redirect(url_for('dashboard'))
     return render_template('login.html')
 
+@app.route('/make_me_premium_please')
+def make_me_premium():
+    if 'user_id' not in session:
+        flash("Bitte zuerst einloggen.")
+        return redirect(url_for('login'))
+
+    user = User.query.get(session['user_id'])
+    if user:
+        user.plan = 'premium'
+        db.session.commit()
+        flash(f"Dein Account ({user.email}) wurde erfolgreich auf PREMIUM hochgestuft!")
+        # WICHTIG: Nach dem Upgrade müssen wir die User-Daten in der Session neu laden
+        # oder den User zwingen, sich neu einzuloggen.
+        # Am einfachsten ist, wir leiten ihn zum Dashboard zurück.
+        # Die Änderung sollte beim nächsten Seitenaufruf aktiv sein.
+    else:
+        flash("Fehler: Benutzer nicht gefunden.")
+        
+    return redirect(url_for('dashboard'))
+
 @app.route('/logout')
 def logout():
     session.clear()
