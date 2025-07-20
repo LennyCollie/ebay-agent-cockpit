@@ -151,8 +151,10 @@ def login():
     
 @app.route('/logout')
 def logout():
-    # ... (Inhalt unverändert)
-    pass
+    session.clear() # Löscht alle Session-Daten (z.B. dass du eingeloggt bist)
+    flash("Du wurdest erfolgreich ausgeloggt.")
+    # DIESE ZEILE HAT GEFEHLT: Leitet den User zur Login-Seite zurück
+    return redirect(url_for('login'))
 
 @app.route('/add', methods=['POST'])
 def neuer_auftrag():
