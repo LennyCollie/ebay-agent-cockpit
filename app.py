@@ -252,16 +252,17 @@ def upgrade_seite():
     return render_template('upgrade.html')
 
 # === INITIALISIERUNG ===
+# Erstellt die DB-Tabellen nur einmal beim App-Start im Hauptprozess
 with app.app_context():
     db.create_all()
 
+# Wrapper-Funktion, damit der Job den App-Kontext hat
 def agenten_job_wrapper():
     with app.app_context():
         agenten_job()
 
-if __name__ != '__main__':
+if os.environ.get('GUNICORN_PID'):
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10)
     scheduler.start()
-    # DIESE ZEILE IST JETZT KORREKT EINGERÜCKT
-    print(">>> APScheduler (Wecker) wurde erfolgreich gestartet.")
+    print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
