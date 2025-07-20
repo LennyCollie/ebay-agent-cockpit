@@ -48,7 +48,7 @@ class Auftrag(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     funde = db.relationship('Fund', backref='auftrag', lazy=True, cascade="all, delete-orphan")
 class Fund(db.Model):
-     id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True)
     item_id = db.Column(db.String(30), unique=True, nullable=False) # Etwas größer
     title = db.Column(db.String(300), nullable=False) # Deutlich größer
     price = db.Column(db.String(50), nullable=False)
