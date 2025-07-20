@@ -6,7 +6,7 @@ import requests
 import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -14,7 +14,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 # --- App & DB Konfiguration ---
 app = Flask(__name__, template_folder='template')
 app.secret_key = os.urandom(24)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///users.db')
+
+# Lese die DATABASE_URL, die DigitalOcean automatisch bereitstellt
+database_url = os.getenv('DATABASE_URL')
+# Behebe ein Kompatibilitätsproblem zwischen Heroku/DigitalOcean und SQLAlchemy
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -97,7 +104,7 @@ def sende_benachrichtigungs_email(neue_funde, auftrag):
     except Exception as e:
         print(f"AGENT FEHLER beim Senden der E-Mail: {e}")
 
-def search_items(token, auftrag, gesehene_ids_fuer_suche, app_context):
+def search_items(token, auftrag, gesehene_ids_fuer_suche):
     print(f"AGENT: Führe Auftrag aus: '{auftrag.name}'")
     keywords = auftrag.keywords
     filters = auftrag.filter
@@ -111,18 +118,17 @@ def search_items(token, auftrag, gesehene_ids_fuer_suche, app_context):
         results = response.json()
         if results.get('total', 0) > 0:
             neue_funde_details = []
-            with app_context:
-                for item in results.get('itemSummaries', []):
-                    item_id = item.get('itemId')
-                    if item_id and item_id not in gesehene_ids_fuer_suche:
-                        existierender_fund = Fund.query.filter_by(item_id=item_id).first()
-                        if not existierender_fund:
-                            details = {'title': item.get('title', 'N/A'), 'price': item.get('price', {}).get('value', 'N/A') + " " + item.get('price', {}).get('currency', ''), 'itemWebUrl': item.get('itemWebUrl', '#')}
-                            neuer_fund = Fund(item_id=item_id, title=details['title'], price=details['price'], item_url=details['itemWebUrl'], auftrag_id=auftrag.id)
-                            db.session.add(neuer_fund)
-                            neue_funde_details.append(details)
-                        gesehene_ids_fuer_suche.add(item_id)
-                db.session.commit()
+            for item in results.get('itemSummaries', []):
+                item_id = item.get('itemId')
+                if item_id and item_id not in gesehene_ids_fuer_suche:
+                    existierender_fund = Fund.query.filter_by(item_id=item_id).first()
+                    if not existierender_fund:
+                        details = {'title': item.get('title', 'N/A'), 'price': item.get('price', {}).get('value', 'N/A') + " " + item.get('price', {}).get('currency', ''), 'itemWebUrl': item.get('itemWebUrl', '#')}
+                        neuer_fund = Fund(item_id=item_id, title=details['title'], price=details['price'], item_url=details['itemWebUrl'], auftrag_id=auftrag.id)
+                        db.session.add(neuer_fund)
+                        neue_funde_details.append(details)
+                    gesehene_ids_fuer_suche.add(item_id)
+            db.session.commit()
             if neue_funde_details:
                 sende_benachrichtigungs_email(neue_funde_details, auftrag)
     except Exception as e:
@@ -136,13 +142,12 @@ def agenten_job():
     alle_gesehenen_artikel = lade_gesehene_artikel()
     access_token = get_oauth_token()
     if access_token:
-        with app.app_context():
-            alle_auftraege = Auftrag.query.all()
+        alle_auftraege = Auftrag.query.all()
         print(f"AGENT: {len(alle_auftraege)} Aufträge werden verarbeitet.")
         for auftrag in alle_auftraege:
             gedaechtnis_schluessel = f"{auftrag.author.email}_{auftrag.name}"
             ids_fuer_diesen_auftrag = set(alle_gesehenen_artikel.get(gedaechtnis_schluessel, []))
-            neue_ids = search_items(access_token, auftrag, ids_fuer_diesen_auftrag, app.app_context())
+            neue_ids = search_items(access_token, auftrag, ids_fuer_diesen_auftrag)
             alle_gesehenen_artikel[gedaechtnis_schluessel] = list(neue_ids)
             time.sleep(2)
     speichere_gesehene_artikel(alle_gesehenen_artikel)
@@ -216,7 +221,7 @@ def loesche_auftrag(auftrag_id):
     db.session.commit()
     return redirect(url_for('dashboard'))
 
-
+# === INITIALISIERUNG ===
 with app.app_context():
     db.create_all()
 
