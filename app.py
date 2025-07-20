@@ -250,13 +250,20 @@ def make_me_premium():
     if 'user_id' not in session:
         flash("Bitte zuerst einloggen.")
         return redirect(url_for('login'))
+
     user = User.query.get(session['user_id'])
     if user:
         user.plan = 'premium'
         db.session.commit()
+    
+        session.clear()
+        session['logged_in'] = True
+        session['user_id'] = user.id
+        
         flash(f"Dein Account ({user.email}) wurde erfolgreich auf PREMIUM hochgestuft!")
     else:
         flash("Fehler: Benutzer nicht gefunden.")
+        
     return redirect(url_for('dashboard'))
 
 # --- 6. Initialisierung ---
