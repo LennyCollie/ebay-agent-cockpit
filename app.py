@@ -229,6 +229,6 @@ with app.app_context():
 if os.environ.get('GUNICORN_PID'):
     scheduler = BackgroundScheduler(daemon=True)
     # Rufe jetzt direkt agenten_job auf
-    scheduler.add_job(agenten_job, 'interval', minutes=10)
+    agenten_job 'interval', minutes=10)
     scheduler.start()
     print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
