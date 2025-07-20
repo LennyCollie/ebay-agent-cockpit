@@ -15,7 +15,7 @@ import atexit
 
 # --- App & DB Konfiguration ---
 app = Flask(__name__, template_folder='template')
-app.secret_key = os.urandom(24)
+app.secret_key = os.urandom(24)"MeinAbsolutGeheimerSchluesselFuerDieSuperApp123!"
 
 database_url = os.getenv('DATABASE_URL')
 if database_url and database_url.startswith("postgres://"):
