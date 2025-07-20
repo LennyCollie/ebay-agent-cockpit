@@ -79,21 +79,39 @@ def search_items(token, auftrag, gesehene_ids_fuer_suche):
     pass
 
 def agenten_job():
+    # Wir brauchen den "app_context", damit dieser Hintergrund-Job
+    # auf die Datenbank zugreifen kann.
     with app.app_context():
         print("\n" + "="*50)
         print(f"AGENT JOB STARTET ({time.ctime()})")
         print("="*50)
+        
         alle_gesehenen_artikel = lade_gesehene_artikel()
         access_token = get_oauth_token()
+        
         if access_token:
+            # Wir holen die Aufträge INNERHALB des Kontexts
             alle_auftraege = Auftrag.query.all()
-            print(f"AGENT: {len(alle_auftraege)} Aufträge werden verarbeitet.")
-            for auftrag in alle_auftraege:
-                gedaechtnis_schluessel = f"{auftrag.author.email}_{auftrag.name}"
-                ids_fuer_diesen_auftrag = set(alle_gesehenen_artikel.get(gedaechtnis_schluessel, []))
-                neue_ids = search_items(access_token, auftrag, ids_fuer_diesen_auftrag)
-                alle_gesehenen_artikel[gedaechtnis_schluessel] = list(neue_ids)
-                time.sleep(2)
+            print(f"AGENT: {len(alle_auftraege)} Aufträge in der Datenbank gefunden.")
+            
+            if not alle_auftraege:
+                print("AGENT: Keine Aufträge zum Verarbeiten.")
+            else:
+                for auftrag in alle_auftraege:
+                    gedaechtnis_schluessel = f"{auftrag.author.email}_{auftrag.name}"
+                    ids_fuer_diesen_auftrag = set(alle_gesehenen_artikel.get(gedaechtnis_schluessel, []))
+                    
+                    neue_funde, aktualisierte_ids = search_items(access_token, auftrag, ids_fuer_diesen_auftrag)
+                    
+                    if neue_funde:
+                        print(f"AGENT: {len(neue_funde)} neue Artikel für '{auftrag.name}' gefunden.")
+                        sende_benachrichtigungs_email(neue_funde, auftrag)
+                    else:
+                        print(f"AGENT: Keine neuen Artikel für '{auftrag.name}'.")
+                    
+                    alle_gesehenen_artikel[gedaechtnis_schluessel] = list(aktualisierte_ids)
+                    time.sleep(2)
+        
         speichere_gesehene_artikel(alle_gesehenen_artikel)
         print(f"AGENT JOB BEENDET ({time.ctime()})")
 
@@ -206,12 +224,11 @@ def make_me_premium():
 
 # === INITIALISIERUNG ===
 with app.app_context():
-    db.create_all()
+  db.create_all()
 
-# Dieser Block stellt sicher, dass der Wecker nur EINMAL sauber gestartet wird.
-if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+if os.environ.get('GUNICORN_PID'):
     scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(agenten_job, trigger=IntervalTrigger(minutes=10), id='agenten_job_1', replace_existing=True)
+    # Rufe jetzt direkt agenten_job auf
+    scheduler.add_job(agenten_job, 'interval', minutes=10)
     scheduler.start()
-    # Stellt sicher, dass der Wecker beim Beenden der App sauber heruntergefahren wird
-    atexit.register(lambda: scheduler.shutdown())
+    print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
