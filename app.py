@@ -114,13 +114,40 @@ def dashboard():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    # ... (Inhalt unverändert)
-    pass
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        user = User.query.filter_by(email=email).first()
+        if user:
+            flash('Diese E-Mail-Adresse ist bereits registriert.')
+            return redirect(url_for('register'))
+        password_hash = generate_password_hash(password, method='pbkdf2:sha26')
+        new_user = User(email=email, password_hash=password_hash)
+        db.session.add(new_user)
+        db.session.commit()
+        flash('Registrierung erfolgreich! Du kannst dich jetzt einloggen.')
+        return redirect(url_for('login'))
+        
+    # DIESE ZEILE HAT GEFEHLT: Zeigt das Registrierungs-Formular an
+    return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # ... (Inhalt unverändert)
-    pass
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        user = User.query.filter_by(email=email).first()
+        
+        if not user or not check_password_hash(user.password_hash, password):
+            flash('Bitte überprüfe deine Login-Daten und versuche es erneut.')
+            return redirect(url_for('login')) # Weiterleitung bei Fehler
+            
+        session['logged_in'] = True
+        session['user_id'] = user.id
+        return redirect(url_for('dashboard')) # Weiterleitung bei Erfolg
+        
+    # DIESE ZEILE HAT GEFEHLT: Zeigt das Login-Formular an, wenn die Seite normal aufgerufen wird
+    return render_template('login.html')
     
 @app.route('/logout')
 def logout():
