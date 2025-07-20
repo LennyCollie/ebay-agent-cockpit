@@ -35,11 +35,14 @@ EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
 # --- Datenbank Modelle ---
 class User(db.Model):
+    class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
+    # NEUE ZEILE: Hier speichern wir den Plan des Nutzers
+    plan = db.Column(db.String(50), nullable=False, default='free') 
+    
     auftraege = db.relationship('Auftrag', backref='author', lazy=True, cascade="all, delete-orphan")
-
 class Auftrag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False) # Größer
@@ -205,11 +208,33 @@ def logout():
 @app.route('/add', methods=['POST'])
 def neuer_auftrag():
     if not session.get('logged_in'): return redirect(url_for('login'))
-    neuer_auftrag = Auftrag(name=request.form.get('name'), keywords=request.form.get('keywords'), filter=request.form.get('filter'), user_id=session['user_id'])
+    
+    user = User.query.get(session['user_id'])
+    
+    # === NEUE PAYWALL-LOGIK ===
+    # Zähle, wie viele Aufträge der User schon hat
+    auftrags_anzahl = len(user.auftraege)
+    
+    # Definiere die Limits für die Pläne
+    limit_free_plan = 2
+    
+    # Prüfe, ob das Limit erreicht ist
+    if user.plan == 'free' and auftrags_anzahl >= limit_free_plan:
+        flash(f"Du hast das Limit von {limit_free_plan} Suchaufträgen für den kostenlosen Plan erreicht. Bitte upgrade, um mehr Aufträge zu erstellen!")
+        return redirect(url_for('upgrade_seite')) # Leitet zur neuen Upgrade-Seite
+    # === ENDE PAYWALL-LOGIK ===
+    
+    neuer_auftrag = Auftrag(
+        name=request.form.get('name'),
+        keywords=request.form.get('keywords'),
+        filter=request.form.get('filter'),
+        user_id=session['user_id']
+    )
     db.session.add(neuer_auftrag)
     db.session.commit()
+    
+    flash("Neuer Suchauftrag erfolgreich hinzugefügt!") # Feedback für den User
     return redirect(url_for('dashboard'))
-
 @app.route('/delete/<int:auftrag_id>', methods=['POST'])
 def loesche_auftrag(auftrag_id):
     if not session.get('logged_in'): return redirect(url_for('login'))
@@ -219,6 +244,12 @@ def loesche_auftrag(auftrag_id):
     db.session.delete(auftrag)
     db.session.commit()
     return redirect(url_for('dashboard'))
+
+@app.route('/upgrade')
+def upgrade_seite():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    return render_template('upgrade.html')
 
 # === INITIALISIERUNG ===
 with app.app_context():
