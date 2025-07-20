@@ -224,12 +224,12 @@ def loesche_auftrag(auftrag_id):
 with app.app_context():
     db.create_all()
 
+# Die agenten_job_wrapper Funktion bleibt unverändert
 def agenten_job_wrapper():
     with app.app_context():
         agenten_job()
 
-if __name__ != '__main__':
-    scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10)
-    scheduler.start()
-    print(">>> APScheduler (Wecker) wurde erfolgreich gestartet.")
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10)
+scheduler.start()
+print(">>> APScheduler (Wecker) wurde im Hauptprozess gestartet.")```
