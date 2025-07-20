@@ -16,24 +16,20 @@ from apscheduler.schedulers.background import BackgroundScheduler
 app = Flask(__name__, template_folder='template')
 app.secret_key = os.getenv('SECRET_KEY')
 
-# Lese die DATABASE_URL aus der Umgebung
+# Lese die DATABASE_URL
 database_url = os.getenv('DATABASE_URL')
 
-# Behebe Kompatibilitätsproblem UND füge SSL-Modus hinzu
-if database_url:
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
+# Behebe Kompatibilitätsproblem
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+# FÜGE SSL-MODUS NUR HINZU, WENN ER NOCH NICHT DA IST
+if database_url and "sslmode" not in database_url:
     database_url += "?sslmode=require"
 
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-# --- 2. Agenten Konfiguration ---
-MEMORY_FILE = "gesehene_artikel.json"
-MY_APP_ID = os.getenv("EBAY_APP_ID")
-MY_CERT_ID = os.getenv("EBAY_CERT_ID")
-SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
 # --- 3. Datenbank Modelle ---
 class User(db.Model):
