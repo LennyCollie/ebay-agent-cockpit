@@ -5,6 +5,7 @@ import base64
 import requests
 import smtplib
 import urllib.parse
+import stripe
 from email.mime.text import MIMEText
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
@@ -37,6 +38,70 @@ MY_APP_ID = os.getenv("EBAY_APP_ID")
 MY_CERT_ID = os.getenv("EBAY_CERT_ID")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+
+# --- Stripe Konfiguration ---
+stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+
+@app.route('/create-checkout-session')
+def create_checkout_session():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            line_items=[
+                {
+                    'price': os.getenv('STRIPE_PRICE_ID'),
+                    'quantity': 1,
+                },
+            ],
+            mode='subscription',
+            # Wichtig: Wir übergeben die User-ID, damit wir wissen, wer bezahlt hat
+            client_reference_id=session['user_id'],
+            success_url=url_for('success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url=url_for('cancel', _external=True),
+        )
+    except Exception as e:
+        return str(e)
+        
+    return redirect(checkout_session.url, code=303)
+
+@app.route('/success')
+def success():
+    # Hier holen wir uns die Bestätigung von Stripe
+    session_id = request.args.get('session_id')
+    checkout_session = stripe.checkout.Session.retrieve(session_id)
+    
+    # Holen die User-ID, die wir vorher übergeben haben
+    user_id = checkout_session.client_reference_id
+    user = User.query.get(user_id)
+    
+    if user:
+        # Setze den Plan auf "premium"
+        user.plan = 'premium'
+        db.session.commit()
+        flash("Upgrade erfolgreich! Willkommen im Premium-Club.")
+    
+    return redirect(url_for('dashboard'))
+
+@app.route('/cancel')
+def cancel():
+    flash("Die Zahlung wurde abgebrochen.")
+    return redirect(url_for('dashboard'))```
+
+**Schritt 5: Den "Upgrade"-Button scharf schalten (`upgrade.html`)**
+
+1.  Öffne die `upgrade.html` im `template`-Ordner auf GitHub.
+2.  Finde den "Jetzt Upgraden"-Button. Es ist ein `<a>`-Tag.
+3.  Ersetze ihn durch ein Formular, das zu unserer neuen Route zeigt:
+
+```html
+<!-- ALT: <a href="#" class="btn-upgrade">...</a> -->
+
+<!-- NEU: -->
+<form action="/create-checkout-session" method="POST">
+    <button type="submit" class="btn-upgrade">Jetzt für 9,99€ / Monat upgraden</button>
+</form>
 
 # --- 3. Datenbank Modelle ---
 class User(db.Model):
