@@ -1,4 +1,4 @@
-#-*- coding: utf-8 -*-
+
 import os
 import time
 import json
@@ -275,7 +275,7 @@ def login():
         password = request.form.get('password')
         user = User.query.filter_by(email=email).first()
         if not user or not check_password_hash(user.password_hash, password):
-            flash('Bitte überprüfe deine Login-Daten.')
+            flash('Bitte überpruefe deine Login-Daten.')
             return redirect(url_for('login'))
         session['logged_in'] = True
         session['user_id'] = user.id
@@ -294,12 +294,12 @@ def neuer_auftrag():
     user = User.query.get(session['user_id'])
     limit_free_plan = 2
     if user.plan == 'free' and len(user.auftraege) >= limit_free_plan:
-        flash(f"Limit von {limit_free_plan} Aufträgen erreicht. Bitte upgraden!")
+        flash(f"Limit von {limit_free_plan} Auftraegen erreicht. Bitte upgraden!")
         return redirect(url_for('upgrade_seite'))
     neuer_auftrag = Auftrag(name=request.form.get('name'), keywords=request.form.get('keywords'), filter=request.form.get('filter'), user_id=session['user_id'])
     db.session.add(neuer_auftrag)
     db.session.commit()
-    flash("Neuer Suchauftrag erfolgreich hinzugefügt!")
+    flash("Neuer Suchauftrag erfolgreich hinzugefuegt!")
     return redirect(url_for('dashboard'))
 
 @app.route('/delete/<int:auftrag_id>', methods=['POST'])
