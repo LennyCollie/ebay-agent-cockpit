@@ -1,4 +1,3 @@
-
 import os
 import time
 import json
@@ -18,91 +17,22 @@ from apscheduler.schedulers.background import BackgroundScheduler
 app = Flask(__name__, template_folder='template')
 app.secret_key = os.getenv('SECRET_KEY')
 
-# Lese die DATABASE_URL
 database_url = os.getenv('DATABASE_URL')
-
-# Behebe Kompatibilitätsproblem
 if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
-
-# FÜGE SSL-MODUS NUR HINZU, WENN ER NOCH NICHT DA IST
 if database_url and "sslmode" not in database_url:
     database_url += "?sslmode=require"
-
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- 2. Agenten Konfiguration ---
+# --- 2. Agenten & Stripe Konfiguration ---
 MEMORY_FILE = "gesehene_artikel.json"
 MY_APP_ID = os.getenv("EBAY_APP_ID")
 MY_CERT_ID = os.getenv("EBAY_CERT_ID")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
-# --- Stripe Konfiguration ---
-stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
-
-@app.route('/create-checkout-session')
-def create_checkout_session():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-        
-    try:
-        checkout_session = stripe.checkout.Session.create(
-            line_items=[
-                {
-                    'price': os.getenv('STRIPE_PRICE_ID'),
-                    'quantity': 1,
-                },
-            ],
-            mode='subscription',
-            # Wichtig: Wir übergeben die User-ID, damit wir wissen, wer bezahlt hat
-            client_reference_id=session['user_id'],
-            success_url=url_for('success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
-            cancel_url=url_for('cancel', _external=True),
-        )
-    except Exception as e:
-        return str(e)
-        
-    return redirect(checkout_session.url, code=303)
-
-@app.route('/success')
-def success():
-    # Hier holen wir uns die Bestätigung von Stripe
-    session_id = request.args.get('session_id')
-    checkout_session = stripe.checkout.Session.retrieve(session_id)
-    
-    # Holen die User-ID, die wir vorher übergeben haben
-    user_id = checkout_session.client_reference_id
-    user = User.query.get(user_id)
-    
-    if user:
-        # Setze den Plan auf "premium"
-        user.plan = 'premium'
-        db.session.commit()
-        flash("Upgrade erfolgreich! Willkommen im Premium-Club.")
-    
-    return redirect(url_for('dashboard'))
-
-@app.route('/cancel')
-def cancel():
-    flash("Die Zahlung wurde abgebrochen.")
-    return redirect(url_for('dashboard'))```
-
-**Schritt 5: Den "Upgrade"-Button scharf schalten (`upgrade.html`)**
-
-1.  Öffne die `upgrade.html` im `template`-Ordner auf GitHub.
-2.  Finde den "Jetzt Upgraden"-Button. Es ist ein `<a>`-Tag.
-3.  Ersetze ihn durch ein Formular, das zu unserer neuen Route zeigt:
-
-```html
-<!-- ALT: <a href="#" class="btn-upgrade">...</a> -->
-
-<!-- NEU: -->
-<form action="/create-checkout-session" method="POST">
-    <button type="submit" class="btn-upgrade">Jetzt für 9,99€ / Monat upgraden</button>
-</form>
 
 # --- 3. Datenbank Modelle ---
 class User(db.Model):
@@ -132,10 +62,8 @@ class Fund(db.Model):
 # --- 4. Agenten Funktionen ---
 def lade_gesehene_artikel():
     try:
-        # Versuche, aus einer lokalen Datei zu laden (funktioniert auf DO dank persistentem Speicher)
         with open(MEMORY_FILE, 'r') as f: return json.load(f)
-    except:
-        return {}
+    except: return {}
 
 def speichere_gesehene_artikel(artikel_daten):
     with open(MEMORY_FILE, 'w') as f: json.dump(artikel_daten, f)
@@ -160,11 +88,11 @@ def get_oauth_token():
 def sende_benachrichtigungs_email(neue_funde, auftrag):
     recipient_email = auftrag.author.email
     auftrags_name = auftrag.name
-    print(f"AGENT INFO: Sende E-Mail für '{auftrags_name}' an {recipient_email}...")
-    email_body = f"Hallo,\n\nfür deinen Suchauftrag '{auftrags_name}' wurden {len(neue_funde)} neue Artikel gefunden:\n\n"
+    print(f"AGENT INFO: Sende E-Mail fuer '{auftrags_name}' an {recipient_email}...")
+    email_body = f"Hallo,\n\nfuer deinen Suchauftrag '{auftrags_name}' wurden {len(neue_funde)} neue Artikel gefunden:\n\n"
     for item in neue_funde:
         email_body += f"Titel: {item['title']}\nPreis: {item['price']}\nLink: {item['itemWebUrl']}\n" + "-"*20 + "\n"
-    betreff = f"{len(neue_funde)} neue eBay Artikel für '{auftrags_name}' gefunden!"
+    betreff = f"{len(neue_funde)} neue eBay Artikel fuer '{auftrags_name}' gefunden!"
     msg = MIMEText(email_body, 'plain', 'utf-8')
     msg['Subject'] = betreff
     msg['From'] = SENDER_EMAIL
@@ -180,16 +108,13 @@ def sende_benachrichtigungs_email(neue_funde, auftrag):
         print(f"AGENT FEHLER beim Senden der E-Mail: {e}")
 
 def search_items(token, auftrag, gesehene_ids_fuer_suche):
-    print(f"AGENT: Führe Auftrag aus: '{auftrag.name}'")
+    print(f"AGENT: Fuehre Auftrag aus: '{auftrag.name}'")
     keywords = auftrag.keywords
     filters = auftrag.filter
-    
-    # URL sicher zusammenbauen
     params = {'q': urllib.parse.quote(keywords)}
     if filters:
         params['filter'] = urllib.parse.quote(filters)
     url = f"https://api.ebay.com/buy/browse/v1/item_summary/search?{urllib.parse.urlencode(params)}&limit=20"
-    
     headers = {'Authorization': f'Bearer {token}', 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_DE'}
     try:
         response = requests.get(url, headers=headers)
@@ -224,9 +149,9 @@ def agenten_job():
         access_token = get_oauth_token()
         if access_token:
             alle_auftraege = Auftrag.query.all()
-            print(f"AGENT: {len(alle_auftraege)} Aufträge in der Datenbank gefunden.")
+            print(f"AGENT: {len(alle_auftraege)} Auftraege in der Datenbank gefunden.")
             if not alle_auftraege:
-                print("AGENT: Keine Aufträge zum Verarbeiten.")
+                print("AGENT: Keine Auftraege zum Verarbeiten.")
             else:
                 for auftrag in alle_auftraege:
                     gedaechtnis_schluessel = f"{auftrag.author.email}_{auftrag.name}"
@@ -237,7 +162,7 @@ def agenten_job():
         speichere_gesehene_artikel(alle_gesehenen_artikel)
         print(f"AGENT JOB BEENDET ({time.ctime()})")
 
-
+# --- 5. Webseiten Routen ---
 @app.route('/')
 def index():
     if session.get('logged_in'):
@@ -275,7 +200,7 @@ def login():
         password = request.form.get('password')
         user = User.query.filter_by(email=email).first()
         if not user or not check_password_hash(user.password_hash, password):
-            flash('Bitte überpruefe deine Login-Daten.')
+            flash('Bitte ueberpruefe deine Login-Daten.')
             return redirect(url_for('login'))
         session['logged_in'] = True
         session['user_id'] = user.id
@@ -323,23 +248,18 @@ def make_me_premium():
     if 'user_id' not in session:
         flash("Bitte zuerst einloggen.")
         return redirect(url_for('login'))
-
     user = User.query.get(session['user_id'])
     if user:
         user.plan = 'premium'
         db.session.commit()
-    
         session.clear()
         session['logged_in'] = True
         session['user_id'] = user.id
-        
         flash(f"Dein Account ({user.email}) wurde erfolgreich auf PREMIUM hochgestuft!")
     else:
         flash("Fehler: Benutzer nicht gefunden.")
-        
     return redirect(url_for('dashboard'))
 
-    # --- NEUE STRIPE ROUTEN ---
 @app.route('/create-checkout-session', methods=['POST'])
 def create_checkout_session():
     if 'user_id' not in session:
@@ -353,11 +273,9 @@ def create_checkout_session():
             cancel_url=url_for('cancel', _external=True),
         )
     except Exception as e:
-        # Im Fehlerfall ist es gut, die Fehlermeldung auszugeben, um sie zu sehen
         print(f"Stripe Error: {str(e)}")
         flash("Etwas ist beim Starten der Bezahlung schiefgelaufen.")
         return redirect(url_for('upgrade_seite'))
-        
     return redirect(checkout_session.url, code=303)
 
 @app.route('/success')
@@ -367,23 +285,18 @@ def success():
         checkout_session = stripe.checkout.Session.retrieve(session_id)
         user_id = int(checkout_session.client_reference_id)
         user = User.query.get(user_id)
-        
         if user:
             user.plan = 'premium'
             db.session.commit()
-            
-            # Wichtig: Session erneuern nach dem Upgrade
             session.clear()
             session['logged_in'] = True
             session['user_id'] = user.id
-            
             flash("Upgrade erfolgreich! Willkommen im Premium-Club.")
         else:
-            flash("Fehler: Der Benutzer für diese Zahlung konnte nicht gefunden werden.")
+            flash("Fehler: Der Benutzer fuer diese Zahlung konnte nicht gefunden werden.")
     except Exception as e:
         print(f"Success-Route Error: {str(e)}")
         flash("Es gab ein Problem bei der Verarbeitung deines Upgrades.")
-
     return redirect(url_for('dashboard'))
 
 @app.route('/cancel')
@@ -395,13 +308,12 @@ def cancel():
 with app.app_context():
     db.create_all()
 
-
 def agenten_job_wrapper():
     with app.app_context():
         agenten_job()
 
-
-scheduler = BackgroundScheduler(daemon=True)
-scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10)
-scheduler.start()
-print(">>> APScheduler (Wecker) wurde initialisiert.")
+if os.environ.get('GUNICORN_PID'):
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10)
+    scheduler.start()
+    print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
