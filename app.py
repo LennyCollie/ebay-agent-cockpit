@@ -237,7 +237,7 @@ def agenten_job():
         speichere_gesehene_artikel(alle_gesehenen_artikel)
         print(f"AGENT JOB BEENDET ({time.ctime()})")
 
-# --- 5. Webseiten Routen ---
+
 @app.route('/')
 def index():
     if session.get('logged_in'):
