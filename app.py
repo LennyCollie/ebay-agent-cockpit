@@ -49,6 +49,8 @@ class Auftrag(db.Model):
     filter = db.Column(db.String(500), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     funde = db.relationship('Fund', backref='auftrag', lazy=True, cascade="all, delete-orphan")
+    aktiv = db.Column(db.Boolean, default=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
 class Fund(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -148,7 +150,7 @@ def agenten_job():
         alle_gesehenen_artikel = lade_gesehene_artikel()
         access_token = get_oauth_token()
         if access_token:
-            alle_auftraege = Auftrag.query.all()
+            alle_auftraege = Auftrag.query.filter_by(aktiv=True).all()
             print(f"AGENT: {len(alle_auftraege)} Auftraege in der Datenbank gefunden.")
             if not alle_auftraege:
                 print("AGENT: Keine Auftraege zum Verarbeiten.")
@@ -335,6 +337,20 @@ def success():
 @app.route('/cancel')
 def cancel():
     flash("Die Zahlung wurde abgebrochen. Du bist weiterhin im kostenlosen Plan.")
+    return redirect(url_for('dashboard'))
+
+@app.route('/toggle_auftrag/<int:auftrag_id>', methods=['POST'])
+def toggle_auftrag(auftrag_id):
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    
+    auftrag = Auftrag.query.get_or_404(auftrag_id)
+    if auftrag.author.id != session['user_id']:
+        return "Nicht autorisiert", 403
+        
+    # Schalte den Status um (von True zu False und umgekehrt)
+    auftrag.aktiv = not auftrag.aktiv
+    db.session.commit()
+    
     return redirect(url_for('dashboard'))
 
 # --- 6. Initialisierung ---
