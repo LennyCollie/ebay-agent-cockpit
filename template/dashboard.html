@@ -71,7 +71,8 @@
             <tbody>
                      
 <tbody>
-   {% for auftrag in user.auftraege|sort(attribute='id', reverse=True) %}
+ {% for auftrag in user.auftraege|sort(attribute='id', reverse=True) %}
+    <!-- Hauptzeile für den Suchauftrag -->
     <tr class="auftrag-row">
         <td><strong>{{ auftrag.name }}</strong></td>
         <td>{{ auftrag.keywords }}</td>
@@ -82,24 +83,30 @@
             </form>
         </td>
     </tr>
-    <!-- NEU: Zeige die letzten 5 Funde für diesen Auftrag an -->
+    
+    <!-- NEU: Der Block, der die Funde für diesen Auftrag anzeigt -->
     {% if auftrag.funde %}
+        <!-- Kopfzeile für die Funde -->
         <tr class="fund-header-row">
-            <td colspan="4"><strong>Letzte Funde für diesen Auftrag:</strong></td>
+            <td colspan="3"><strong>Letzte Funde für diesen Auftrag:</strong></td>
+            <td><strong>Preis</strong></td>
         </tr>
-        {% for fund in auftrag.funde|sort(attribute='timestamp', reverse=True) %}
+        <!-- Schleife durch die letzten 5 Funde, sortiert nach dem neuesten zuerst -->
+        {% for fund in auftrag.funde|sort(attribute='timestamp', reverse=True)|list|truncate(5) %}
         <tr class="fund-row">
-            <td colspan="3"><a href="{{ fund.item_url }}" target="_blank">{{ fund.title }}</a></td>
-            <td><strong>{{ fund.price }}</strong></td>
+            <td colspan="3"><a href="{{ fund.item_url }}" target="_blank" title="{{ fund.title }}">{{ fund.title }}</a></td>
+            <td>{{ fund.price }}</td>
         </tr>
         {% endfor %}
     {% else %}
+        <!-- Nachricht, wenn noch keine Funde da sind -->
         <tr class="fund-row">
             <td colspan="4"><em>Für diesen Auftrag wurden noch keine neuen Artikel gefunden.</em></td>
         </tr>
     {% endif %}
 
     {% else %}
+    <!-- Nachricht, wenn der User gar keine Aufträge hat -->
     <tr>
         <td colspan="4">Du hast noch keine Suchaufträge erstellt.</td>
     </tr>
