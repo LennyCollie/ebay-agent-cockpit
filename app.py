@@ -216,14 +216,47 @@ def logout():
 @app.route('/add', methods=['POST'])
 def neuer_auftrag():
     if not session.get('logged_in'): return redirect(url_for('login'))
+    
     user = User.query.get(session['user_id'])
+    
+    # Paywall-Logik (bleibt unverändert)
     limit_free_plan = 2
     if user.plan == 'free' and len(user.auftraege) >= limit_free_plan:
         flash(f"Limit von {limit_free_plan} Auftraegen erreicht. Bitte upgraden!")
         return redirect(url_for('upgrade_seite'))
-    neuer_auftrag = Auftrag(name=request.form.get('name'), keywords=request.form.get('keywords'), filter=request.form.get('filter'), user_id=session['user_id'])
+    
+    # === NEUE LOGIK: Baue den Filter-String dynamisch zusammen ===
+    name = request.form.get('name')
+    keywords = request.form.get('keywords')
+    min_price = request.form.get('min_price')
+    max_price = request.form.get('max_price')
+    condition_new = request.form.get('condition_new') # Gibt 'true' oder None zurück
+
+    filter_teile = []
+    
+    # Preis-Filter
+    if min_price or max_price:
+        price_filter = f"price:[{min_price or ''}..{max_price or ''}]"
+        filter_teile.append(price_filter)
+        filter_teile.append("priceCurrency:EUR")
+
+    # Zustands-Filter
+    if condition_new:
+        filter_teile.append("conditions:{NEW}")
+        
+    # Setze die Filter-Teile zu einem String zusammen
+    final_filter = ",".join(filter_teile)
+    # === ENDE NEUE LOGIK ===
+
+    neuer_auftrag = Auftrag(
+        name=name,
+        keywords=keywords,
+        filter=final_filter, # Wir speichern den fertigen Filter-String
+        user_id=session['user_id']
+    )
     db.session.add(neuer_auftrag)
     db.session.commit()
+    
     flash("Neuer Suchauftrag erfolgreich hinzugefuegt!")
     return redirect(url_for('dashboard'))
 
