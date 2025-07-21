@@ -34,6 +34,10 @@
 .fund-row td { background-color: #f8f9fa; border-bottom: 1px solid #eee; }
 .fund-row a { color: #212529; text-decoration: none; }
 .fund-row a:hover { text-decoration: underline; color: #0d6efd; }
+          .form-row { display: flex; justify-content: space-between; }
+.form-group-half { width: 48%; }
+.form-group-checkbox { display: flex; align-items: center; margin-bottom: 15px; }
+.form-group-checkbox input { width: auto; margin-right: 10px; }
     </style>
 </head>
 <body>
@@ -47,19 +51,34 @@
         <div class="form-container">
             <h2>Neuen Suchauftrag hinzufügen</h2>
             <form method="post" action="{{ url_for('neuer_auftrag') }}">
-                <div class="form-group">
-                    <label for="name">Name des Auftrags:</label>
-                    <input type="text" id="name" name="name" required placeholder="z.B. Seltene Grafikkarte">
-                </div>
-                <div class="form-group">
-                    <label for="keywords">Suchbegriffe (Keywords):</label>
-                    <input type="text" id="keywords" name="keywords" required placeholder="z.B. RTX 4090 gebraucht">
-                </div>
-                <div class="form-group">
-                    <label for="filter">Filter (optional):</label>
-                    <input type="text" id="filter" name="filter" placeholder="z.B. price:[..1000],priceCurrency:EUR">
-                </div>
-                <input type="submit" value="Auftrag Hinzufügen" class="btn-add">
+    <div class="form-group">
+        <label for="name">Name des Auftrags:</label>
+        <input type="text" id="name" name="name" required placeholder="z.B. Seltene Grafikkarte">
+    </div>
+    <div class="form-group">
+        <label for="keywords">Suchbegriffe (Keywords):</label>
+        <input type="text" id="keywords" name="keywords" required placeholder="z.B. RTX 4090 gebraucht">
+    </div>
+    
+    <!-- Neue Preis-Felder -->
+    <div class="form-row">
+        <div class="form-group-half">
+            <label for="min_price">Minimal-Preis (€):</label>
+            <input type="number" id="min_price" name="min_price" placeholder="z.B. 100">
+        </div>
+        <div class="form-group-half">
+            <label for="max_price">Maximal-Preis (€):</label>
+            <input type="number" id="max_price" name="max_price" placeholder="z.B. 500">
+        </div>
+    </div>
+
+    <!-- Neue Checkbox für Zustand -->
+    <div class="form-group-checkbox">
+        <input type="checkbox" id="condition_new" name="condition_new" value="true">
+        <label for="condition_new">Nur neue Artikel suchen</label>
+    </div>
+
+    <input type="submit" value="Auftrag Hinzufügen" class="btn-add">
             </form>
         </div>
 
