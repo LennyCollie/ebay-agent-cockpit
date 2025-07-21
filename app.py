@@ -31,6 +31,13 @@ app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+# --- 2. Agenten Konfiguration ---
+MEMORY_FILE = "gesehene_artikel.json"
+MY_APP_ID = os.getenv("EBAY_APP_ID")
+MY_CERT_ID = os.getenv("EBAY_CERT_ID")
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+
 # --- 3. Datenbank Modelle ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
