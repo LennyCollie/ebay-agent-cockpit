@@ -329,3 +329,16 @@ if os.environ.get('GUNICORN_PID'):
     scheduler.add_job(agenten_job, 'interval', minutes=10)
     scheduler.start()
     print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
+
+# === INITIALISIERUNG ===
+# Erstellt die DB-Tabellen, falls sie noch nicht existieren.
+with app.app_context():
+    db.create_all()
+
+# Dieser Block stellt sicher, dass der Wecker nur EINMAL im Hauptprozess
+# des Gunicorn-Servers gestartet wird und nicht in jedem Web-Worker.
+if os.environ.get('GUNICORN_PID'):
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(agenten_job, 'interval', minutes=10)
+    scheduler.start()
+    print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
