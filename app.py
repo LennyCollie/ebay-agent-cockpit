@@ -39,7 +39,7 @@ MY_APP_ID = os.getenv("EBAY_APP_ID")
 MY_CERT_ID = os.getenv("EBAY_CERT_ID")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-
+stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 # --- Stripe Konfiguration ---
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
@@ -337,6 +337,58 @@ def make_me_premium():
     else:
         flash("Fehler: Benutzer nicht gefunden.")
         
+    return redirect(url_for('dashboard'))
+
+    # --- NEUE STRIPE ROUTEN ---
+@app.route('/create-checkout-session', methods=['POST'])
+def create_checkout_session():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            line_items=[{'price': os.getenv('STRIPE_PRICE_ID'), 'quantity': 1}],
+            mode='subscription',
+            client_reference_id=session['user_id'],
+            success_url=url_for('success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url=url_for('cancel', _external=True),
+        )
+    except Exception as e:
+        # Im Fehlerfall ist es gut, die Fehlermeldung auszugeben, um sie zu sehen
+        print(f"Stripe Error: {str(e)}")
+        flash("Etwas ist beim Starten der Bezahlung schiefgelaufen.")
+        return redirect(url_for('upgrade_seite'))
+        
+    return redirect(checkout_session.url, code=303)
+
+@app.route('/success')
+def success():
+    session_id = request.args.get('session_id')
+    try:
+        checkout_session = stripe.checkout.Session.retrieve(session_id)
+        user_id = int(checkout_session.client_reference_id)
+        user = User.query.get(user_id)
+        
+        if user:
+            user.plan = 'premium'
+            db.session.commit()
+            
+            # Wichtig: Session erneuern nach dem Upgrade
+            session.clear()
+            session['logged_in'] = True
+            session['user_id'] = user.id
+            
+            flash("Upgrade erfolgreich! Willkommen im Premium-Club.")
+        else:
+            flash("Fehler: Der Benutzer für diese Zahlung konnte nicht gefunden werden.")
+    except Exception as e:
+        print(f"Success-Route Error: {str(e)}")
+        flash("Es gab ein Problem bei der Verarbeitung deines Upgrades.")
+
+    return redirect(url_for('dashboard'))
+
+@app.route('/cancel')
+def cancel():
+    flash("Die Zahlung wurde abgebrochen. Du bist weiterhin im kostenlosen Plan.")
     return redirect(url_for('dashboard'))
 
 # --- 6. Initialisierung ---
