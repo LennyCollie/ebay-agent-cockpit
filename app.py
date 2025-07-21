@@ -379,7 +379,26 @@ if os.environ.get('GUNICORN_PID'):
     scheduler.start()
     print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
 
-# === INITIALISIERUNG ===
+@app.route('/api/get_all_jobs')
+def get_all_jobs():
+    # Hier könnte man später einen geheimen API-Schlüssel einbauen
+    # Für den Moment ist die URL selbst unser "Passwort"
+    
+    alle_auftraege = Auftrag.query.all()
+    
+    # Wir formatieren die Daten so, wie unser Agent sie erwartet
+    auftragsliste_fuer_agent = []
+    for auftrag in alle_auftraege:
+        auftragsliste_fuer_agent.append({
+            "name": auftrag.name,
+            "keywords": auftrag.keywords,
+            "filter": auftrag.filter,
+            "user_email": auftrag.author.email # HIER DIE NEUE ZEILE!
+        })
+        
+    # Wir geben die Liste als sauberen JSON-Text zurück
+    return jsonify(auftragsliste_fuer_agent)
+
 # Erstellt die DB-Tabellen, falls sie noch nicht existieren.
 with app.app_context():
     db.create_all()
