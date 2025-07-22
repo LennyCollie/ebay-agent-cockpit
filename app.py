@@ -383,7 +383,7 @@ scheduler = BackgroundScheduler(daemon=True)
 scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10, id='agenten_job_001', replace_existing=True)
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
-print(">>> APScheduler (Wecker) wurde initialisiert und gestartet.")
+
         
         print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
 
