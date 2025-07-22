@@ -370,27 +370,20 @@ if os.environ.get('GUNICORN_PID'):
     print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
 
 # === INITIALISIERUNG ===
-def init_app(app_instance):
-    """Eine saubere Funktion, um alles zu initialisieren."""
-    with app_instance.app_context():
-        db.create_all()
-        print(">>> Datenbank-Tabellen sind bereit.")
+with app.app_context():
+    db.create_all()
 
-    # Starte den Wecker nur, wenn wir in einem echten Gunicorn-Prozess sind
-    if os.environ.get('GUNICORN_PID'):
-        scheduler = BackgroundScheduler(daemon=True)
-        # Gib dem Job eine ID, um sicherzustellen, dass er nur einmal existiert
-        scheduler.add_job(
-            agenten_job, 
-            'interval', 
-            minutes=10, 
-            id='agenten_job_001', 
-            replace_existing=True
-        )
-        scheduler.start()
-        
-        # Stellt sicher, dass der Wecker beim Beenden der App sauber heruntergefahren wird
-        atexit.register(lambda: scheduler.shutdown())
+# Wrapper-Funktion, damit der Job den App-Kontext hat
+def agenten_job_wrapper():
+    with app.app_context():
+        agenten_job()
+
+# Konfiguriere und starte den Wecker
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10, id='agenten_job_001', replace_existing=True)
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
+print(">>> APScheduler (Wecker) wurde initialisiert und gestartet.")
         
         print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
 
