@@ -6,12 +6,14 @@ import requests
 import smtplib
 import urllib.parse
 import stripe
+import atexit
 from email.mime.text import MIMEText
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from apscheduler.schedulers.background import BackgroundScheduler
+
 
 # --- 1. App & Datenbank Konfiguration ---
 app = Flask(__name__, template_folder='template')
@@ -368,45 +370,29 @@ if os.environ.get('GUNICORN_PID'):
     print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
 
 # === INITIALISIERUNG ===
-# Erstellt die DB-Tabellen, falls sie noch nicht existieren.
-with app.app_context():
-    db.create_all()
+def init_app(app_instance):
+    """Eine saubere Funktion, um alles zu initialisieren."""
+    with app_instance.app_context():
+        db.create_all()
+        print(">>> Datenbank-Tabellen sind bereit.")
 
-
-if os.environ.get('GUNICORN_PID'):
-    scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(agenten_job, 'interval', minutes=10)
-    scheduler.start()
-    print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
-
-@app.route('/api/get_all_jobs')
-def get_all_jobs():
-    # Hier könnte man später einen geheimen API-Schlüssel einbauen
-    # Für den Moment ist die URL selbst unser "Passwort"
-    
-    alle_auftraege = Auftrag.query.all()
-    
-    # Wir formatieren die Daten so, wie unser Agent sie erwartet
-    auftragsliste_fuer_agent = []
-    for auftrag in alle_auftraege:
-        auftragsliste_fuer_agent.append({
-            "name": auftrag.name,
-            "keywords": auftrag.keywords,
-            "filter": auftrag.filter,
-            "user_email": auftrag.author.email # HIER DIE NEUE ZEILE!
-        })
+    # Starte den Wecker nur, wenn wir in einem echten Gunicorn-Prozess sind
+    if os.environ.get('GUNICORN_PID'):
+        scheduler = BackgroundScheduler(daemon=True)
+        # Gib dem Job eine ID, um sicherzustellen, dass er nur einmal existiert
+        scheduler.add_job(
+            agenten_job, 
+            'interval', 
+            minutes=10, 
+            id='agenten_job_001', 
+            replace_existing=True
+        )
+        scheduler.start()
         
-    # Wir geben die Liste als sauberen JSON-Text zurück
-    return jsonify(auftragsliste_fuer_agent)
+        # Stellt sicher, dass der Wecker beim Beenden der App sauber heruntergefahren wird
+        atexit.register(lambda: scheduler.shutdown())
+        
+        print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
 
-# Erstellt die DB-Tabellen, falls sie noch nicht existieren.
-with app.app_context():
-    db.create_all()
-
-# Dieser Block stellt sicher, dass der Wecker nur EINMAL im Hauptprozess
-# des Gunicorn-Servers gestartet wird und nicht in jedem Web-Worker.
-if os.environ.get('GUNICORN_PID'):
-    scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(agenten_job, 'interval', minutes=10)
-    scheduler.start()
-    print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
+# Rufe die Initialisierung auf, wenn die Datei geladen wird
+init_app(app)
