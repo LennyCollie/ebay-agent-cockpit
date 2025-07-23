@@ -209,6 +209,7 @@ def logout():
 def neuer_auftrag():
     if not session.get('logged_in'): return redirect(url_for('login'))
     neuer_auftrag = Auftrag(name=request.form.get('name'), keywords=request.form.get('keywords'), filter=request.form.get('filter'), user_id=session['user_id'])
+    aktiv=True
     db.session.add(neuer_auftrag)
     db.session.commit()
     return redirect(url_for('dashboard'))
