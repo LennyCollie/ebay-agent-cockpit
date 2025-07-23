@@ -359,13 +359,19 @@ def toggle_auftrag(auftrag_id):
 with app.app_context():
     db.create_all()
 
+# Wrapper-Funktion, die dem Job den Datenbank-Kontext gibt
 def agenten_job_wrapper():
     with app.app_context():
         agenten_job()
 
+# Starte den Wecker im Hauptprozess
 if os.environ.get('GUNICORN_PID'):
     scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10)
+    scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10, id='agenten_job_001', replace_existing=True)
     scheduler.start()
+    
+    import atexit
+    atexit.register(lambda: scheduler.shutdown())
+    
     print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
 
