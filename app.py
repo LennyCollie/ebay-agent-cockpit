@@ -42,6 +42,104 @@ class User(db.Model):
     plan = db.Column(db.String(50), nullable=False, default='free')
     auftraege = db.relationship('Auftrag', backref='author', lazy=True, cascade="all, delete-orphan")
 
+# --- 4. Agenten Funktionen ---
+def lade_gesehene_artikel():
+    try:
+        with open(MEMORY_FILE, 'r') as f: return json.load(f)
+    except: return {}
+
+def speichere_gesehene_artikel(artikel_daten):
+    with open(MEMORY_FILE, 'w') as f: json.dump(artikel_daten, f)
+
+def get_oauth_token():
+    print("AGENT: Hole Zugangsticket...")
+    if not all([MY_APP_ID, MY_CERT_ID]):
+        print("AGENT FEHLER: eBay Keys sind nicht konfiguriert.")
+        return None
+    url = "https://api.ebay.com/identity/v1/oauth2/token"
+    headers = {'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Basic ' + base64.b64encode(f"{MY_APP_ID}:{MY_CERT_ID}".encode()).decode()}
+    body = {'grant_type': 'client_credentials', 'scope': 'https://api.ebay.com/oauth/api_scope'}
+    try:
+        response = requests.post(url, headers=headers, data=body)
+        response.raise_for_status()
+        print("AGENT: ERFOLG! Token erhalten.")
+        return response.json().get('access_token')
+    except Exception as e:
+        print(f"AGENT FEHLER beim Holen des Tokens: {e}")
+        return None
+
+def sende_benachrichtigungs_email(neue_funde, auftrag):
+    recipient_email = auftrag.author.email
+    auftrags_name = auftrag.name
+    print(f"AGENT INFO: Sende E-Mail fuer '{auftrags_name}' an {recipient_email}...")
+    email_body = f"Hallo,\n\nfuer deinen Suchauftrag '{auftrags_name}' wurden {len(neue_funde)} neue Artikel gefunden:\n\n"
+    for item in neue_funde:
+        email_body += f"Titel: {item['title']}\nPreis: {item['price']}\nLink: {item['itemWebUrl']}\n" + "-"*20 + "\n"
+    betreff = f"{len(neue_funde)} neue eBay Artikel fuer '{auftrags_name}' gefunden!"
+    msg = MIMEText(email_body, 'plain', 'utf-8')
+    msg['Subject'] = betreff
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = recipient_email
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, EMAIL_PASSWORD)
+        server.sendmail(SENDER_EMAIL, recipient_email, msg.as_string())
+        server.quit()
+        print("AGENT: ERFOLG! E-Mail wurde versendet.")
+    except Exception as e:
+        print(f"AGENT FEHLER beim Senden der E-Mail: {e}")
+
+def search_items(token, auftrag, gesehene_ids_fuer_suche):
+    print(f"AGENT: Fuehre Auftrag aus: '{auftrag.name}'")
+    keywords = auftrag.keywords
+    filters = auftrag.filter
+    params = {'q': urllib.parse.quote(keywords)}
+    if filters:
+        params['filter'] = urllib.parse.quote(filters)
+    url = f"https://api.ebay.com/buy/browse/v1/item_summary/search?{urllib.parse.urlencode(params)}&limit=20"
+    headers = {'Authorization': f'Bearer {token}', 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_DE'}
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        results = response.json()
+        if results.get('total', 0) > 0:
+            neue_funde_details = []
+            for item in results.get('itemSummaries', []):
+                item_id = item.get('itemId')
+                if item_id and item_id not in gesehene_ids_fuer_suche:
+                    # In dieser Version speichern wir Funde noch nicht in der DB, nur im Gedächtnis
+                    details = {'title': item.get('title', 'N/A'), 'price': item.get('price', {}).get('value', 'N/A') + " " + item.get('price', {}).get('currency', ''), 'itemWebUrl': item.get('itemWebUrl', '#')}
+                    neue_funde_details.append(details)
+                    gesehene_ids_fuer_suche.add(item_id)
+            if neue_funde_details:
+                sende_benachrichtigungs_email(neue_funde_details, auftrag)
+    except Exception as e:
+        print(f"AGENT FEHLER bei der Suche: {e}")
+    return gesehene_ids_fuer_suche
+
+def agenten_job():
+    with app.app_context():
+        print("\n" + "="*50)
+        print(f"AGENT JOB STARTET ({time.ctime()})")
+        print("="*50)
+        alle_gesehenen_artikel = lade_gesehene_artikel()
+        access_token = get_oauth_token()
+        if access_token:
+            alle_auftraege = Auftrag.query.all()
+            print(f"AGENT: {len(alle_auftraege)} Auftraege in der Datenbank gefunden.")
+            if not alle_auftraege:
+                print("AGENT: Keine Auftraege zum Verarbeiten.")
+            else:
+                for auftrag in alle_auftraege:
+                    gedaechtnis_schluessel = f"{auftrag.author.email}_{auftrag.name}"
+                    ids_fuer_diesen_auftrag = set(alle_gesehenen_artikel.get(gedaechtnis_schluessel, []))
+                    neue_ids = search_items(access_token, auftrag, ids_fuer_diesen_auftrag)
+                    alle_gesehenen_artikel[gedaechtnis_schluessel] = list(neue_ids)
+                    time.sleep(2)
+        speichere_gesehene_artikel(alle_gesehenen_artikel)
+        print(f"AGENT JOB BEENDET ({time.ctime()})")
+
 class Auftrag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
@@ -368,16 +466,20 @@ if os.environ.get('GUNICORN_PID'):
     print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
 
 # === INITIALISIERUNG ===
-# Erstellt die DB-Tabellen, falls sie noch nicht existieren.
+
 with app.app_context():
     db.create_all()
 
+def agenten_job_wrapper():
+    with app.app_context():
+        agenten_job()
 
 if os.environ.get('GUNICORN_PID'):
     scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(agenten_job, 'interval', minutes=10)
+    scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10, id='agenten_job_001', replace_existing=True)
     scheduler.start()
     print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
+
 
 @app.route('/api/get_all_jobs')
 def get_all_jobs():
