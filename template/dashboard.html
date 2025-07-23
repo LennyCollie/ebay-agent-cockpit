@@ -1,4 +1,3 @@
-      
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -38,9 +37,6 @@
 .form-group-half { width: 48%; }
 .form-group-checkbox { display: flex; align-items: center; margin-bottom: 15px; }
 .form-group-checkbox input { width: auto; margin-right: 10px; }
-          .btn-pause { background-color: #ffc107; }
-.btn-resume { background-color: #17a2b8; }
-.inaktiv td { background-color: #f8f9fa; color: #6c757d; font-style: italic; }
     </style>
 </head>
 <body>
@@ -100,20 +96,14 @@
 <tbody>
  {% for auftrag in user.auftraege|sort(attribute='id', reverse=True) %}
     <!-- Hauptzeile für den Suchauftrag -->
-    <tr class="auftrag-row {{ 'inaktiv' if not auftrag.aktiv }}">
+    <tr class="auftrag-row">
         <td><strong>{{ auftrag.name }}</strong></td>
         <td>{{ auftrag.keywords }}</td>
         <td>{{ auftrag.filter if auftrag.filter else 'Keine' }}</td>
         <td>
-            <!-- Der neue Pausieren/Aktivieren Button -->
-    <form method="post" action="{{ url_for('toggle_auftrag', auftrag_id=auftrag.id) }}" style="display:inline; margin-right: 5px;">
-         <input type="submit" value="{{ 'Pausieren' if auftrag.aktiv else 'Aktivieren' }}" class="{{ 'btn-pause' if auftrag.aktiv else 'btn-resume' }}">
-    </form>
-    
-    <!-- Der alte Löschen-Button -->
-    <form method="post" action="{{ url_for('loesche_auftrag', auftrag_id=auftrag.id) }}" style="display:inline;">
-         <input type="submit" value="Löschen" class="btn-delete">
-    </form>
+            <form method="post" action="{{ url_for('loesche_auftrag', auftrag_id=auftrag.id) }}" style="display:inline;">
+                 <input type="submit" value="Löschen" class="btn-delete">
+            </form>
         </td>
     </tr>
     
@@ -145,8 +135,3 @@
     </tr>
     {% endfor %}
 </tbody>
-    
-
-    
-    
-    
