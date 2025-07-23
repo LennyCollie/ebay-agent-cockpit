@@ -222,6 +222,21 @@ def loesche_auftrag(auftrag_id):
     db.session.commit()
     return redirect(url_for('dashboard'))
 
+@app.route('/toggle_auftrag/<int:auftrag_id>', methods=['POST'])
+def toggle_auftrag(auftrag_id):
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+        
+    auftrag = Auftrag.query.get_or_404(auftrag_id)
+    if auftrag.author.id != session['user_id']:
+        return "Nicht autorisiert", 403
+        
+    # Schaltet den Status von True auf False und umgekehrt
+    auftrag.aktiv = not auftrag.aktiv
+    db.session.commit()
+    
+    return redirect(url_for('dashboard'))
+
 # === INITIALISIERUNG ===
 with app.app_context():
     db.create_all()
