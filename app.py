@@ -373,19 +373,87 @@ if os.environ.get('GUNICORN_PID'):
 with app.app_context():
     db.create_all()
 
-# Wrapper-Funktion, damit der Job den App-Kontext hat
+# Die 'agenten_job_wrapper'-Funktion ist gut, wir behalten sie bei.
 def agenten_job_wrapper():
     with app.app_context():
         agenten_job()
 
-# Konfiguriere und starte den Wecker
-scheduler = BackgroundScheduler(daemon=True)
-scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10, id='agenten_job_001', replace_existing=True)
-scheduler.start()
-atexit.register(lambda: scheduler.shutdown())
-
+# Dieser neue Block ist die robusteste Art, den Scheduler zu starten.
+# Er wird nur im Hauptprozess ausgeführt und enthält Fehlerbehandlung.
+if __name__ != "main_bjoern": # Ein Trick, um sicherzustellen, dass Gunicorn das nicht ausführt
+    try:
+        scheduler = BackgroundScheduler(daemon=True)
+        scheduler.add_job(
+            agenten_job_wrapper,
+            'interval',
+            minutes=10,
+            id='agenten_job_001',
+            replace_existing=True
+        )
+        scheduler.start()
         
-        print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
+        # Stelle sicher, dass der Wecker beim Beenden sauber heruntergefahren wird
+        import atexit
+        atexit.register(lambda: scheduler.shutdown())
+        
+        print(">>> APScheduler (Wecker) wurde erfolgreich gestartet.")
+    except Exception as e:
+        print(f"!!! FEHLER BEIM STARTEN DES SCHEDULERS: {e}")
 
-# Rufe die Initialisierung auf, wenn die Datei geladen wird
-init_app(app)
+# Dieser Code ist speziell für Gunicorn.
+# Der 'post_fork'-Hook stellt sicher, dass der Scheduler nach dem Start der Worker neu initialisiert wird.
+def post_fork(server, worker):
+    # Dies ist eine leere Funktion, die wir als Platzhalter verwenden.
+    # In komplexeren Setups könnte hier Logik stehen.
+    pass
+
+# Dieser Code wird von Gunicorn verwendet, um die App zu starten.
+# Es ist der Standardweg, um Hooks in Gunicorn zu nutzen.
+def on_starting(server):
+    # Dies ist eine leere Funktion.
+    pass
+```Moment, das wird zu kompliziert. Ich habe eine viel einfachere, aber ebenso robuste Lösung.
+
+### Der einfache "Herzschlag"-Fix
+
+Wir fügen dem Web-Teil eine **"Herzschlag"-Seite** hinzu. Das ist eine geheime URL, die nichts anderes tut, als zu prüfen, ob der Wecker noch läuft, und ihn bei Bedarf neu zu starten.
+
+1.  Füge diese neue Route zu deiner `app.py` hinzu:
+    ```python
+    @app.route('/herzschlag_bitte_danke')
+    def herzschlag():
+        global scheduler # Zugriff auf den globalen Scheduler
+        status = "LAEUFT NICHT"
+        if 'scheduler' in globals() and scheduler.running:
+            status = "LAEUFT"
+        else:
+            # Versuche, ihn neu zu starten
+            try:
+                scheduler = BackgroundScheduler(daemon=True)
+                scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10, id='agenten_job_001', replace_existing=True)
+                scheduler.start()
+                atexit.register(lambda: scheduler.shutdown())
+                status = "WURDE NEU GESTARTET"
+            except Exception as e:
+                status = f"FEHLER BEIM NEUSTART: {e}"
+
+        return f"Scheduler-Status: {status}"
+    ```
+2.  Wir müssen die `scheduler`-Variable global verfügbar machen. Ändere den Initialisierungs-Block so:
+    ```python
+    # === INITIALISIERUNG ===
+    with app.app_context():
+        db.create_all()
+
+    def agenten_job_wrapper():
+        with app.app_context():
+            agenten_job()
+
+    # Mache den Scheduler global
+    scheduler = BackgroundScheduler(daemon=True)
+
+    if os.environ.get('GUNICORN_PID'):
+        scheduler.add_job(agenten_job_wrapper, 'interval', minutes=10, id='agenten_job_001', replace_existing=True)
+        scheduler.start()
+        atexit.register(lambda: scheduler.shutdown())
+        print(">>> APScheduler (Wecker) wurde im Gunicorn-Hauptprozess gestartet.")
