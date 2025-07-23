@@ -47,6 +47,7 @@ class Auftrag(db.Model):
     filter = db.Column(db.String(300), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     funde = db.relationship('Fund', backref='auftrag', lazy=True, cascade="all, delete-orphan")
+    aktiv = db.Column(db.Boolean, default=True, nullable=False)
 
 class Fund(db.Model):
     id = db.Column(db.Integer, primary_key=True)
