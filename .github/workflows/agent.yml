@@ -1,5 +1,5 @@
-- name: Check public IP
-  run: curl https://ifconfig.me
+name: Check public IP
+run: curl https://ifconfig.me
 name: Run Agent
 
 on:
