@@ -10,7 +10,6 @@ from datetime import datetime
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 
-# === 1. App & Datenbank-Setup (wird nur für den Kontext benötigt) ===
 app = Flask(__name__)
 database_url = os.getenv('DATABASE_URL')
 if database_url and database_url.startswith("postgres://"):
@@ -21,14 +20,12 @@ app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- 2. Konfiguration ---
 MEMORY_FILE = "gesehene_artikel.json"
 MY_APP_ID = os.getenv("EBAY_APP_ID")
 MY_CERT_ID = os.getenv("EBAY_CERT_ID")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
-# --- 3. Datenbank-Modelle (müssen exakt wie in app.py sein) ---
 class User(db.Model):
     __tablename__ = 'user'
     id = db.Column(db.Integer, primary_key=True)
@@ -46,7 +43,6 @@ class Auftrag(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     aktiv = db.Column(db.Boolean, default=True, nullable=False)
 
-# --- 4. Agenten Funktionen ---
 def lade_gesehene_artikel():
     try:
         with open(MEMORY_FILE, 'r') as f: return json.load(f)
@@ -119,7 +115,6 @@ def search_items(token, auftrag, gesehene_ids_fuer_suche):
         print(f"AGENT FEHLER bei der Suche: {e}")
     return neue_funde_details, gesehene_ids_fuer_suche
 
-# --- 5. Haupt-Job ---
 def agenten_job():
     with app.app_context():
         print(f"\nAGENT JOB STARTET ({time.ctime()})")
@@ -139,13 +134,8 @@ def agenten_job():
         speichere_gesehene_artikel(alle_gesehenen_artikel)
         print(f"AGENT JOB BEENDET ({time.ctime()})")
 
-# --- 6. Endlosschleife ---
 if __name__ == '__main__':
-    print(">>> Agenten-Dienst wird gestartet. Erste Suche startet in 10 Sekunden...")
-    time.sleep(10)
-    
-    while True:
-        agenten_job()
-        wartezeit_in_minuten = 10
-        print(f"\nAGENT: SUCHLAUF BEENDET. Naechster Lauf in {wartezeit_in_minuten} Minuten.")
-        time.sleep(wartezeit_in_minuten * 60)
+    print(">>> Agenten-Dienst startet einmalig...")
+    agenten_job()
+    print(">>> Fertig. Script endet.")
+
