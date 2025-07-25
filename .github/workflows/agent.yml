@@ -2,29 +2,26 @@ name: Run Agent
 
 on:
   schedule:
-    - cron: "*/10 * * * *"  # Alle 10 Minuten automatisch
-  workflow_dispatch:        # Manuell startbar
+    - cron: "*/10 * * * *"    # Alle 10 Minuten
+  workflow_dispatch:          # Manuell startbar im GitHub-UI
 
 jobs:
   run-agent:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Print public IP of runner (für DigitalOcean)
-        run: curl https://ifconfig.me
 
       - name: Run Agent Script
         env:
