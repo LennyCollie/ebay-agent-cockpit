@@ -4,15 +4,14 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import stripe
+from dotenv import load_dotenv
 
 # --- dotenv laden ---
-from dotenv import load_dotenv
 load_dotenv()
 
 # --- 1. App & Datenbank Konfiguration ---
 app = Flask(__name__, template_folder='template')
 app.secret_key = os.getenv('SECRET_KEY')
-
 
 database_url = os.getenv('DATABASE_URL')
 if database_url and database_url.startswith("postgres://"):
@@ -90,7 +89,7 @@ def login():
         password = request.form.get('password')
         user = User.query.filter_by(email=email).first()
         if not user or not check_password_hash(user.password_hash, password):
-            flash('Bitte ueberpruefe deine Login-Daten.')
+            flash('Bitte überprüfe deine Login-Daten.')
             return redirect(url_for('login'))
         session['logged_in'] = True
         session['user_id'] = user.id
@@ -105,13 +104,14 @@ def logout():
 
 @app.route('/add', methods=['POST'])
 def neuer_auftrag():
-    if not session.get('logged_in'): return redirect(url_for('login'))
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
     user = User.query.get(session['user_id'])
     limit_free_plan = 2
     if user.plan == 'free' and len(user.auftraege) >= limit_free_plan:
-        flash(f"Limit von {limit_free_plan} Auftraegen erreicht. Bitte upgraden!")
+        flash(f"Limit von {limit_free_plan} Aufträgen erreicht. Bitte upgraden!")
         return redirect(url_for('upgrade_seite'))
-    
+
     name = request.form.get('name')
     keywords = request.form.get('keywords')
     min_price = request.form.get('min_price')
@@ -130,12 +130,13 @@ def neuer_auftrag():
     neuer_auftrag = Auftrag(name=name, keywords=keywords, filter=final_filter, user_id=session['user_id'], aktiv=True)
     db.session.add(neuer_auftrag)
     db.session.commit()
-    flash("Neuer Suchauftrag erfolgreich hinzugefuegt!")
+    flash("Neuer Suchauftrag erfolgreich hinzugefügt!")
     return redirect(url_for('dashboard'))
 
 @app.route('/delete/<int:auftrag_id>', methods=['POST'])
 def loesche_auftrag(auftrag_id):
-    if not session.get('logged_in'): return redirect(url_for('login'))
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
     auftrag = Auftrag.query.get_or_404(auftrag_id)
     if auftrag.author.id != session['user_id']:
         return "Nicht autorisiert", 403
@@ -210,7 +211,7 @@ def success():
             session['user_id'] = user.id
             flash("Upgrade erfolgreich! Willkommen im Premium-Club.")
         else:
-            flash("Fehler: Der Benutzer fuer diese Zahlung konnte nicht gefunden werden.")
+            flash("Fehler: Der Benutzer für diese Zahlung konnte nicht gefunden werden.")
     except Exception as e:
         print(f"Success-Route Error: {str(e)}")
         flash("Es gab ein Problem bei der Verarbeitung deines Upgrades.")
@@ -219,11 +220,7 @@ def success():
 @app.route('/cancel')
 def cancel():
     flash("Die Zahlung wurde abgebrochen. Du bist weiterhin im kostenlosen Plan.")
-
-# --- 5. Initialisierung ---
-with app.app_context():
-    db.create_all()
-    
+    return redirect(url_for('dashboard'))
 
 @app.route('/api/get_all_jobs')
 def get_all_jobs():
@@ -239,6 +236,10 @@ def get_all_jobs():
         } for a in jobs
     ]
     return jsonify(daten)
+
+# --- 5. Initialisierung ---
+with app.app_context():
+    db.create_all()
 
 if __name__ == "__main__":
     app.run(debug=False)
