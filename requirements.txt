@@ -6,3 +6,4 @@ Werkzeug
 APScheduler
 psycopg2-binary
 stripe
+python-dotenv
