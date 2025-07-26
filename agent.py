@@ -13,6 +13,8 @@ from flask_sqlalchemy import SQLAlchemy
 # === Setup ===
 app = Flask(__name__)
 db_url = os.getenv('DATABASE_URL')
+from dotenv import load_dotenv
+load_dotenv()
 
 # Fix für alte PostgreSQL-URLs
 if db_url and db_url.startswith("postgres://"):
