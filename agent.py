@@ -125,7 +125,7 @@ def search_items(token, auftrag, seen_ids):
 
 # === Agentenlogik ===
 def run_agent():
-    print(f"\n🕘 Agentenlauf gestartet: {datetime.utcnow()}")
+    print(f"\n🕘 Agentenlauf gestartet: {datetime.now(datetime.UTC)()}")
 
     token = get_ebay_token()
     if not token:
