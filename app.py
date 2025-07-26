@@ -228,7 +228,6 @@ with app.app_context():
 @app.route('/api/get_all_jobs')
 def get_all_jobs():
     jobs = Auftrag.query.filter_by(aktiv=True).all()
-
     daten = [
         {
             "id": a.id,
