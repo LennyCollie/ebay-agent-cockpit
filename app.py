@@ -223,7 +223,7 @@ def cancel():
 # --- 5. Initialisierung ---
 with app.app_context():
     db.create_all()
-    return redirect(url_for('dashboard'))
+    
 
 @app.route('/api/get_all_jobs')
 def get_all_jobs():
