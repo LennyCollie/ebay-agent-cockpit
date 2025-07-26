@@ -219,6 +219,10 @@ def success():
 @app.route('/cancel')
 def cancel():
     flash("Die Zahlung wurde abgebrochen. Du bist weiterhin im kostenlosen Plan.")
+
+# --- 5. Initialisierung ---
+with app.app_context():
+    db.create_all()
     return redirect(url_for('dashboard'))
 
 @app.route('/api/get_all_jobs')
@@ -237,6 +241,5 @@ def get_all_jobs():
     ]
     return jsonify(daten)
 
-# --- 5. Initialisierung ---
-with app.app_context():
-    db.create_all()
+if __name__ == "__main__":
+    app.run(debug=False)
