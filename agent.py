@@ -5,31 +5,30 @@ import base64
 import requests
 import smtplib
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, UTC
 from email.mime.text import MIMEText
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-
-# === Setup ===
-app = Flask(__name__)
-db_url = os.getenv('DATABASE_URL')
 from dotenv import load_dotenv
+
+# === ENV laden ===
 load_dotenv()
 
-# Fix für alte PostgreSQL-URLs
+# === Flask & Datenbank Setup ===
+app = Flask(__name__)
+db_url = os.getenv('DATABASE_URL')
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
-
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# === eBay & Mail Konfiguration ===
+# === Konfiguration ===
 EBAY_APP_ID = os.getenv("EBAY_APP_ID")
 EBAY_CERT_ID = os.getenv("EBAY_CERT_ID")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-MEMORY_FILE = "seen_items.json"
+MEMORY_FILE = "gesehene_artikel.json"
 
 # === Datenbankmodelle ===
 class User(db.Model):
@@ -47,7 +46,7 @@ class Auftrag(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     aktiv = db.Column(db.Boolean, default=True)
 
-# === Hilfsfunktionen ===
+# === Helferfunktionen ===
 def load_seen():
     try:
         with open(MEMORY_FILE, 'r') as f:
@@ -98,10 +97,11 @@ def search_items(token, auftrag, seen_ids):
         "X-EBAY-C-MARKETPLACE-ID": "EBAY_DE"
     }
 
-    query = f"q={urllib.parse.quote(auftrag.keywords)}"
+    params = {"q": auftrag.keywords}
     if auftrag.filter:
-        query += f"&filter={urllib.parse.quote(auftrag.filter)}"
+        params["filter"] = auftrag.filter
 
+    query = urllib.parse.urlencode(params)
     url = f"https://api.ebay.com/buy/browse/v1/item_summary/search?{query}&limit=20"
 
     try:
@@ -123,9 +123,9 @@ def search_items(token, auftrag, seen_ids):
         print(f"❌ Suchfehler: {e}")
         return [], seen_ids
 
-# === Agentenlogik ===
+# === Hauptlogik ===
 def run_agent():
-    print(f"\n🕘 Agentenlauf gestartet: {datetime.now(datetime.UTC)()}")
+    print(f"\n🕘 Agentenlauf gestartet: {datetime.now(UTC)}")
 
     token = get_ebay_token()
     if not token:
@@ -152,8 +152,7 @@ def run_agent():
     save_seen(seen)
     print(f"✅ Agentenlauf beendet\n")
 
-# === Main ===
+# === Startpunkt ===
 if __name__ == "__main__":
     with app.app_context():
         run_agent()
-
