@@ -5,6 +5,8 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import stripe
 from dotenv import load_dotenv
+from flask_migrate import Migrate
+
 
 # --- dotenv laden ---
 load_dotenv()
@@ -21,6 +23,7 @@ if database_url and "sslmode" not in database_url:
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
 # --- 2. Stripe Konfiguration ---
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
@@ -240,6 +243,12 @@ def get_all_jobs():
 # --- 5. Initialisierung ---
 with app.app_context():
     db.create_all()
+
+from flask_script import Manager
+from flask_migrate import MigrateCommand
+
+manager = Manager(app)
+manager.add_command('db', MigrateCommand)
 
 if __name__ == "__main__":
     app.run(debug=False)
