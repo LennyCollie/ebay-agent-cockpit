@@ -7,3 +7,4 @@ APScheduler
 psycopg2-binary
 stripe
 python-dotenv
+email-validator
