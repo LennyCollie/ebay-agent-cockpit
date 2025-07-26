@@ -221,6 +221,22 @@ def cancel():
     flash("Die Zahlung wurde abgebrochen. Du bist weiterhin im kostenlosen Plan.")
     return redirect(url_for('dashboard'))
 
+@app.route('/api/get_all_jobs')
+def get_all_jobs():
+    jobs = Auftrag.query.filter_by(aktiv=True).all()
+
+    daten = [
+        {
+            "id": a.id,
+            "user_id": a.user_id,
+            "name": a.name,
+            "keywords": a.keywords,
+            "filter": a.filter,
+            "aktiv": a.aktiv
+        } for a in jobs
+    ]
+    return jsonify(daten)
+
 # --- 5. Initialisierung ---
 with app.app_context():
     db.create_all()
