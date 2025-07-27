@@ -7,7 +7,6 @@ import stripe
 from dotenv import load_dotenv
 from flask_migrate import Migrate
 
-
 # --- dotenv laden ---
 load_dotenv()
 
@@ -240,9 +239,10 @@ def get_all_jobs():
     ]
     return jsonify(daten)
 
-# --- 5. Initialisierung ---
-with app.app_context():
-    db.create_all()
+# --- Nur beim direkten Ausführen starten ---
+if __name__ == "__main__":
+    app.run(debug=False)
+
 
 
 
