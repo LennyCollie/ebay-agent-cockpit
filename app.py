@@ -26,46 +26,12 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-# --- 2. Models ---
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(100), unique=True)
-    password_hash = db.Column(db.String(100))
-    plan = db.Column(db.String(20), default='free')
-    auftraege = db.relationship('Auftrag', backref='user', lazy=True)
-
-class Auftrag(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100))
-    keywords = db.Column(db.String(100))
-    filter = db.Column(db.String(100))
-    aktiv = db.Column(db.Boolean, default=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-
-# --- 3. Beispielroute ---
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return 'Flask App läuft ✅'
 
-# --- 4. Beispiel API Route ---
-@app.route('/api/get_all_jobs')
-def get_all_jobs():
-    jobs = Auftrag.query.filter_by(aktiv=True).all()
-    daten = [
-        {
-            "id": a.id,
-            "user_id": a.user_id,
-            "name": a.name,
-            "keywords": a.keywords,
-            "filter": a.filter,
-            "aktiv": a.aktiv
-        } for a in jobs
-    ]
-    return jsonify(daten)
-
-# --- 5. Direktes Ausführen ---
 if __name__ == '__main__':
-    app.run(debug=False)
+    app.run(debug=True)
 
 
 
