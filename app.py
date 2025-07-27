@@ -1,55 +1,33 @@
-import os
-from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
-import stripe
-from dotenv import load_dotenv
 from flask_migrate import Migrate
+import os
 
-# --- .env laden ---
-load_dotenv()
-
-# --- App & Datenbank Konfiguration ---
-app = Flask(__name__, template_folder='template')
-app.secret_key = os.getenv('SECRET_KEY')
-
-# --- Datenbank URL ---
-database_url = os.getenv('DATABASE_URL')
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-    if "sslmode" not in database_url:
-        database_url += "?sslmode=require"
-
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///db.sqlite3'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-from flask import Flask, render_template
-
+# Flask-Anwendung initialisieren
 app = Flask(__name__)
 
-# Startseite
-@app.route('/')
-def index():
-    return '✅ Flask App läuft!'
+# Konfiguration über Umgebungsvariable
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("SQLALCHEMY_DATABASE_URI")
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.environ.get("API_SECRET_KEY", "fallback-secret")
 
-# Dashboardseite
-@app.route('/dashboard')
-def dashboard():
-    return render_template('dashboard.html')
-
-# --- Stripe Konfiguration ---
-stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
-
-# --- DB & Migration ---
+# Datenbank und Migration initialisieren
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-# --- Beispielroute ---
+# Beispielmodell für Testzwecke (kann später gelöscht werden)
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+
+    def __repr__(self):
+        return f"<User {self.username}>"
+
+# Routen
 @app.route('/')
 def index():
-    return '✅ Flask App läuft auf Render!'
+    return "✅ Flask App läuft auf Render & Datenbank ist verbunden!"
 
-# --- App nur lokal starten ---
-if __name__ == '__main__':
+# Nur lokal ausführen
+if __name__ == "__main__":
     app.run(debug=True)
