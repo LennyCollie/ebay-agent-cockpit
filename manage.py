@@ -3,7 +3,7 @@ from flask.cli import AppGroup
 from app import app, db
 import click
 
-migrate_cli = AppGroup('db')
+
 
 @app.cli.command("create")
 def create():
