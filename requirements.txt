@@ -9,3 +9,4 @@ stripe
 python-dotenv
 email-validator
 Flask-Migrate
+Flask-Script
