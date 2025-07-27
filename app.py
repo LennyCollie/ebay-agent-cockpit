@@ -7,10 +7,8 @@ import stripe
 from dotenv import load_dotenv
 from flask_migrate import Migrate
 
-# --- dotenv laden ---
 load_dotenv()
 
-# --- 1. App & Datenbank Konfiguration ---
 app = Flask(__name__, template_folder='template')
 app.secret_key = os.getenv('SECRET_KEY')
 
