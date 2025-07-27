@@ -24,6 +24,20 @@ if database_url and database_url.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///db.sqlite3'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+from flask import Flask, render_template
+
+app = Flask(__name__)
+
+# Startseite
+@app.route('/')
+def index():
+    return '✅ Flask App läuft!'
+
+# Dashboardseite
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
+
 # --- Stripe Konfiguration ---
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
