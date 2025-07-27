@@ -239,6 +239,9 @@ def get_all_jobs():
     ]
     return jsonify(daten)
 
+from flask_migrate import Migrate
+migrate = Migrate(app, db)
+
 # --- Nur beim direkten Ausführen starten ---
 if __name__ == "__main__":
     app.run(debug=False)
