@@ -6,92 +6,59 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {
-            font-family: "Segoe UI", sans-serif;
+            font-family: 'Segoe UI', sans-serif;
             margin: 0;
-            background: #f5f7fa;
-            color: #333;
+            padding: 0;
+            background-color: #f7f8fa;
         }
-
         header {
-            background: #0053ba;
+            background-color: #0070f3;
+            padding: 20px;
             color: white;
-            padding: 1rem 2rem;
             text-align: center;
         }
-
-        main {
-            max-width: 900px;
-            margin: 2rem auto;
+        .container {
+            max-width: 960px;
+            margin: 30px auto;
             background: white;
-            padding: 2rem;
+            padding: 30px;
             border-radius: 12px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
-
         h1 {
-            font-size: 2rem;
-            margin-bottom: 1rem;
+            color: #222;
         }
-
-        .button {
-            background-color: #0053ba;
-            color: white;
-            padding: 0.8rem 1.5rem;
-            font-size: 1rem;
+        .btn {
+            background-color: #28a745;
             border: none;
-            border-radius: 6px;
+            color: white;
+            padding: 12px 24px;
+            font-size: 16px;
             cursor: pointer;
-            transition: background 0.3s ease;
-            text-decoration: none;
+            border-radius: 6px;
+            margin-top: 20px;
         }
-
-        .button:hover {
-            background-color: #003f8a;
+        .btn:hover {
+            background-color: #218838;
         }
-
-        .cta {
-            margin-top: 2rem;
-        }
-
-        nav {
-            margin-top: 1.5rem;
-        }
-
-        nav a {
-            margin-right: 1.5rem;
-            text-decoration: none;
-            color: #0053ba;
-            font-weight: bold;
-        }
-
-        nav a:hover {
-            text-decoration: underline;
-        }
-
     </style>
+    <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
 
-    <header>
-        <h1>eBay Agent Cockpit</h1>
-        <p>Dein persönlicher Verkaufsassistent auf eBay</p>
-    </header>
+<header>
+    <h1>eBay Agent Cockpit</h1>
+    <p>Verwalte deine automatisierten Aufträge und Upgrades</p>
+</header>
 
-    <main>
-        <h2>Willkommen zurück!</h2>
-        <p>Starte jetzt deinen Stripe-Testkauf oder gehe zum Kontobereich.</p>
+<div class="container">
+    <h2>Willkommen zurück 👋</h2>
+    <p>Hier kannst du deinen Account upgraden und die Agent-Einstellungen verwalten.</p>
 
-        <div class="cta">
-            <form action="/checkout" method="POST">
-                <button class="button">Stripe Test-Zahlung starten</button>
-            </form>
-        </div>
-
-        <nav>
-            <a href="/login">Login</a>
-            <a href="/register">Registrieren</a>
-        </nav>
-    </main>
+    <form action="/create-checkout-session" method="POST">
+        <button type="submit" class="btn">Jetzt upgraden mit Stripe 💳</button>
+    </form>
+</div>
 
 </body>
 </html>
