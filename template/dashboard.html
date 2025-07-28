@@ -1,70 +1,10 @@
-<h1>Willkommen im eBay Agent Cockpit</h1>
-<p>Dein persönliches Dashboard zur Agentensteuerung</p>
 <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>eBay Agent Cockpit</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body {
-            background: #f7f9fc;
-            font-family: Arial, sans-serif;
-            color: #333;
-            margin: 0;
-            padding: 0;
-        }
-        header {
-            background: #0066cc;
-            color: white;
-            padding: 1rem;
-            text-align: center;
-        }
-        main {
-            padding: 2rem;
-            text-align: center;
-        }
-        h1 {
-            font-size: 2rem;
-        }
-        .button-group {
-            margin-top: 2rem;
-        }
-        a.button {
-            display: inline-block;
-            margin: 1rem;
-            padding: 0.8rem 1.5rem;
-            background-color: #007bff;
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            transition: background 0.3s;
-        }
-        a.button:hover {
-            background-color: #0056b3;
-        }
-        .stripe-form {
-            margin-top: 2rem;
-        }
-    </style>
+    <title>TEST</title>
 </head>
 <body>
-    <header>
-        <h1>Willkommen im eBay Agent Cockpit</h1>
-        <p>Dein persönliches Dashboard zur Agentensteuerung</p>
-    </header>
-    <main>
-        <div class="button-group">
-            <a href="{{ url_for('login') }}" class="button">Login</a>
-            <a href="{{ url_for('register') }}" class="button">Registrieren</a>
-        </div>
-
-        <div class="stripe-form">
-            <form action="{{ url_for('checkout') }}" method="POST">
-                <button type="submit" class="button" style="background-color: green;">Stripe Testzahlung starten</button>
-            </form>
-        </div>
-    </main>
+    <h1>✅ Dashboard geladen!</h1>
 </body>
 </html>
-
