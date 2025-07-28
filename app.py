@@ -32,6 +32,7 @@ def home():
     print(">>> dashboard.html wird geladen")
     return render_template("dashboard.html")
 
+
 # 🧾 Stripe Checkout (Testdemo)
 @app.route("/checkout", methods=["POST"])
 def checkout():
