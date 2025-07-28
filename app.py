@@ -1,76 +1,83 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
-from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
 import os
+import subprocess
+import json
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+import stripe
+from dotenv import load_dotenv
+
+# .env laden
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv('API_SECRET_KEY', 'super-secret')
+app.secret_key = os.getenv("SECRET_KEY", "dev-secret")
 
-# DB-Konfiguration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Stripe konfigurieren
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+stripe_price_id = os.getenv("STRIPE_PRICE_ID")
 
-db = SQLAlchemy(app)
+LOGFILE = "logs/agent_log.txt"
+AUFTRAEGE_FILE = "auftraege.json"
 
-# User-Modell
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(200), nullable=False)
+@app.route("/")
+def index():
+    return redirect(url_for("dashboard"))
 
-# Homepage → Login
-@app.route('/')
-def home():
-    return redirect(url_for('login'))
-
-# Login
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        user = User.query.filter_by(username=request.form['username']).first()
-        if user and check_password_hash(user.password, request.form['password']):
-            session['user_id'] = user.id
-            return redirect(url_for('dashboard'))
-        flash('Login fehlgeschlagen. Bitte prüfen Sie Benutzername und Passwort.')
-    return render_template('login.html')
-
-# Registrierung
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        hashed_pw = generate_password_hash(request.form['password'], method='sha256')
-        new_user = User(
-            username=request.form['username'],
-            email=request.form['email'],
-            password=hashed_pw
-        )
-        db.session.add(new_user)
-        db.session.commit()
-        flash('Registrierung erfolgreich! Jetzt einloggen.')
-        return redirect(url_for('login'))
-    return render_template('register.html')
-
-# Dashboard
-@app.route('/dashboard')
+@app.route("/dashboard")
 def dashboard():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    return render_template('dashboard.html')
+    logs = []
+    auftraege = []
+    is_premium = session.get("premium", False)
 
-# Upgrade-Seite
-@app.route('/upgrade')
-def upgrade():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    return render_template('upgrade.html')
+    if os.path.exists(LOGFILE):
+        with open(LOGFILE, "r", encoding="utf-8") as f:
+            logs = f.readlines()[-10:]
 
-# Logout
-@app.route('/logout')
-def logout():
-    session.pop('user_id', None)
-    return redirect(url_for('login'))
+    if os.path.exists(AUFTRAEGE_FILE):
+        with open(AUFTRAEGE_FILE, "r", encoding="utf-8") as f:
+            auftraege = json.load(f)
 
-# Starten
-if __name__ == '__main__':
+    return render_template("dashboard.html", logs=logs, auftraege=auftraege, is_premium=is_premium)
+
+@app.route("/run-agent", methods=["POST"])
+def run_agent():
+    try:
+        result = subprocess.run(["python", "agent.py"], capture_output=True, text=True)
+        with open(LOGFILE, "a", encoding="utf-8") as log:
+            log.write(result.stdout)
+            log.write(result.stderr)
+        flash("Agent wurde erfolgreich gestartet!", "success")
+    except Exception as e:
+        flash(f"Fehler beim Starten: {str(e)}", "danger")
+    return redirect(url_for("dashboard"))
+
+@app.route("/create-checkout-session", methods=["POST"])
+def create_checkout_session():
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price": stripe_price_id,
+                "quantity": 1,
+            }],
+            mode="subscription",
+            success_url=url_for("success", _external=True),
+            cancel_url=url_for("cancel", _external=True),
+        )
+        return redirect(checkout_session.url, code=303)
+    except Exception as e:
+        flash(f"Stripe-Fehler: {str(e)}", "danger")
+        return redirect(url_for("dashboard"))
+
+@app.route("/success")
+def success():
+    session["premium"] = True
+    flash("Upgrade auf PREMIUM erfolgreich!", "success")
+    return redirect(url_for("dashboard"))
+
+@app.route("/cancel")
+def cancel():
+    flash("Zahlung abgebrochen. Du bist weiterhin im kostenlosen Plan.", "warning")
+    return redirect(url_for("dashboard"))
+
+if __name__ == "__main__":
     app.run(debug=True)
