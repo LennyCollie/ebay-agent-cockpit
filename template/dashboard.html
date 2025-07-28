@@ -1,69 +1,97 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>eBay Agent Cockpit</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="UTF-8">
+    <title>eBay Agent Cockpit</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: "Segoe UI", sans-serif;
+            margin: 0;
+            background: #f5f7fa;
+            color: #333;
+        }
+
+        header {
+            background: #0053ba;
+            color: white;
+            padding: 1rem 2rem;
+            text-align: center;
+        }
+
+        main {
+            max-width: 900px;
+            margin: 2rem auto;
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .button {
+            background-color: #0053ba;
+            color: white;
+            padding: 0.8rem 1.5rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+            text-decoration: none;
+        }
+
+        .button:hover {
+            background-color: #003f8a;
+        }
+
+        .cta {
+            margin-top: 2rem;
+        }
+
+        nav {
+            margin-top: 1.5rem;
+        }
+
+        nav a {
+            margin-right: 1.5rem;
+            text-decoration: none;
+            color: #0053ba;
+            font-weight: bold;
+        }
+
+        nav a:hover {
+            text-decoration: underline;
+        }
+
+    </style>
 </head>
-<body class="bg-gray-100 font-sans leading-normal tracking-normal">
+<body>
 
-  <div class="max-w-4xl mx-auto p-6 mt-8 bg-white rounded-xl shadow-md">
-    <h1 class="text-3xl font-bold text-gray-800 mb-4">📦 eBay Agent Cockpit</h1>
+    <header>
+        <h1>eBay Agent Cockpit</h1>
+        <p>Dein persönlicher Verkaufsassistent auf eBay</p>
+    </header>
 
-    <!-- Flash-Nachrichten -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <ul class="mb-4">
-          {% for category, message in messages %}
-            <li class="p-3 mb-2 rounded bg-{{ 'green' if category == 'success' else 'red' if category == 'danger' else 'yellow' }}-100 text-{{ 'green' if category == 'success' else 'red' if category == 'danger' else 'yellow' }}-800">
-              {{ message }}
-            </li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-    {% endwith %}
+    <main>
+        <h2>Willkommen zurück!</h2>
+        <p>Starte jetzt deinen Stripe-Testkauf oder gehe zum Kontobereich.</p>
 
-    <!-- Upgrade-Status -->
-    <div class="mb-6">
-      {% if is_premium %}
-        <p class="text-green-600 font-semibold">✅ Du bist ein <strong>PREMIUM</strong>-Nutzer!</p>
-      {% else %}
-        <form action="{{ url_for('create_checkout_session') }}" method="post">
-          <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded">
-            🚀 Upgrade auf PREMIUM
-          </button>
-        </form>
-      {% endif %}
-    </div>
+        <div class="cta">
+            <form action="/checkout" method="POST">
+                <button class="button">Stripe Test-Zahlung starten</button>
+            </form>
+        </div>
 
-    <!-- Agent starten -->
-    <form method="post" action="{{ url_for('run_agent') }}">
-      <button class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-        ▶️ Agent ausführen
-      </button>
-    </form>
-
-    <!-- Aufträge anzeigen -->
-    <div class="mt-6">
-      <h2 class="text-xl font-semibold mb-2">📝 Aktive Aufträge:</h2>
-      {% if auftraege %}
-        <ul class="list-disc pl-5 text-gray-700">
-          {% for eintrag in auftraege %}
-            <li>{{ eintrag.name }} – <em>{{ eintrag.keywords }}</em></li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="text-gray-500">Noch keine Aufträge vorhanden.</p>
-      {% endif %}
-    </div>
-
-    <!-- Logs anzeigen -->
-    <div class="mt-6">
-      <h2 class="text-xl font-semibold mb-2">🛠 Letzte Log-Ausgaben:</h2>
-      <pre class="bg-gray-200 p-4 rounded overflow-x-auto text-sm text-gray-800 max-h-64">{{ logs|join('') }}</pre>
-    </div>
-  </div>
+        <nav>
+            <a href="/login">Login</a>
+            <a href="/register">Registrieren</a>
+        </nav>
+    </main>
 
 </body>
 </html>
