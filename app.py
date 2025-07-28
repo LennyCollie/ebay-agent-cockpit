@@ -26,8 +26,9 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, server_default=db.func.now())
 
 # 🌐 Startseite
-@app.route("/")
+
 def home():
+    print("🏠 Dashboard-Route wurde aufgerufen")
     return render_template("dashboard.html")
 
 # 🧾 Stripe Checkout (Testdemo)
