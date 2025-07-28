@@ -30,7 +30,7 @@ class User(db.Model):
 @app.route("/")
 def home():
     print(">>> dashboard.html wird geladen")
-    return render_template("dashboard.html")
+    return "<h1>✅ Direkt aus Python zurückgegeben</h1>
 
 
 # 🧾 Stripe Checkout (Testdemo)
