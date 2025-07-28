@@ -1,83 +1,74 @@
-import os
-import subprocess
-import json
-from flask import Flask, render_template, request, redirect, url_for, flash, session
-import stripe
+from flask import Flask, render_template, request, redirect, url_for, flash
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from dotenv import load_dotenv
+import os
+import stripe
 
-# .env laden
+# 🔑 .env laden (API Keys, DB-URI, ...)
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "dev-secret")
+app.config['SECRET_KEY'] = os.getenv("API_SECRET_KEY")
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("SQLALCHEMY_DATABASE_URI")
 
-# Stripe konfigurieren
+# 📦 Stripe Testmodus einrichten
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-stripe_price_id = os.getenv("STRIPE_PRICE_ID")
 
-LOGFILE = "logs/agent_log.txt"
-AUFTRAEGE_FILE = "auftraege.json"
+# 🔌 DB-Verbindung + Migration
+db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
+# 📊 Beispiel-Datenmodell (User-Tabelle etc.)
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+
+# 🌐 Startseite
 @app.route("/")
-def index():
-    return redirect(url_for("dashboard"))
+def home():
+    return render_template("dashboard.html")
 
-@app.route("/dashboard")
-def dashboard():
-    logs = []
-    auftraege = []
-    is_premium = session.get("premium", False)
-
-    if os.path.exists(LOGFILE):
-        with open(LOGFILE, "r", encoding="utf-8") as f:
-            logs = f.readlines()[-10:]
-
-    if os.path.exists(AUFTRAEGE_FILE):
-        with open(AUFTRAEGE_FILE, "r", encoding="utf-8") as f:
-            auftraege = json.load(f)
-
-    return render_template("dashboard.html", logs=logs, auftraege=auftraege, is_premium=is_premium)
-
-@app.route("/run-agent", methods=["POST"])
-def run_agent():
-    try:
-        result = subprocess.run(["python", "agent.py"], capture_output=True, text=True)
-        with open(LOGFILE, "a", encoding="utf-8") as log:
-            log.write(result.stdout)
-            log.write(result.stderr)
-        flash("Agent wurde erfolgreich gestartet!", "success")
-    except Exception as e:
-        flash(f"Fehler beim Starten: {str(e)}", "danger")
-    return redirect(url_for("dashboard"))
-
-@app.route("/create-checkout-session", methods=["POST"])
-def create_checkout_session():
+# 🧾 Stripe Checkout (Testdemo)
+@app.route("/checkout", methods=["POST"])
+def checkout():
     try:
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[{
-                "price": stripe_price_id,
+                "price_data": {
+                    "currency": "eur",
+                    "product_data": {"name": "Testprodukt"},
+                    "unit_amount": 1000,
+                },
                 "quantity": 1,
             }],
-            mode="subscription",
+            mode="payment",
             success_url=url_for("success", _external=True),
             cancel_url=url_for("cancel", _external=True),
         )
         return redirect(checkout_session.url, code=303)
     except Exception as e:
-        flash(f"Stripe-Fehler: {str(e)}", "danger")
-        return redirect(url_for("dashboard"))
+        return str(e)
 
 @app.route("/success")
 def success():
-    session["premium"] = True
-    flash("Upgrade auf PREMIUM erfolgreich!", "success")
-    return redirect(url_for("dashboard"))
+    return "<h2>Zahlung erfolgreich! ✅</h2>"
 
 @app.route("/cancel")
 def cancel():
-    flash("Zahlung abgebrochen. Du bist weiterhin im kostenlosen Plan.", "warning")
-    return redirect(url_for("dashboard"))
+    return "<h2>Zahlung abgebrochen ❌</h2>"
 
+# 🧪 Testseite Login
+@app.route("/login")
+def login():
+    return render_template("login.html")
+
+@app.route("/register")
+def register():
+    return render_template("register.html")
+
+# ▶ Starten
 if __name__ == "__main__":
     app.run(debug=True)
