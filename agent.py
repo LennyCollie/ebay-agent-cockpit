@@ -1,158 +1,47 @@
-import os
-import time
+
 import json
-import base64
+import time
 import requests
-import smtplib
-import urllib.parse
-from datetime import datetime, UTC
-from email.mime.text import MIMEText
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from dotenv import load_dotenv
+from datetime import datetime, timezone
 
-# === ENV laden ===
-load_dotenv()
+# Beispielhafte Konfiguration
+WEBHOOK_URL = "https://example.com/webhook"  # <- Ersetze durch echte URL
+DATA_FILE = "auftraege.json"
 
-# === Flask & Datenbank Setup ===
-app = Flask(__name__)
-db_url = os.getenv('DATABASE_URL')
-if db_url and db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
-
-# === Konfiguration ===
-EBAY_APP_ID = os.getenv("EBAY_APP_ID")
-EBAY_CERT_ID = os.getenv("EBAY_CERT_ID")
-SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-MEMORY_FILE = "gesehene_artikel.json"
-
-# === Datenbankmodelle ===
-class User(db.Model):
-    __tablename__ = 'user'
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String, nullable=False)
-    auftraege = db.relationship("Auftrag", backref="author", lazy=True)
-
-class Auftrag(db.Model):
-    __tablename__ = 'auftrag'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String, nullable=False)
-    keywords = db.Column(db.String, nullable=False)
-    filter = db.Column(db.String)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
-    aktiv = db.Column(db.Boolean, default=True)
-
-# === Helferfunktionen ===
-def load_seen():
+def lade_auftraege():
     try:
-        with open(MEMORY_FILE, 'r') as f:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
-        return {}
+    except FileNotFoundError:
+        return []
+    except json.JSONDecodeError:
+        return []
 
-def save_seen(seen):
-    with open(MEMORY_FILE, 'w') as f:
-        json.dump(seen, f)
-
-def get_ebay_token():
-    if not (EBAY_APP_ID and EBAY_CERT_ID):
-        print("❌ EBAY Credentials fehlen")
-        return None
-    creds = f"{EBAY_APP_ID}:{EBAY_CERT_ID}"
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": "Basic " + base64.b64encode(creds.encode()).decode()
-    }
-    data = {"grant_type": "client_credentials", "scope": "https://api.ebay.com/oauth/api_scope"}
-    try:
-        r = requests.post("https://api.ebay.com/identity/v1/oauth2/token", headers=headers, data=data)
-        r.raise_for_status()
-        return r.json().get("access_token")
-    except Exception as e:
-        print(f"❌ Tokenfehler: {e}")
-        return None
-
-def send_email(to, subject, body):
-    msg = MIMEText(body, "plain", "utf-8")
-    msg['Subject'] = subject
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = to
-
-    try:
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
-            server.login(SENDER_EMAIL, EMAIL_PASSWORD)
-            server.sendmail(SENDER_EMAIL, to, msg.as_string())
-        print(f"📧 E-Mail an {to} gesendet.")
-    except Exception as e:
-        print(f"❌ Mailfehler: {e}")
-
-def search_items(token, auftrag, seen_ids):
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "X-EBAY-C-MARKETPLACE-ID": "EBAY_DE"
+def sende_webhook(auftrag):
+    payload = {
+        "title": auftrag.get("titel", "Kein Titel"),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "details": auftrag
     }
 
-    params = {"q": auftrag.keywords}
-    if auftrag.filter:
-        params["filter"] = auftrag.filter
-
-    query = urllib.parse.urlencode(params)
-    url = f"https://api.ebay.com/buy/browse/v1/item_summary/search?{query}&limit=20"
-
     try:
-        r = requests.get(url, headers=headers)
-        r.raise_for_status()
-        items = r.json().get("itemSummaries", [])
-        new_items = []
-        for item in items:
-            item_id = item.get("itemId")
-            if item_id and item_id not in seen_ids:
-                new_items.append({
-                    "title": item.get("title"),
-                    "price": item.get("price", {}).get("value"),
-                    "url": item.get("itemWebUrl")
-                })
-                seen_ids.add(item_id)
-        return new_items, seen_ids
+        response = requests.post(WEBHOOK_URL, json=payload)
+        if response.status_code == 200:
+            print(f"Webhook gesendet für Auftrag: {auftrag['titel']}")
+        else:
+            print(f"Fehler beim Senden: {response.status_code} - {response.text}")
     except Exception as e:
-        print(f"❌ Suchfehler: {e}")
-        return [], seen_ids
+        print(f"Webhook-Fehler: {e}")
 
-# === Hauptlogik ===
-def run_agent():
-    print(f"\n🕘 Agentenlauf gestartet: {datetime.now(UTC)}")
-
-    token = get_ebay_token()
-    if not token:
-        return
-
-    seen = load_seen()
-    auftraege = Auftrag.query.filter_by(aktiv=True).all()
-    print(f"🔍 {len(auftraege)} aktive Aufträge gefunden")
+def main():
+    print("Starte Agent...")
+    auftraege = lade_auftraege()
 
     for auftrag in auftraege:
-        key = f"{auftrag.user_id}_{auftrag.name}"
-        known_ids = set(seen.get(key, []))
-        neue_funde, updated_ids = search_items(token, auftrag, known_ids)
+        sende_webhook(auftrag)
+        time.sleep(2)  # kurze Pause zwischen Webhooks
 
-        if neue_funde:
-            body = f"Hallo!\n\nFür deinen Auftrag '{auftrag.name}' wurden {len(neue_funde)} neue Artikel gefunden:\n\n"
-            for f in neue_funde:
-                body += f"- {f['title']} für {f['price']} EUR\n{f['url']}\n\n"
-            send_email(auftrag.author.email, f"[{auftrag.name}] Neue eBay Funde", body)
+    print("Alle Aufträge verarbeitet.")
 
-        seen[key] = list(updated_ids)
-        time.sleep(1)
-
-    save_seen(seen)
-    print(f"✅ Agentenlauf beendet\n")
-
-# === Startpunkt ===
 if __name__ == "__main__":
-    with app.app_context():
-        run_agent()
+    main()
