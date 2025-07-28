@@ -29,7 +29,8 @@ class User(db.Model):
 
 @app.route("/")
 def home():
-    return "Test: Die Startseite wurde geladen."
+    print(">>> dashboard.html wird geladen")
+    return render_template("dashboard.html")
 
 # 🧾 Stripe Checkout (Testdemo)
 @app.route("/checkout", methods=["POST"])
