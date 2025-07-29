@@ -98,6 +98,22 @@ def checkout():
     except Exception as e:
         return f"Stripe Fehler: {e}"
 
+@app.route("/search", methods=["POST"])
+def search():
+    query = request.form.get("query")
+
+    # 📦 Später: eBay API-Anbindung
+    print(f"🔍 Benutzer sucht nach: {query}")
+
+    # Für den Moment simulieren wir ein Suchergebnis
+    fake_results = [
+        {"title": "Testprodukt A", "price": "19,99 €"},
+        {"title": "Testprodukt B", "price": "24,95 €"},
+        {"title": "Testprodukt C", "price": "12,49 €"}
+    ]
+
+    return render_template("results.html", query=query, results=fake_results)
+
 @app.route("/success")
 def success():
     return render_template("success.html")
