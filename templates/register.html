@@ -1,82 +1,32 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <title>Registrieren</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body {
-            font-family: system-ui, sans-serif;
-            background-color: #f0f2f5;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .register-box {
-            background-color: white;
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 400px;
-            text-align: center;
-        }
-        h2 {
-            margin-bottom: 1rem;
-        }
-        input {
-            width: 100%;
-            padding: 0.75rem;
-            margin: 0.5rem 0;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        button {
-            width: 100%;
-            background-color: #28a745;
-            color: white;
-            padding: 0.75rem;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-top: 1rem;
-        }
-        button:hover {
-            background-color: #218838;
-        }
-        .link {
-            margin-top: 1rem;
-        }
-        .link a {
-            color: #007bff;
-            text-decoration: none;
-        }
-        .error {
-            color: red;
-            margin-top: 1rem;
-        }
-    </style>
-</head>
-<body>
-    <div class="register-box">
-        <h2>Registrieren</h2>
-        <form method="POST">
-            <input type="email" name="email" placeholder="E-Mail-Adresse" required>
-            <input type="password" name="password" placeholder="Passwort" required>
-            <button type="submit">Registrieren</button>
-        </form>
+from flask import render_template, request, redirect, url_for, flash
+from werkzeug.security import generate_password_hash
+import sqlite3
 
-        <div class="link">
-            <p>Schon registriert? <a href="{{ url_for('login') }}">Jetzt einloggen</a></p>
-        </div>
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
 
-        {% with messages = get_flashed_messages() %}
-          {% if messages %}
-            <div class="error">{{ messages[0] }}</div>
-          {% endif %}
-        {% endwith %}
-    </div>
-</body>
-</html>
+        if not email or not password:
+            flash("E-Mail und Passwort dürfen nicht leer sein.")
+            return render_template('register.html')
+
+        hashed_password = generate_password_hash(password)
+
+        try:
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            cursor.execute('INSERT INTO users (email, password) VALUES (?, ?)', (email, hashed_password))
+            conn.commit()
+            conn.close()
+            flash("Registrierung erfolgreich! Bitte einloggen.")
+            return redirect(url_for('login'))
+        except sqlite3.IntegrityError:
+            flash("Diese E-Mail ist bereits registriert.")
+            return render_template('register.html')
+        except Exception as e:
+            flash(f"Fehler: {str(e)}")
+            return render_template('register.html')
+
+    return render_template('register.html')
