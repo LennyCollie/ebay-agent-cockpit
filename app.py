@@ -1,56 +1,61 @@
 import os
+import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 import stripe
-from werkzeug.security import generate_password_hash, check_password_hash
 
-# 🔐 .env laden
+# 🌍 .env laden
 load_dotenv()
 
-# 🔧 Flask-Setup
+# 🧱 Flask-App einrichten
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "devkey")
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL", "sqlite:///db.sqlite3")
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_key')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///db.sqlite3')
 
-# 💳 Stripe Setup
+# 💳 Stripe-Setup (optional)
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
-# 🧠 DB-Setup
+# 🗃️ Datenbank-Setup
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-# 📦 User-Modell
+# 👤 Benutzer-Modell
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
+    password = db.Column(db.String(200), nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
 
-# 🌍 ROUTEN
-
+# 📄 Dashboard
 @app.route("/")
-def home():
+def dashboard():
     return render_template("dashboard.html")
 
+# 🔑 Login
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         email = request.form["email"]
         password = request.form["password"]
-        user = User.query.filter_by(email=email).first()
 
-        if user and check_password_hash(user.password, password):
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT password FROM users WHERE email = ?", (email,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result and check_password_hash(result[0], password):
             flash("Login erfolgreich!")
-            return redirect(url_for("home"))
+            return redirect(url_for("dashboard"))
         else:
             flash("Ungültige E-Mail oder Passwort.")
             return redirect(url_for("login"))
-
     return render_template("login.html")
 
+# 📝 Registrierung
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
@@ -58,18 +63,20 @@ def register():
         password = request.form["password"]
         hashed_pw = generate_password_hash(password)
 
-        if User.query.filter_by(email=email).first():
-            flash("E-Mail ist bereits registriert.")
+        try:
+            conn = sqlite3.connect("database.db")
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed_pw))
+            conn.commit()
+            conn.close()
+            flash("Registrierung erfolgreich. Bitte einloggen.")
+            return redirect(url_for("login"))
+        except sqlite3.IntegrityError:
+            flash("Diese E-Mail ist bereits registriert.")
             return redirect(url_for("register"))
-
-        new_user = User(email=email, password=hashed_pw)
-        db.session.add(new_user)
-        db.session.commit()
-        flash("Registrierung erfolgreich. Bitte einloggen.")
-        return redirect(url_for("login"))
-
     return render_template("register.html")
 
+# 💳 Stripe Checkout (optional)
 @app.route("/checkout", methods=["POST"])
 def checkout():
     try:
@@ -89,7 +96,7 @@ def checkout():
         )
         return redirect(session.url, code=303)
     except Exception as e:
-        return f"Fehler bei Stripe Checkout: {e}"
+        return f"Stripe Fehler: {e}"
 
 @app.route("/success")
 def success():
@@ -99,6 +106,6 @@ def success():
 def cancel():
     return render_template("cancel.html")
 
-# ▶ App-Start lokal
+# ▶ App starten
 if __name__ == "__main__":
     app.run(debug=True)
