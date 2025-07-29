@@ -73,8 +73,7 @@ def register():
             return redirect(url_for("register"))
     
     # GET-Methode (Formular anzeigen)
-    return render_template('register.html')
-        
+   
         try:
             conn = sqlite3.connect('database.db')
             cursor = conn.cursor()
