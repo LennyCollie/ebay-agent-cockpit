@@ -57,11 +57,25 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        # Registrierung verarbeiten (z.B. in DB schreiben)
+        # Registrierung verarbeiten
         email = request.form['email']
         password = request.form['password']
-        # ... Hashing, speichern, etc.
-        return redirect(url_for('login'))  # oder zu "dashboard"
+        
+        try:
+            conn = sqlite3.connect('database.db')
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, password))
+            conn.commit()
+            conn.close()
+            flash("Registrierung erfolgreich. Bitte einloggen.")
+            return redirect(url_for("login"))
+        
+        except sqlite3.IntegrityError:
+            flash("E-Mail ist bereits registriert.")
+            return redirect(url_for("register"))
+
+    # GET-Methode (Formular anzeigen)
+    return render_template('register.html')
     
     return render_template('register.html')
         try:
