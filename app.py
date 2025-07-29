@@ -60,10 +60,12 @@ def register():
         # Registrierung verarbeiten (z.B. in DB schreiben)
         email = request.form['email']
         password = request.form['password']
+        hashed_pw = generate_password_hash(password)
+
         try:
             conn = sqlite3.connect('database.db')
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, password))
+            cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed_pw))
             conn.commit()
             conn.close()
             flash("Registrierung erfolgreich. Bitte einloggen.")
@@ -71,6 +73,9 @@ def register():
         except sqlite3.IntegrityError:
             flash("E-Mail ist bereits registriert.")
             return redirect(url_for("register"))
+
+    # GET-Methode (Formular anzeigen)
+    return render_template('register.html')
     
     # GET-Methode (Formular anzeigen)
    
