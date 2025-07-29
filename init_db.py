@@ -1,22 +1,17 @@
+# init_db.py
 import sqlite3
 
-# Verbindung zur Datenbank herstellen (wird erstellt, falls sie nicht existiert)
-conn = sqlite3.connect('users.db')
-
-# Cursor-Objekt zum Ausführen von SQL-Befehlen
+conn = sqlite3.connect('database.db')
 cursor = conn.cursor()
 
-# Tabelle 'users' erstellen, falls sie noch nicht existiert
-cursor.execute('''
+cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL
 )
-''')
+""")
 
-# Änderungen speichern und Verbindung schließen
 conn.commit()
 conn.close()
-
-print("Die Datenbank 'users.db' wurde erfolgreich initialisiert.")
+print("Tabelle 'users' wurde erstellt.")
