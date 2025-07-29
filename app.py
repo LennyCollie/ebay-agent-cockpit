@@ -53,13 +53,17 @@ def login():
             return redirect(url_for("login"))
 
     return render_template("login.html")
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        email = request.form["email"]
-        password = request.form["password"]
-        hashed_pw = generate_password_hash(password)
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        # Registrierung verarbeiten (z.B. in DB schreiben)
+        email = request.form['email']
+        password = request.form['password']
+        # ... Hashing, speichern, etc.
+        return redirect(url_for('login'))  # oder zu "dashboard"
+    
+    return render_template('register.html')
         try:
             conn = sqlite3.connect('database.db')
             cursor = conn.cursor()
