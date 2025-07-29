@@ -4,6 +4,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from dotenv import load_dotenv
 import stripe
+import sqlite3
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # 🔐 Umgebungsvariablen laden
 load_dotenv()
