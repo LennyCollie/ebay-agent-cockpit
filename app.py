@@ -33,13 +33,44 @@ class User(db.Model):
 def home():
     return render_template("dashboard.html")
 
-@app.route("/login")
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    return render_template("login.html")
+    if request.method == "POST":
+        email = request.form["email"]
+        password = request.form["password"]
 
-@app.route("/register")
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT password FROM users WHERE email = ?", (email,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result and check_password_hash(result[0], password):
+            flash("Login erfolgreich!")
+            return redirect(url_for("dashboard"))
+        else:
+            flash("Ungültige E-Mail oder Passwort.")
+            return redirect(url_for("login"))
+
+    return render_template("login.html")
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    return render_template("register.html")
+    if request.method == "POST":
+        email = request.form["email"]
+        password = request.form["password"]
+        hashed_pw = generate_password_hash(password)
+
+        try:
+            conn = sqlite3.connect('database.db')
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed_pw))
+            conn.commit()
+            conn.close()
+            flash("Registrierung erfolgreich. Bitte einloggen.")
+            return redirect(url_for("login"))
+        except sqlite3.IntegrityError:
+            flash("E-Mail ist bereits registriert.")
+            return redirect(url_for("register"))
 
 @app.route("/checkout", methods=["POST"])
 def checkout():
