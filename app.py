@@ -4,31 +4,33 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from dotenv import load_dotenv
 import stripe
-import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# 🔐 Umgebungsvariablen laden
+# 🔐 .env laden
 load_dotenv()
 
-# 🔧 Flask-Konfiguration
+# 🔧 Flask-Setup
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "devkey")
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL", "sqlite:///db.sqlite3")
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# 💳 Stripe konfigurieren (Testmodus)
+# 💳 Stripe Setup
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
-# 🔌 Datenbank-Setup
+# 🧠 DB-Setup
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-# 📊 Dummy User-Modell
+# 📦 User-Modell
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
 
-# 🌐 Routen
+# 🌍 ROUTEN
+
 @app.route("/")
 def home():
     return render_template("dashboard.html")
@@ -38,75 +40,35 @@ def login():
     if request.method == "POST":
         email = request.form["email"]
         password = request.form["password"]
+        user = User.query.filter_by(email=email).first()
 
-        conn = sqlite3.connect('database.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT password FROM users WHERE email = ?", (email,))
-        result = cursor.fetchone()
-        conn.close()
-
-        if result and check_password_hash(result[0], password):
+        if user and check_password_hash(user.password, password):
             flash("Login erfolgreich!")
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("home"))
         else:
             flash("Ungültige E-Mail oder Passwort.")
             return redirect(url_for("login"))
 
     return render_template("login.html")
 
-@app.route('/register', methods=['GET', 'POST'])
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    if request.method == 'POST':
-        # Registrierung verarbeiten (z.B. in DB schreiben)
-        email = request.form['email']
-        password = request.form['password']
+    if request.method == "POST":
+        email = request.form["email"]
+        password = request.form["password"]
         hashed_pw = generate_password_hash(password)
 
-        try:
-            conn = sqlite3.connect('database.db')
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed_pw))
-            conn.commit()
-            conn.close()
-            flash("Registrierung erfolgreich. Bitte einloggen.")
-            return redirect(url_for("login"))
-        except sqlite3.IntegrityError:
+        if User.query.filter_by(email=email).first():
             flash("E-Mail ist bereits registriert.")
             return redirect(url_for("register"))
 
-    # GET-Methode (Formular anzeigen)
-    return render_template('register.html')
-    
-    # GET-Methode (Formular anzeigen)
-   
-        try:
-            conn = sqlite3.connect('database.db')
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, password))
-            conn.commit()
-            conn.close()
-            flash("Registrierung erfolgreich. Bitte einloggen.")
-            return redirect(url_for("login"))
-        
-        except sqlite3.IntegrityError:
-            flash("E-Mail ist bereits registriert.")
-            return redirect(url_for("register"))
+        new_user = User(email=email, password=hashed_pw)
+        db.session.add(new_user)
+        db.session.commit()
+        flash("Registrierung erfolgreich. Bitte einloggen.")
+        return redirect(url_for("login"))
 
-    # GET-Methode (Formular anzeigen)
-    return render_template('register.html')
-    
-    return render_template('register.html')
-        try:
-            conn = sqlite3.connect('database.db')
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed_pw))
-            conn.commit()
-            conn.close()
-            flash("Registrierung erfolgreich. Bitte einloggen.")
-            return redirect(url_for("login"))
-        except sqlite3.IntegrityError:
-            flash("E-Mail ist bereits registriert.")
-            return redirect(url_for("register"))
+    return render_template("register.html")
 
 @app.route("/checkout", methods=["POST"])
 def checkout():
@@ -117,7 +79,7 @@ def checkout():
                 "price_data": {
                     "currency": "eur",
                     "product_data": {"name": "Agent Premium-Zugang"},
-                    "unit_amount": 1000,  # = 10,00 €
+                    "unit_amount": 1000,
                 },
                 "quantity": 1,
             }],
@@ -137,6 +99,6 @@ def success():
 def cancel():
     return render_template("cancel.html")
 
-# ▶ App starten
+# ▶ App-Start lokal
 if __name__ == "__main__":
     app.run(debug=True)
