@@ -100,19 +100,18 @@ def checkout():
 
 @app.route("/search", methods=["POST"])
 def search():
-    query = request.form.get("query")
+    data = request.get_json() or {}
+    query = data.get("query")
 
-    # 📦 Später: eBay API-Anbindung
-    print(f"🔍 Benutzer sucht nach: {query}")
+    print(f"🔎 Benutzer sucht nach: {query}")
 
-    # Für den Moment simulieren wir ein Suchergebnis
     fake_results = [
         {"title": "Testprodukt A", "price": "19,99 €"},
         {"title": "Testprodukt B", "price": "24,95 €"},
-        {"title": "Testprodukt C", "price": "12,49 €"}
+        {"title": "Testprodukt C", "price": "12,49 €"},
     ]
 
-    return render_template("results.html", query=query, results=fake_results)
+    return jsonify(fake_results)
 
 @app.route("/success")
 def success():
