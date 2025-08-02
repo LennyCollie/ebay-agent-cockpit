@@ -100,33 +100,41 @@ def checkout():
 
 @app.route("/search", methods=["POST"])
 def search():
-    data = request.get_json() or {}
-    query = data.get("query")
+    try:
+        data = request.get_json(force=True) or {}
+        query = data.get("query", "").strip()
 
-    print(f"🔍 Benutzer sucht nach: {query}")
+        print(f"🔍 Benutzer sucht nach: {query}")
 
-    fake_results = [
-        {
-            "title": f"{query} – Beispiel A",
-            "price": "19,99 €",
-            "image": "https://via.placeholder.com/300x200.png?text=Produkt+A",
-            "url": "https://www.ebay.de"
-        },
-        {
-            "title": f"{query} – Beispiel B",
-            "price": "24,95 €",
-            "image": "https://via.placeholder.com/300x200.png?text=Produkt+B",
-            "url": "https://www.ebay.de"
-        },
-        {
-            "title": f"{query} – Beispiel C",
-            "price": "12,49 €",
-            "image": "https://via.placeholder.com/300x200.png?text=Produkt+C",
-            "url": "https://www.ebay.de"
-        }
-    ]
+        if not query:
+            return jsonify({"error": "Kein Suchbegriff übergeben"}), 400
 
-    return jsonify(fake_results)
+        fake_results = [
+            {
+                "title": f"{query} – Beispiel A",
+                "price": "19,99 €",
+                "image": "https://via.placeholder.com/300x200.png?text=Produkt+A",
+                "url": "https://www.ebay.de"
+            },
+            {
+                "title": f"{query} – Beispiel B",
+                "price": "24,95 €",
+                "image": "https://via.placeholder.com/300x200.png?text=Produkt+B",
+                "url": "https://www.ebay.de"
+            },
+            {
+                "title": f"{query} – Beispiel C",
+                "price": "12,49 €",
+                "image": "https://via.placeholder.com/300x200.png?text=Produkt+C",
+                "url": "https://www.ebay.de"
+            }
+        ]
+
+        return jsonify(fake_results)
+    
+    except Exception as e:
+        print("❌ Fehler in /search:", str(e))
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/success")
 def success():
