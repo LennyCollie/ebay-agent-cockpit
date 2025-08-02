@@ -103,12 +103,27 @@ def search():
     data = request.get_json() or {}
     query = data.get("query")
 
-    print(f"🔎 Benutzer sucht nach: {query}")
+    print(f"🔍 Benutzer sucht nach: {query}")
 
     fake_results = [
-        {"title": "Testprodukt A", "price": "19,99 €"},
-        {"title": "Testprodukt B", "price": "24,95 €"},
-        {"title": "Testprodukt C", "price": "12,49 €"},
+        {
+            "title": f"{query} – Beispiel A",
+            "price": "19,99 €",
+            "image": "https://via.placeholder.com/300x200.png?text=Produkt+A",
+            "url": "https://www.ebay.de"
+        },
+        {
+            "title": f"{query} – Beispiel B",
+            "price": "24,95 €",
+            "image": "https://via.placeholder.com/300x200.png?text=Produkt+B",
+            "url": "https://www.ebay.de"
+        },
+        {
+            "title": f"{query} – Beispiel C",
+            "price": "12,49 €",
+            "image": "https://via.placeholder.com/300x200.png?text=Produkt+C",
+            "url": "https://www.ebay.de"
+        }
     ]
 
     return jsonify(fake_results)
