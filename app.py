@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -55,6 +55,12 @@ def login():
             return redirect(url_for("login"))
     return render_template("login.html")
 
+# 🔓 Logout
+@app.route("/logout")
+def logout():
+    flash("Logout erfolgreich!")
+    return redirect(url_for("login"))
+
 # 📝 Registrierung
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -76,7 +82,7 @@ def register():
             return redirect(url_for("register"))
     return render_template("register.html")
 
-# 💳 Stripe Checkout (optional)
+# 💳 Stripe Checkout
 @app.route("/checkout", methods=["POST"])
 def checkout():
     try:
@@ -97,7 +103,8 @@ def checkout():
         return redirect(session.url, code=303)
     except Exception as e:
         return f"Stripe Fehler: {e}"
-        
+
+# 🔍 Suche
 @app.route("/search", methods=["POST"])
 def search():
     try:
@@ -116,7 +123,6 @@ def search():
                 "image": "https://via.placeholder.com/300x200.png?text=Produkt+A",
                 "url": "https://www.ebay.de",
             },
-            # ...
         ]
 
         return jsonify(fake_results)
@@ -124,7 +130,7 @@ def search():
     except Exception as e:
         print("❌ Fehler in /search:", e)
         return jsonify({"error": str(e)}), 500
-        
+
 @app.route("/success")
 def success():
     return render_template("success.html")
