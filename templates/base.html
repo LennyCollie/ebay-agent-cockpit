@@ -1,0 +1,37 @@
+
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ebay-agent-cockpit{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+  <header class="app-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">ebay-agent-cockpit</a>
+      <nav class="nav">
+        <a href="/" class="nav-link">Dashboard</a>
+        <a href="/logout" class="nav-link">Logout</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    {% include "_flash.html" %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="app-footer">
+    <div class="container">
+      <small>© {{ 2025 }} ebay-agent-cockpit</small>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  {% block body_extra %}{% endblock %}
+</body>
+</html>

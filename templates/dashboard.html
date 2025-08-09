@@ -1,58 +1,32 @@
 
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <title>Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body {
-            font-family: system-ui, sans-serif;
-            background-color: #f4f6f8;
-            margin: 0;
-            padding: 0;
-        }
-        header {
-            background-color: #2c3e50;
-            color: white;
-            padding: 1rem 2rem;
-            text-align: center;
-        }
-        main {
-            max-width: 800px;
-            margin: 2rem auto;
-            padding: 2rem;
-            background-color: white;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            border-radius: 8px;
-        }
-        h1 {
-            margin-top: 0;
-        }
-        .button {
-            background-color: #3498db;
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 4px;
-            cursor: pointer;
-            text-decoration: none;
-        }
-        .button:hover {
-            background-color: #2980b9;
-        }
-    </style>
-</head>
-<body>
-    <header>
-        <h1>Willkommen im Dashboard</h1>
-    </header>
+{% extends "base.html" %}
+{% block title %}Dashboard · ebay-agent-cockpit{% endblock %}
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+{% endblock %}
+{% block content %}
+  <section class="cards-grid">
+    <article class="card">
+      <h2>Status</h2>
+      <ul class="list">
+        <li>Deployed auf Render ✅</li>
+        <li>Login/Registrierung funktionsfähig</li>
+        <li><code>/ping</code> OK</li>
+        <li>DB verbunden</li>
+      </ul>
+    </article>
 
-    <main>
-        <h2>Hallo, schön dass du da bist! 👋</h2>
-        <p>Hier kannst du deine Suchaufträge verwalten, deinen Plan upgraden oder neue Angebote entdecken.</p>
-        
-        <a href="/logout" class="button">Logout</a>
-    </main>
-</body>
-</html>
+    <article class="card">
+      <h2>Schnellaktionen</h2>
+      <div class="actions">
+        <a class="btn" href="/sync">Sync starten</a>
+        <a class="btn btn-secondary" href="/settings">Einstellungen</a>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2>Hinweise</h2>
+      <p>Dies ist ein Beispiel-Dashboard. Passe Inhalte und Styles an dein altes Layout an.</p>
+    </article>
+  </section>
+{% endblock %}
