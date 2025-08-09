@@ -1,4 +1,5 @@
 
+// Bootstrap helper: Beispiel für programmatisches Schließen von Alerts
 document.addEventListener("DOMContentLoaded", () => {
-  // Platz für kleine Interaktionen
+  // console.log("bootstrap pack loaded");
 });
