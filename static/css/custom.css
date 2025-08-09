@@ -1,0 +1,8 @@
+
+/* Kleine visuelle Optimierungen */
+:root{
+  --brand: #4f7cff;
+}
+.navbar-brand{ letter-spacing: .2px; }
+.card-title{ font-weight: 600; }
+footer{ background: var(--bs-body-bg); }
