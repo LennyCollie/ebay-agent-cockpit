@@ -1,32 +1,41 @@
 
 {% extends "base.html" %}
 {% block title %}Dashboard · ebay-agent-cockpit{% endblock %}
-{% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
-{% endblock %}
 {% block content %}
-  <section class="cards-grid">
-    <article class="card">
-      <h2>Status</h2>
-      <ul class="list">
-        <li>Deployed auf Render ✅</li>
-        <li>Login/Registrierung funktionsfähig</li>
-        <li><code>/ping</code> OK</li>
-        <li>DB verbunden</li>
-      </ul>
-    </article>
-
-    <article class="card">
-      <h2>Schnellaktionen</h2>
-      <div class="actions">
-        <a class="btn" href="/sync">Sync starten</a>
-        <a class="btn btn-secondary" href="/settings">Einstellungen</a>
+  <div class="row g-3">
+    <div class="col-12 col-lg-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h5 class="card-title">Status</h5>
+          <ul class="list-unstyled mb-0">
+            <li>Deployed auf Render ✅</li>
+            <li>Login/Registrierung funktionsfähig</li>
+            <li><code>/ping</code> OK</li>
+            <li>DB verbunden</li>
+          </ul>
+        </div>
       </div>
-    </article>
+    </div>
 
-    <article class="card">
-      <h2>Hinweise</h2>
-      <p>Dies ist ein Beispiel-Dashboard. Passe Inhalte und Styles an dein altes Layout an.</p>
-    </article>
-  </section>
+    <div class="col-12 col-lg-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h5 class="card-title">Schnellaktionen</h5>
+          <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-primary" href="/sync">Sync starten</a>
+            <a class="btn btn-outline-secondary" href="/settings">Einstellungen</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h5 class="card-title">Hinweise</h5>
+          <p class="mb-0">Dies ist ein Beispiel-Dashboard. Passe Inhalte und Styles an dein altes Layout an.</p>
+        </div>
+      </div>
+    </div>
+  </div>
 {% endblock %}
