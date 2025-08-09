@@ -1,7 +1,7 @@
 
-# Frontend Starter Pack – ebay-agent-cockpit
+# Frontend Bootstrap Pack – ebay-agent-cockpit
 
-Sofort verwendbare Templates & CSS, damit die Render-App wieder aussieht wie gewohnt.
+Sofort nutzbare Bootstrap-Variante (v5) für schnelles, schönes UI auf Render.
 
 ## Struktur
 .
@@ -13,24 +13,15 @@ Sofort verwendbare Templates & CSS, damit die Render-App wieder aussieht wie gew
 │   └── 500.html
 └── static/
     ├── css/
-    │   ├── base.css
-    │   └── dashboard.css
+    │   └── custom.css
     └── js/
         └── main.js
 
 ## Einbindung (Flask/Jinja)
-1) Stelle sicher, dass `Flask(__name__, template_folder="templates", static_folder="static")` korrekt ist.
-2) In deinen Views: `return render_template("dashboard.html", ...)`
-3) Optional: Error-Handler registrieren:
-   ```python
-   @app.errorhandler(404)
-   def not_found(e): return render_template("404.html"), 404
-
-   @app.errorhandler(500)
-   def server_error(e): return render_template("500.html"), 500
-   ```
+- `Flask(__name__, template_folder="templates", static_folder="static")`
+- In deinen Views: `return render_template("dashboard.html")`
+- Optional Error-Handler registrieren (404/500).
 
 ## Hinweise
-- Pure CSS (kein CDN nötig). Bootstrap kann später zusätzlich eingebunden werden.
-- Farben, Spacing und Breakpoints sind in `base.css` zentral definiert.
-- Flash-Messages: `flash("Dein Text", "success|info|warning|danger")`
+- Bootstrap via CDN (CSS + JS bundle) wird in `base.html` eingebunden.
+- Flash-Messages nutzen Bootstrap Alerts (dismissible).
