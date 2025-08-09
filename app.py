@@ -116,7 +116,7 @@ def login_required(view):
 def ping():
     # Extra: Initialisierung auch hier sicherstellen
     ensure_schema()
-    return "pong" 200
+    return "pong" 
 
 @app.get("/")
 @login_required
