@@ -120,6 +120,22 @@ except Exception:
 # -----------------------------------------------------------------------------
 # Routen
 # -----------------------------------------------------------------------------
+
+@app.get("/public")
+def public_home():
+    return render_template("public_home.html")
+
+@app.get("/pricing")
+def public_pricing():
+    return render_template("public_pricing.html")
+
+@app.route("/checkout", methods=["GET","POST"])
+def public_checkout():
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip()
+        flash("Danke! Wir melden uns per E‑Mail: " + email)
+        return redirect(url_for("public_pricing"))
+    return render_template("public_checkout.html")
 @app.get("/ping")
 def ping():
     # Extra: Initialisierung auch hier sicherstellen
