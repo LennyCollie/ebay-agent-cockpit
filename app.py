@@ -198,6 +198,26 @@ def _dev_reset_db():
 # -----------------------------------------------------------------------------
 # Run (lokal). Auf Render läuft Gunicorn (Procfile) und nutzt app:app.
 # -----------------------------------------------------------------------------
+
+from flask import redirect, url_for, flash
+# ... deine anderen Imports bleiben
+
+@app.get("/sync")
+@login_required
+def sync_get():
+    # Fürs erste nur Info und zurück zum Dashboard
+    flash("Sync gestartet (Demo) – Implementierung folgt.")
+    return redirect(url_for("dashboard"))
+
+@app.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    if request.method == "POST":
+        # Hier später echte Einstellungen speichern
+        flash("Einstellungen gespeichert.")
+        return redirect(url_for("settings"))
+    return render_template("settings.html")
+    
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=True)
