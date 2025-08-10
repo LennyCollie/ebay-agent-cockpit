@@ -1,15 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Einstellungen · ebay-agent-cockpit{% endblock %}
 {% block content %}
-<div class="card" style="padding:20px">
-  <h2 class="h5 mb-3">Einstellungen</h2>
-  <form method="post">
-    <div class="mb-3">
-      <label class="form-label">Beispiel-Option</label>
-      <input class="form-control" name="example" placeholder="Wert">
+<div class="row justify-content-center">
+  <div class="col-12 col-lg-8">
+    <div class="card shadow-sm p-4">
+      <h2 class="h5 mb-3">Einstellungen</h2>
+      <form method="post" class="vstack gap-3">
+        <div>
+          <label class="form-label">Keep‑Alive aktivieren</label>
+          <select class="form-select" name="keepalive">
+            <option value="on">An</option>
+            <option value="off">Aus</option>
+          </select>
+          <div class="form-text">Hält die Render‑App wach (externer Ping‑Dienst nötig).</div>
+        </div>
+
+        <div>
+          <label class="form-label">Minify aktivieren</label>
+          <select class="form-select" name="minify">
+            <option value="on">An</option>
+            <option value="off">Aus</option>
+          </select>
+          <div class="form-text">Erfordert <code>performance_snippets.py</code>.</div>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary" type="submit">Speichern</button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Zurück</a>
+        </div>
+      </form>
     </div>
-    <button class="btn btn-primary" type="submit">Speichern</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Zurück</a>
-  </form>
+  </div>
 </div>
 {% endblock %}
