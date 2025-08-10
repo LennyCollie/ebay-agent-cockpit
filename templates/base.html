@@ -41,3 +41,17 @@
     {% block body_extra %}{% endblock %}
   </body>
 </html>
+
+<script>
+  (function(){
+    const k='bs-theme';
+    const set=t=>document.documentElement.setAttribute('data-bs-theme',t);
+    const get=()=>localStorage.getItem(k) || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    set(get());
+    window.addEventListener('DOMContentLoaded', ()=>{
+      const btn=document.getElementById('themeToggle');
+      if(!btn) return;
+      btn.addEventListener('click', ()=>{ const next=(get()==='dark'?'light':'dark'); localStorage.setItem(k,next); set(next); });
+    });
+  })();
+</script>
