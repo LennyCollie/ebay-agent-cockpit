@@ -1,0 +1,20 @@
+{% extends "public_base.html" %}
+{% block title %}Checkout · ebay-agent-cockpit{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-lg-6">
+    <div class="card shadow-sm p-4">
+      <h1 class="h5 mb-3">Checkout (Demo)</h1>
+      <p class="text-secondary">Hier binden wir später Stripe ein. Für jetzt siehst du nur eine Bestätigung.</p>
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label">E-Mail</label>
+          <input name="email" type="email" class="form-control" required placeholder="you@example.com">
+        </div>
+        <button class="btn btn-primary" type="submit">Pro 19 € / Monat testen</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('public_pricing') }}">Zurück</a>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

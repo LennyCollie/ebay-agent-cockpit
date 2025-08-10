@@ -1,0 +1,63 @@
+{% extends "public_base.html" %}
+{% block title %}ebay-agent-cockpit — Start{% endblock %}
+{% block content %}
+<section class="hero p-4 p-lg-5 rounded-4 shadow-sm bg-gradient">
+  <div class="row align-items-center g-4">
+    <div class="col-lg-7">
+      <h1 class="display-6 fw-bold mb-2">Dein leichtes Cockpit für eBay‑Automatisierung</h1>
+      <p class="lead text-secondary mb-4">Angebote verwalten, Prozesse synchronisieren, weniger Klicks — mehr Zeit fürs Wesentliche.</p>
+      <div class="d-flex gap-2">
+        <a class="btn btn-primary btn-lg" href="{{ url_for('register') }}">Jetzt registrieren</a>
+        <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('public_pricing') }}">Preise ansehen</a>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card shadow-sm border-0 demo-card">
+        <div class="card-body">
+          <div class="small text-secondary mb-2">Live‑Einblick</div>
+          <div class="d-flex justify-content-between">
+            <div><div class="text-secondary small">Jobs queued</div><div class="fs-5 fw-semibold">0</div></div>
+            <div><div class="text-secondary small">Antwortzeit</div><div class="fs-5 fw-semibold">~120 ms</div></div>
+            <div><div class="text-secondary small">Uptime</div><div class="fs-5 fw-semibold">99.9%</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="mt-5">
+  <div class="row g-3">
+    <div class="col-md-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <h3 class="h5">Schnell & einfach</h3>
+          <p class="text-secondary">In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <h3 class="h5">Sicher</h3>
+          <p class="text-secondary">Login, Sessions und Backups — Best Practices standardmäßig aktiv.</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <h3 class="h5">Skalierbar</h3>
+          <p class="text-secondary">Von lokal bis Render‑Deploy. Feature‑Flags & Sync‑Jobs vorbereitet.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-section text-center mt-5">
+  <h2 class="h4 mb-2">Bereit, loszulegen?</h2>
+  <p class="text-secondary mb-3">Registriere dich gratis und teste das Cockpit.</p>
+  <a class="btn btn-primary btn-lg" href="{{ url_for('register') }}">Kostenlos starten</a>
+</section>
+{% endblock %}
