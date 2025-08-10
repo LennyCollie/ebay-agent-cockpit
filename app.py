@@ -109,6 +109,14 @@ def login_required(view):
         return view(*args, **kwargs)
     return wrapped
 
+
+try:
+    from performance_snippets import enable_minify, strong_static_cache
+    enable_minify(app)        # HTML/CSS/JS-Minify
+    strong_static_cache(app)  # Lange Cache-Dauer für static/
+except Exception:
+    pass
+
 # -----------------------------------------------------------------------------
 # Routen
 # -----------------------------------------------------------------------------
