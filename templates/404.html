@@ -1,10 +1,22 @@
-
 {% extends "base.html" %}
 {% block title %}Seite nicht gefunden (404){% endblock %}
 {% block content %}
-  <div class="text-center py-5">
-    <h1 class="display-3 fw-bold">404</h1>
-    <p class="lead">Upps – die Seite existiert nicht.</p>
-    <a class="btn btn-primary" href="/">Zurück zum Dashboard</a>
+<div class="container my-5">
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-8">
+      <div class="card shadow-sm p-4">
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" class="text-warning">
+            <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+          </svg>
+          <h1 class="h4 m-0">404 – Seite nicht gefunden</h1>
+        </div>
+        <p class="text-secondary mb-4">
+          Upps! Diese Adresse gibt es nicht (mehr). Prüfe die URL oder kehre zum Dashboard zurück.
+        </p>
+        <a class="btn btn-primary" href="{{ url_for('dashboard') }}">Zurück zum Dashboard</a>
+      </div>
+    </div>
   </div>
+</div>
 {% endblock %}
