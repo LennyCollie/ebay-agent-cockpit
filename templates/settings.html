@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen · ebay-agent-cockpit{% endblock %}
+{% block content %}
+<div class="card" style="padding:20px">
+  <h2 class="h5 mb-3">Einstellungen</h2>
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Beispiel-Option</label>
+      <input class="form-control" name="example" placeholder="Wert">
+    </div>
+    <button class="btn btn-primary" type="submit">Speichern</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Zurück</a>
+  </form>
+</div>
+{% endblock %}
