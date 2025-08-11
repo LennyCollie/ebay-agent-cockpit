@@ -1,0 +1,34 @@
+# ==== app.py – Snippets zum Einfügen ====
+# Öffentliche Routen
+@app.get("/public")
+def public_home():
+    return render_template("public_home.html")
+
+@app.get("/pricing")
+def public_pricing():
+    return render_template("public_pricing.html")
+
+@app.route("/checkout", methods=["GET","POST"])
+def public_checkout():
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip()
+        flash("Danke! Wir melden uns per E‑Mail: " + email)
+        return redirect(url_for("public_pricing"))
+    return render_template("public_checkout.html")
+
+# Sync-Route (Demo)
+@app.get("/sync")
+@login_required
+def sync_get():
+    flash("Sync gestartet (Demo) – Implementierung folgt.")
+    return redirect(url_for("dashboard"))
+
+# Stripe-Vorbereitung (später echte Zahlung)
+# .env:
+# STRIPE_PUBLIC_KEY=pk_test_xxx
+# STRIPE_SECRET_KEY=sk_test_xxx
+# requirements.txt: stripe
+# In app.py:
+#   import stripe
+#   stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+#   # In /checkout POST: Session erstellen und redirecten.
