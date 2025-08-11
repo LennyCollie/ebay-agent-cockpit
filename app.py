@@ -16,6 +16,13 @@ load_dotenv()
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev_key")
 
+try:
+    from performance_snippets import enable_minify, strong_static_cache
+    enable_minify(app)
+    strong_static_cache(app)
+except Exception:
+    pass
+
 # SQLite-Datei (im Projekt-Root). Auf Render ist das ephemer – für Tests ok.
 DB_PATH = os.getenv("DATABASE_FILE", "database.db")
 
