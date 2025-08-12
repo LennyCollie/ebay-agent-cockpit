@@ -136,13 +136,34 @@ def public_home():
 def public_pricing():
     return render_template("public_pricing.html")
 
+import stripe
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
 @app.route("/checkout", methods=["GET","POST"])
 def public_checkout():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip()
-        flash("Danke! Wir melden uns per E‑Mail: " + email)
-        return redirect(url_for("public_pricing"))
+
+        try:
+            session = stripe.checkout.Session.create(
+                mode="subscription",
+                line_items=[{"price": os.getenv("STRIPE_PRICE_PRO"), "quantity": 1}],
+                customer_email=email,
+                success_url=os.getenv("STRIPE_SUCCESS_URL", url_for("checkout_success", _external=True)),
+                cancel_url=os.getenv("STRIPE_CANCEL_URL", url_for("public_pricing", _external=True)),
+                allow_promotion_codes=True,
+            )
+            return redirect(session.url, code=303)
+        except Exception as e:
+            # hilft beim Debuggen, falls ENV/Preis-ID fehlt
+            flash(f"Stripe-Fehler: {e}", "danger")
+            return redirect(url_for("public_checkout"))
+
     return render_template("public_checkout.html")
+
+@app.get("/checkout/success")
+def checkout_success():
+    return render_template("checkout_success.html")
 @app.get("/ping")
 def ping():
     # Extra: Initialisierung auch hier sicherstellen
