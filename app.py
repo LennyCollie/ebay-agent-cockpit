@@ -1,9 +1,11 @@
+
+
+
 import os
 import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, session, g
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
-import stripe
 
 # .env laden (optional)
 load_dotenv()
@@ -24,9 +26,6 @@ except Exception:
 # SQLite-Datei (im Projekt-Root). Auf Render ist das ephemer – für Tests ok.
 DB_PATH = os.getenv("DATABASE_FILE", "database.db")
 
-# Stripe konfigurieren
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-
 # -----------------------------------------------------------------------------
 # DB-Helfer
 # -----------------------------------------------------------------------------
@@ -44,9 +43,14 @@ def close_db(e=None):
         db.close()
 
 def ensure_schema():
-    """Stellt sicher, dass die Tabelle 'users' existiert."""
+    """
+    Stellt sicher, dass die Tabelle 'users' existiert und die erwarteten Spalten hat.
+    Falls Spalten fehlen (z. B. durch alte DB), werden sie per ALTER TABLE ergänzt.
+    """
     db = get_db()
     cur = db.cursor()
+
+    # Tabelle anlegen, wenn nicht vorhanden
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,30 +59,41 @@ def ensure_schema():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Prüfen, welche Spalten vorhanden sind
     cur.execute("PRAGMA table_info(users)")
     cols = {row["name"] for row in cur.fetchall()}
+
+    # Fehlende Spalten ergänzen (mit Default, weil SQLite sonst NOT NULL nicht zulässt)
     if "password" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN password TEXT DEFAULT ''")
     if "created_at" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP")
+
     db.commit()
 
 def seed_user():
-    """Optional: Testnutzer aus Umgebungsvariablen anlegen."""
+    """
+    Optional: Testnutzer aus Umgebungsvariablen anlegen.
+    SEED_USER_EMAIL / SEED_USER_PASSWORD setzen, falls gewünscht.
+    """
     email = os.getenv("SEED_USER_EMAIL", "").strip()
     pw = os.getenv("SEED_USER_PASSWORD", "").strip()
     if not email or not pw:
         return
+
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT id FROM users WHERE email = ?", (email,))
-    if not cur.fetchone():
+    exists = cur.fetchone()
+    if not exists:
         cur.execute(
             "INSERT INTO users (email, password) VALUES (?, ?)",
             (email, generate_password_hash(pw))
         )
         db.commit()
 
+# Einmalige Initialisierung bei erstem Request (oder über /ping)
 _initialized = False
 @app.before_request
 def _init_once():
@@ -101,9 +116,18 @@ def login_required(view):
         return view(*args, **kwargs)
     return wrapped
 
+
+try:
+    from performance_snippets import enable_minify, strong_static_cache
+    enable_minify(app)        # HTML/CSS/JS-Minify
+    strong_static_cache(app)  # Lange Cache-Dauer für static/
+except Exception:
+    pass
+
 # -----------------------------------------------------------------------------
-# Öffentliche Seiten
+# Routen
 # -----------------------------------------------------------------------------
+
 @app.get("/public")
 def public_home():
     return render_template("public_home.html")
@@ -112,12 +136,16 @@ def public_home():
 def public_pricing():
     return render_template("public_pricing.html")
 
-@app.route("/checkout", methods=["GET", "POST"])
+import stripe
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
+@app.route("/checkout", methods=["GET","POST"])
 def public_checkout():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip()
+
         try:
-            checkout_session = stripe.checkout.Session.create(
+            session = stripe.checkout.Session.create(
                 mode="subscription",
                 line_items=[{"price": os.getenv("STRIPE_PRICE_PRO"), "quantity": 1}],
                 customer_email=email,
@@ -125,23 +153,22 @@ def public_checkout():
                 cancel_url=os.getenv("STRIPE_CANCEL_URL", url_for("public_pricing", _external=True)),
                 allow_promotion_codes=True,
             )
-            return redirect(checkout_session.url, code=303)
+            return redirect(session.url, code=303)
         except Exception as e:
+            # hilft beim Debuggen, falls ENV/Preis-ID fehlt
             flash(f"Stripe-Fehler: {e}", "danger")
             return redirect(url_for("public_checkout"))
+
     return render_template("public_checkout.html")
 
 @app.get("/checkout/success")
 def checkout_success():
     return render_template("checkout_success.html")
-
-# -----------------------------------------------------------------------------
-# Auth & Dashboard
-# -----------------------------------------------------------------------------
 @app.get("/ping")
 def ping():
+    # Extra: Initialisierung auch hier sicherstellen
     ensure_schema()
-    return "pong"
+    return "pong" 
 
 @app.get("/")
 @login_required
@@ -153,13 +180,16 @@ def login():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
         password = request.form.get("password") or ""
+
         if not email or not password:
             flash("Bitte E-Mail und Passwort eingeben.")
             return redirect(url_for("login"))
+
         db = get_db()
         cur = db.cursor()
         cur.execute("SELECT id, password FROM users WHERE email = ?", (email,))
         row = cur.fetchone()
+
         if row and check_password_hash(row["password"], password):
             session["user_id"] = row["id"]
             session["user_email"] = email
@@ -168,6 +198,7 @@ def login():
         else:
             flash("Ungültige E-Mail oder Passwort.")
             return redirect(url_for("login"))
+
     return render_template("login.html")
 
 @app.route("/register", methods=["GET", "POST"])
@@ -175,15 +206,19 @@ def register():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
         password = request.form.get("password") or ""
+
         if not email or not password:
             flash("Bitte E-Mail und Passwort angeben.")
             return redirect(url_for("register"))
+
         db = get_db()
         cur = db.cursor()
+        # Prüfen, ob E-Mail schon existiert
         cur.execute("SELECT id FROM users WHERE email = ?", (email,))
         if cur.fetchone():
             flash("Diese E-Mail ist bereits registriert.")
             return redirect(url_for("register"))
+
         cur.execute(
             "INSERT INTO users (email, password) VALUES (?, ?)",
             (email, generate_password_hash(password)),
@@ -191,6 +226,7 @@ def register():
         db.commit()
         flash("Registrierung erfolgreich. Bitte einloggen.")
         return redirect(url_for("login"))
+
     return render_template("register.html")
 
 @app.get("/logout")
@@ -199,12 +235,29 @@ def logout():
     flash("Logout erfolgreich!")
     return redirect(url_for("login"))
 
+# Optional: gefahrloser „Drop & Recreate“ für Tests – nur aktivieren, wenn du es brauchst!
+@app.post("/_dev_reset_db")
+def _dev_reset_db():
+    if os.getenv("ALLOW_RESET") != "1":
+        return "disabled", 403
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DROP TABLE IF EXISTS users")
+    db.commit()
+    ensure_schema()
+    return "reset ok"
+
 # -----------------------------------------------------------------------------
-# Tools / Settings
+# Run (lokal). Auf Render läuft Gunicorn (Procfile) und nutzt app:app.
 # -----------------------------------------------------------------------------
+
+from flask import redirect, url_for, flash
+# ... deine anderen Imports bleiben
+
 @app.get("/sync")
 @login_required
 def sync_get():
+    # Fürs erste nur Info und zurück zum Dashboard
     flash("Sync gestartet (Demo) – Implementierung folgt.")
     return redirect(url_for("dashboard"))
 
@@ -212,28 +265,11 @@ def sync_get():
 @login_required
 def settings():
     if request.method == "POST":
+        # Hier später echte Einstellungen speichern
         flash("Einstellungen gespeichert.")
         return redirect(url_for("settings"))
     return render_template("settings.html")
 
-# -----------------------------------------------------------------------------
-# Debug-Routen
-# -----------------------------------------------------------------------------
-@app.get("/debug")
-def debug_simple():
-    return jsonify({"alive": True, "message": "Service läuft"}), 200
-
-@app.get("/_debug/stripe")
-def debug_stripe():
-    try:
-        balance = stripe.Balance.retrieve()
-        return jsonify({"status": "ok", "balance": balance})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-# -----------------------------------------------------------------------------
-# Error Pages
-# -----------------------------------------------------------------------------
 @app.errorhandler(404)
 def page_not_found(e):
     return render_template("404.html"), 404
@@ -241,10 +277,7 @@ def page_not_found(e):
 @app.errorhandler(500)
 def server_error(e):
     return render_template("500.html"), 500
-
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
+    
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=True)
