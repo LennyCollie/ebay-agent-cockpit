@@ -277,6 +277,48 @@ def page_not_found(e):
 @app.errorhandler(500)
 def server_error(e):
     return render_template("500.html"), 500
+
+# --- Debug-Helfer ---
+from flask import jsonify
+import os
+
+@app.get("/debug")
+def debug_simple():
+    return jsonify({
+        "ok": True,
+        "env": {
+            "STRIPE_PUBLIC_KEY_set": bool(os.getenv("STRIPE_PUBLIC_KEY")),
+            "STRIPE_SECRET_KEY_set": bool(os.getenv("STRIPE_SECRET_KEY")),
+            "STRIPE_PRICE_PRO": os.getenv("STRIPE_PRICE_PRO") or None,
+        }
+    }), 200
+
+@app.get("/_debug/stripe")
+def debug_stripe():
+    import stripe
+    stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+    result = {
+        "ok": False,
+        "can_call_api": False,
+        "price_ok": None,
+        "error": None,
+    }
+    try:
+        # einfache API‑Probe
+        _ = stripe.Price.list(limit=1)
+        result["can_call_api"] = True
+        price_id = os.getenv("STRIPE_PRICE_PRO")
+        if price_id:
+            try:
+                stripe.Price.retrieve(price_id)
+                result["price_ok"] = True
+            except Exception as e:
+                result["price_ok"] = False
+                result["error"] = str(e)
+        result["ok"] = True
+    except Exception as e:
+        result["error"] = str(e)
+    return jsonify(result), 200
     
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
