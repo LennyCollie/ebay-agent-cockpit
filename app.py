@@ -1,4 +1,5 @@
 
+
 import os
 import sqlite3
 from functools import wraps
@@ -14,28 +15,21 @@ import stripe
 # -----------------------------------------------------------------------------
 # Setup
 # -----------------------------------------------------------------------------
-load_dotenv()  # lokal nützlich; auf Render ignoriert
+load_dotenv()
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev_key")
 
 DB_PATH = os.getenv("DATABASE_FILE", "database.db")
-
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")  # secret key (test oder live)
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")  # live ODER test
 
 # -----------------------------------------------------------------------------
-# Utilities
+# DB utils
 # -----------------------------------------------------------------------------
-def env_required(name: str) -> str:
-    val = os.getenv(name)
-    if not val:
-        raise RuntimeError(f"Fehlende Umgebungsvariable: {name}")
-    return val
-
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(DB_PATH, check_same_thread=False)
         g.db.row_factory = sqlite3.Row
-    return g.db
+    return g
 
 @app.teardown_appcontext
 def close_db(_=None):
@@ -44,13 +38,9 @@ def close_db(_=None):
         db.close()
 
 def ensure_schema():
-    """
-    users: id, email (unique), password, is_premium (0/1), created_at
-    """
     db = get_db()
     cur = db.cursor()
-    cur.execute(
-        """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
@@ -58,9 +48,7 @@ def ensure_schema():
             is_premium INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
-        """
-    )
-    # defensive: Spalten nachziehen, falls alte DB
+    """)
     cur.execute("PRAGMA table_info(users)")
     cols = {r["name"] for r in cur.fetchall()}
     if "is_premium" not in cols:
@@ -102,8 +90,14 @@ def login_required(view):
         return view(*args, **kwargs)
     return wrapped
 
+def env_required(name: str) -> str:
+    val = os.getenv(name)
+    if not val:
+        raise RuntimeError(f"Fehlende Umgebungsvariable: {name}")
+    return val
+
 # -----------------------------------------------------------------------------
-# Öffentliche Seiten
+# Public pages
 # -----------------------------------------------------------------------------
 @app.get("/public")
 def public_home():
@@ -114,20 +108,18 @@ def public_pricing():
     return render_template("public_pricing.html")
 
 # -----------------------------------------------------------------------------
-# Checkout (Stripe)
+# Stripe Checkout (nur Karte & SEPA erlaubt)
 # -----------------------------------------------------------------------------
 @app.route("/checkout", methods=["GET", "POST"])
 def public_checkout():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip()
-        # Erfolg/Abbruch-URLs
         success_url = os.getenv("STRIPE_SUCCESS_URL", url_for("checkout_success", _external=True))
         cancel_url  = os.getenv("STRIPE_CANCEL_URL",  url_for("public_pricing", _external=True))
-
         try:
-            # Subscription-Checkout mit Price-ID aus ENV
             session_obj = stripe.checkout.Session.create(
                 mode="subscription",
+                payment_method_types=["card", "sepa_debit"],  # <- Revolut Pay hart ausgeschlossen
                 line_items=[{"price": env_required("STRIPE_PRICE_PRO"), "quantity": 1}],
                 customer_email=email or None,
                 success_url=success_url,
@@ -139,30 +131,22 @@ def public_checkout():
             flash(f"Stripe-Fehler: {e}", "danger")
             return redirect(url_for("public_checkout"))
 
-    # Für späteres clientseitiges Stripe nutzbar:
     return render_template("public_checkout.html",
                            STRIPE_PUBLIC_KEY=os.getenv("STRIPE_PUBLIC_KEY"))
 
 @app.get("/checkout/success")
 def checkout_success():
-    # Einfache Erfolgsmeldung; Status wird zuverlässig über Webhook gesetzt.
-    flash("Zahlung erfolgreich! Dein Zugang wird in Kürze freigeschaltet.")
-    return render_template("checkout_success.html")
+    flash("Zahlung erfolgreich! Dein Premium-Zugang wird freigeschaltet.")
+    return render_template("checkout_success.html")  # Datei existiert bei dir
 
 # -----------------------------------------------------------------------------
-# Webhook (Stripe)
+# Stripe Webhook (setzt is_premium=1 nach erfolgreichem Checkout)
 # -----------------------------------------------------------------------------
 @app.post("/webhook/stripe")
 def stripe_webhook():
-    """
-    Erwartet STRIPE_WEBHOOK_SECRET in den ENVs.
-    Reagiert auf checkout.session.completed & invoice.paid
-    und setzt users.is_premium=1 anhand der Kunden-E-Mail.
-    """
     payload = request.get_data()
     sig_header = request.headers.get("Stripe-Signature")
     endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
-
     try:
         if not endpoint_secret:
             raise ValueError("STRIPE_WEBHOOK_SECRET fehlt")
@@ -170,9 +154,9 @@ def stripe_webhook():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 400
 
-    event_type = event["type"]
+    etype = event["type"]
 
-    def _activate_by_email(email: str):
+    def _activate(email: str | None):
         if not email:
             return
         db = get_db()
@@ -181,41 +165,33 @@ def stripe_webhook():
         db.commit()
 
     try:
-        if event_type == "checkout.session.completed":
-            sess = event["data"]["object"]
-            email = None
-            # eine der beiden Quellen sollte vorhanden sein
-            if "customer_details" in sess and sess["customer_details"]:
-                email = (sess["customer_details"].get("email") or "").strip().lower()
-            if not email:
-                email = (sess.get("customer_email") or "").strip().lower()
-            _activate_by_email(email)
+        if etype == "checkout.session.completed":
+            obj = event["data"]["object"]
+            email = (obj.get("customer_email")
+                     or (obj.get("customer_details") or {}).get("email")
+                     or "")
+            _activate(email.strip().lower())
 
-        elif event_type == "invoice.paid":
+        elif etype == "invoice.paid":
             inv = event["data"]["object"]
-            # Kundendaten ziehen
             cust_id = inv.get("customer")
-            email = None
             if cust_id:
                 try:
                     cust = stripe.Customer.retrieve(cust_id)
-                    email = (cust.get("email") or "").strip().lower()
+                    _activate((cust.get("email") or "").strip().lower())
                 except Exception:
                     pass
-            _activate_by_email(email)
 
-        # andere Events ignorieren wir leise
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 # -----------------------------------------------------------------------------
-# App-Bereich
+# App area
 # -----------------------------------------------------------------------------
 @app.get("/")
 @login_required
 def dashboard():
-    # User ziehen inkl. Premium-Flag
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT email, is_premium FROM users WHERE id = ?", (session["user_id"],))
@@ -230,7 +206,6 @@ def login():
         if not email or not password:
             flash("Bitte E-Mail und Passwort eingeben.")
             return redirect(url_for("login"))
-
         db = get_db()
         cur = db.cursor()
         cur.execute("SELECT id, password FROM users WHERE email = ?", (email,))
@@ -252,14 +227,12 @@ def register():
         if not email or not password:
             flash("Bitte E-Mail und Passwort angeben.")
             return redirect(url_for("register"))
-
         db = get_db()
         cur = db.cursor()
         cur.execute("SELECT id FROM users WHERE email = ?", (email,))
         if cur.fetchone():
             flash("Diese E-Mail ist bereits registriert.")
             return redirect(url_for("register"))
-
         cur.execute(
             "INSERT INTO users (email, password) VALUES (?, ?)",
             (email, generate_password_hash(password)),
@@ -289,7 +262,6 @@ def settings():
         return redirect(url_for("settings"))
     return render_template("settings.html")
 
-# Dev-Helfer (optional & abgesichert)
 @app.post("/_dev_reset_db")
 def _dev_reset_db():
     if os.getenv("ALLOW_RESET") != "1":
@@ -302,7 +274,7 @@ def _dev_reset_db():
     return "reset ok"
 
 # -----------------------------------------------------------------------------
-# Fehlerseiten
+# Fehler & Debug
 # -----------------------------------------------------------------------------
 @app.errorhandler(404)
 def page_not_found(e):
@@ -310,12 +282,8 @@ def page_not_found(e):
 
 @app.errorhandler(500)
 def server_error(e):
-    # Nichts leaken – nur generische Seite
     return render_template("500.html"), 500
 
-# -----------------------------------------------------------------------------
-# Debug (einmalig!)
-# -----------------------------------------------------------------------------
 @app.get("/debug")
 def debug_env():
     return jsonify({
@@ -332,13 +300,12 @@ def debug_env():
 def debug_stripe():
     result = {"ok": False, "can_call_api": False, "price_ok": None, "error": None}
     try:
-        stripe.Balance.retrieve()  # schlägt bei falschem Secret Key fehl
+        stripe.Balance.retrieve()
         result["can_call_api"] = True
-
-        price_id = os.getenv("STRIPE_PRICE_PRO")
-        if price_id:
+        pid = os.getenv("STRIPE_PRICE_PRO")
+        if pid:
             try:
-                stripe.Price.retrieve(price_id)
+                stripe.Price.retrieve(pid)
                 result["price_ok"] = True
             except Exception as e:
                 result["price_ok"] = False
@@ -348,14 +315,14 @@ def debug_stripe():
         result["error"] = str(e)
     return jsonify(result), 200
 
-# -----------------------------------------------------------------------------
-# Ping / lokal starten
-# -----------------------------------------------------------------------------
 @app.get("/ping")
 def ping():
     ensure_schema()
     return "pong"
 
+# -----------------------------------------------------------------------------
+# Local run
+# -----------------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=True)
