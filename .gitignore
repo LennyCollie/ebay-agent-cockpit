@@ -8,3 +8,9 @@ instance/
 *.sqlite3
 *.log
 venv/
+/.env
+/instance/
+/database.db
+*.zip
+__pycache__/
+
