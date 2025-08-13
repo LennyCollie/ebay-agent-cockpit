@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-import os
-from flask import Flask, render_template, request, redirect, url_for, jsonify
-from dotenv import load_dotenv
-=======
-
 import os
 import sqlite3
 from functools import wraps
@@ -13,25 +7,16 @@ from flask import (
     flash, session, g, jsonify, Response
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-
-# Stripe
->>>>>>> 1090e6b4 (chore: robuste app.py (DB unter /tmp, Template-Fallback, Health))
+from dotenv import load_dotenv  # lokal praktisch; auf Render ignoriert
 import stripe
-import sqlite3
-from datetime import datetime
-
-<<<<<<< HEAD
-# -----------------------------------------------------------
-# Setup
-# -----------------------------------------------------------
-load_dotenv()  # lokal nützlich; auf Render ignoriert
-=======
 
 # =============================================================================
 # Konfiguration
 # =============================================================================
 
-# Render ist read-only; nur /tmp ist schreibbar. Lokal gern database.db
+load_dotenv()  # lokal: .env lesen
+
+# Render ist read-only; nur /tmp ist schreibbar. Lokal z.B. "database.db"
 DB_PATH = (
     os.getenv("DATABASE_FILE")
     or os.getenv("DATABASE_URL")
@@ -51,27 +36,9 @@ CANCEL_URL = os.getenv("STRIPE_CANCEL_URL")      # optional
 # Flask App
 # =============================================================================
 
->>>>>>> 1090e6b4 (chore: robuste app.py (DB unter /tmp, Template-Fallback, Health))
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SECRET_KEY
 
-<<<<<<< HEAD
-# Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-
-# -----------------------------------------------------------
-# Datenbank
-# -----------------------------------------------------------
-def get_db():
-    db_path = os.getenv("DATABASE_URL", "database.db")
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def ensure_schema():
-    conn = get_db()
-    cur = conn.cursor()
-=======
 
 # =============================================================================
 # Hilfen: Template-Fallback (verhindert 500 bei fehlenden Dateien)
@@ -79,13 +46,12 @@ def ensure_schema():
 
 def safe_render(template_name: str, **ctx):
     """
-    Versucht ein Template zu rendern; wenn es nicht existiert, gibt es
-    eine sehr einfache HTML-Seite zurück. So bricht die App nie auf 500.
+    Versucht ein Template zu rendern; wenn es nicht existiert, liefert
+    eine einfache HTML-Seite zurück (keine 500er mehr wegen fehlender Templates).
     """
     try:
         return render_template(template_name, **ctx)
     except Exception:
-        # Minimaler Fallback
         title = ctx.get("title") or template_name
         body = ctx.get("body") or ""
         return Response(f"""<!doctype html>
@@ -105,7 +71,7 @@ def safe_render(template_name: str, **ctx):
 def get_db():
     """
     Öffnet/verwendet eine SQLite-Connection für den Request.
-    Stellt sicher, dass das Verzeichnis existiert (für /tmp).
+    Stellt sicher, dass das Zielverzeichnis existiert (für /tmp auf Render).
     """
     if "db" not in g:
         os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
@@ -125,33 +91,20 @@ def ensure_schema():
     """
     db = get_db()
     cur = db.cursor()
->>>>>>> 1090e6b4 (chore: robuste app.py (DB unter /tmp, Template-Fallback, Health))
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL DEFAULT '',
             is_premium INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
-<<<<<<< HEAD
-    conn.commit()
-    conn.close()
-
-ensure_schema()
-
-# -----------------------------------------------------------
-# Routes
-# -----------------------------------------------------------
-@app.route("/")
-def index():
-    return redirect(url_for("public_home"))
-
-@app.route("/public")
-=======
-    # fehlende Spalten ergänzen
+    # fehlende Spalten ergänzen (bei alten DBs)
     cur.execute("PRAGMA table_info(users)")
     cols = {r["name"] for r in cur.fetchall()}
+    if "password" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN password TEXT NOT NULL DEFAULT ''")
     if "is_premium" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN is_premium INTEGER DEFAULT 0")
     if "created_at" not in cols:
@@ -175,7 +128,6 @@ def seed_user():
             (email, generate_password_hash(pw))
         )
         db.commit()
-
 
 # Einmalige Initialisierung
 _initialized = False
@@ -207,7 +159,6 @@ def login_required(view):
 # =============================================================================
 
 @app.get("/public")
->>>>>>> 1090e6b4 (chore: robuste app.py (DB unter /tmp, Template-Fallback, Health))
 def public_home():
     return safe_render(
         "public_home.html",
@@ -215,88 +166,6 @@ def public_home():
         body="Dein leichtes Cockpit für eBay‑Automatisierung."
     )
 
-<<<<<<< HEAD
-@app.route("/pricing")
-def pricing():
-    return render_template("pricing.html")
-
-@app.route("/checkout", methods=["POST"])
-def checkout():
-    try:
-        session = stripe.checkout.Session.create(
-            payment_method_types=["card", "sepa_debit"],
-            line_items=[{
-                "price_data": {
-                    "currency": "eur",
-                    "product_data": {
-                        "name": "Premium Zugang"
-                    },
-                    "unit_amount": 500,
-                },
-                "quantity": 1,
-            }],
-            mode="payment",
-            success_url=url_for("checkout_success", _external=True),
-            cancel_url=url_for("pricing", _external=True),
-        )
-        return redirect(session.url, code=303)
-    except Exception as e:
-        return str(e), 400
-
-@app.route("/checkout/success")
-def checkout_success():
-    return render_template("success.html")
-
-# -----------------------------------------------------------
-# Webhook
-# -----------------------------------------------------------
-@app.route("/webhook", methods=["POST"])
-def webhook_received():
-    payload = request.data
-    sig_header = request.headers.get("Stripe-Signature")
-    endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
-
-    try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, endpoint_secret
-        )
-    except stripe.error.SignatureVerificationError:
-        return "Webhook signature verification failed", 400
-
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        customer_email = session.get("customer_email")
-
-        if customer_email:
-            conn = get_db()
-            cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO users (email, is_premium)
-                VALUES (?, 1)
-                ON CONFLICT(email) DO UPDATE SET is_premium=1
-            """, (customer_email,))
-            conn.commit()
-            conn.close()
-
-    return "", 200
-
-# -----------------------------------------------------------
-# Search Route (GET erlaubt)
-# -----------------------------------------------------------
-@app.route("/search", methods=["GET", "POST"])
-def search():
-    if request.method == "POST":
-        query = request.form.get("query")
-        return f"Suchergebnisse für: {query}"
-    else:
-        return render_template("search.html")
-
-# -----------------------------------------------------------
-# Main
-# -----------------------------------------------------------
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-=======
 @app.get("/pricing")
 def public_pricing():
     return safe_render(
@@ -497,4 +366,3 @@ def _dev_reset_db():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "10000"))
     app.run(host="0.0.0.0", port=port, debug=True)
->>>>>>> 1090e6b4 (chore: robuste app.py (DB unter /tmp, Template-Fallback, Health))
