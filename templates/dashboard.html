@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <main style="max-width:720px;margin:40px auto;padding:0 16px;">
+      <h1>Dashboard</h1>
+      <p>Willkommen, {{ session.get('user_email') or 'User' }}!</p>
+      <ul>
+        <li><a href="{{ url_for('public_pricing') }}">Preise</a></li>
+        <li><a href="{{ url_for('logout') }}">Logout</a></li>
+      </ul>
+    </main>
+  </body>
+</html>

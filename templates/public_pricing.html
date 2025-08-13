@@ -1,52 +1,28 @@
-{% extends "public_base.html" %}
-{% block title %}Preise · ebay-agent-cockpit{% endblock %}
-{% block content %}
-<h1 class="h3 mb-4">Preise</h1>
-<div class="row g-3">
-  <div class="col-md-4">
-    <div class="card h-100 shadow-sm">
-      <div class="card-body">
-        <div class="text-secondary small mb-1">Starter</div>
-        <div class="display-6 fw-bold">0 €</div>
-        <ul class="mt-3 small text-secondary">
-          <li>1 Nutzer</li>
-          <li>Basis‑Funktionen</li>
-          <li>E‑Mail Support</li>
-        </ul>
-        <a class="btn btn-outline-primary w-100 mt-3" href="{{ url_for('register') }}">Gratis starten</a>
-      </div>
-    </div>
-  </div>
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>Preise</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="{{ url_for('static', filename='css/main.css') }}" rel="stylesheet">
+  </head>
+  <body>
+    <main style="max-width:720px;margin:40px auto;padding:0 16px;">
+      <h1>Preise</h1>
+      <p>Monatlich kündbar, voller Funktionsumfang.</p>
 
-  <div class="col-md-4">
-    <div class="card h-100 border-primary shadow-sm">
-      <div class="card-body">
-        <span class="badge text-bg-primary mb-2">Beliebt</span>
-        <div class="text-secondary small mb-1">Pro</div>
-        <div class="display-6 fw-bold">19 €<span class="fs-6 text-secondary">/Monat</span></div>
-        <ul class="mt-3 small text-secondary">
-          <li>Bis zu 3 Nutzer</li>
-          <li>Sync‑Jobs</li>
-          <li>Priorisierter Support</li>
-        </ul>
-        <a class="btn btn-primary w-100 mt-3" href="{{ url_for('public_checkout') }}">Jetzt sichern</a>
+      <div style="border:1px solid #ddd;border-radius:8px;padding:16px;margin-top:16px">
+        <h2>Premium</h2>
+        <p><strong>9,99 €</strong> / Monat</p>
+        <form action="{{ url_for('public_checkout') }}" method="post">
+          <label for="email">E‑Mail (für Rechnung/Stripe):</label><br>
+          <input id="email" name="email" type="email" placeholder="you@example.com" style="width:100%;max-width:360px" />
+          <br><br>
+          <button type="submit">Jetzt abonnieren</button>
+        </form>
       </div>
-    </div>
-  </div>
 
-  <div class="col-md-4">
-    <div class="card h-100 shadow-sm">
-      <div class="card-body">
-        <div class="text-secondary small mb-1">Business</div>
-        <div class="display-6 fw-bold">49 €<span class="fs-6 text-secondary">/Monat</span></div>
-        <ul class="mt-3 small text-secondary">
-          <li>Unbegrenzt Nutzer</li>
-          <li>API‑Zugriff</li>
-          <li>SLAs</li>
-        </ul>
-        <a class="btn btn-outline-primary w-100 mt-3" href="{{ url_for('public_checkout') }}">Kontakt aufnehmen</a>
-      </div>
-    </div>
-  </div>
-</div>
-{% endblock %}
+      <p style="margin-top:24px"><a href="{{ url_for('public_home') }}">Zur Startseite</a></p>
+    </main>
+  </body>
+</html>
