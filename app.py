@@ -62,12 +62,19 @@ def ensure_schema():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+
     cur.execute("PRAGMA table_info(users)")
     cols = {row["name"] for row in cur.fetchall()}
+
+    # Fehlende Spalten ergänzen (mit Default, weil SQLite sonst NOT NULL nicht zulässt)
     if "password" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN password TEXT DEFAULT ''")
     if "created_at" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP")
+    # 🔽 NEU:
+    if "is_premium" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN is_premium INTEGER DEFAULT 0")
     db.commit()
 
 def seed_user():
@@ -154,7 +161,8 @@ def public_checkout():
 
 @app.get("/checkout/success")
 def checkout_success():
-    return render_template("checkout_success.html")
+    return render_template("success.html")
+
 
 # ---------------------------------------------------------------------
 # Dashboard & Basis
@@ -202,6 +210,18 @@ def debug_stripe():
     except Exception as e:
         out["error"] = str(e)
     return jsonify(out)
+
+@app.get("/debug")
+def debug_env():
+    return jsonify({
+        "ok": True,
+        "env": {
+            "STRIPE_SECRET_KEY_set": bool(os.getenv("STRIPE_SECRET_KEY")),
+            "STRIPE_PUBLIC_KEY_set": bool(os.getenv("STRIPE_PUBLIC_KEY")),
+            "STRIPE_PRICE_PRO": os.getenv("STRIPE_PRICE_PRO"),
+            "STRIPE_WEBHOOK_SECRET_set": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),  # 🔽 neu
+        }
+    })
 
 # ---------------------------------------------------------------------
 # Auth
@@ -289,6 +309,43 @@ def _dev_reset_db():
     db.commit()
     ensure_schema()
     return "reset ok"
+
+# Stripe Webhook
+# -------------------------
+@app.post("/webhook")
+def stripe_webhook():
+    endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    payload = request.data
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    # 1) Signatur/Authentizität prüfen
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+    etype = event.get("type")
+    data = event.get("data", {}).get("object", {})
+
+    # 2) Relevante Events behandeln
+    if etype == "checkout.session.completed":
+        # Wir haben im Checkout customer_email gesetzt → hier verfügbar:
+        email = (data.get("customer_email") or "").strip().lower()
+        if email:
+            db = get_db()
+            cur = db.cursor()
+            cur.execute("UPDATE users SET is_premium = 1 WHERE lower(email)=?", (email,))
+            db.commit()
+
+    # Optional: Kündigung / Payment Failed behandeln (nur wenn gewünscht)
+    elif etype in ("customer.subscription.deleted", "invoice.payment_failed"):
+        # Beispiel (nur wenn du bei Kündigung Premium entziehen willst):
+        # customer_id = data.get("customer")
+        # -> wenn du später Stripe-Kunden-IDs speicherst, kannst du hier rücksetzen.
+        pass
+
+    return jsonify({"status": "ok"}), 200
+
 
 # ---------------------------------------------------------------------
 # Error Pages
