@@ -2,99 +2,129 @@
 {% block title %}Start – ebay-agent-cockpit{% endblock %}
 
 {% block content %}
-<section class="hero">
+
+<section class="hero section">
+  <div class="container hero-body" style="display:grid;gap:28px;grid-template-columns:1.2fr 1fr;align-items:center">
+    <div class="hero-copy">
+      <h1 class="display">Dein leichtes Cockpit für eBay‑Automatisierung</h1>
+      <p class="lead" style="max-width:56ch">
+        Angebote verwalten, Prozesse synchronisieren, weniger Klicks — mehr Zeit fürs Wesentliche.
+      </p>
+
+      <div class="cta" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px">
+        <a class="btn btn-primary" href="{{ url_for('register') }}">Kostenlos starten</a>
+        <a class="btn btn-ghost" href="{{ url_for('public_pricing') }}">Preise ansehen</a>
+      </div>
+
+      <ul class="trust" style="display:flex;gap:14px;flex-wrap:wrap;margin:18px 0 0;padding:0;list-style:none;font-size:.95rem;opacity:.9">
+        <li>🔒 Sichere Anmeldung</li>
+        <li>🔁 Sync‑Jobs vorbereitet</li>
+        <li>☁️ Render‑Deploy</li>
+      </ul>
+    </div>
+
+    <div class="hero-illu">
+      <!-- kleine illustrative „Dashboard“-Karte -->
+      <div class="card demo" style="border-radius:14px;overflow:hidden">
+        <div class="demo-nav" style="display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--border)">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ff5f57"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#febc2e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#28c840"></span>
+        </div>
+        <div class="demo-body" style="padding:14px">
+          <div class="demo-stats" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px">
+            <div class="stat"><strong>~120 ms</strong><small style="display:block;opacity:.8">Antwortzeit</small></div>
+            <div class="stat"><strong>99.9%</strong><small style="display:block;opacity:.8">Uptime</small></div>
+            <div class="stat"><strong>0</strong><small style="display:block;opacity:.8">Jobs queued</small></div>
+          </div>
+          <div class="demo-rows" style="display:grid;gap:8px">
+            <div class="row" style="height:8px;background:var(--muted);border-radius:6px"></div>
+            <div class="row" style="height:8px;background:var(--muted);border-radius:6px;width:80%"></div>
+            <div class="row" style="height:8px;background:var(--muted);border-radius:6px;width:65%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
   <div class="container">
-    <div class="hero-body">
-      <div class="hero-copy">
-        <h1>Dein leichtes Cockpit für eBay‑Automatisierung</h1>
-        <p class="lead">
-          Angebote verwalten, Prozesse synchronisieren, weniger Klicks — mehr Zeit fürs Wesentliche.
-        </p>
-        <div class="cta">
-          <a class="btn btn-primary" href="{{ url_for('register') }}">Kostenlos starten</a>
-          <a class="btn btn-ghost" href="{{ url_for('public_pricing') }}">Preise ansehen</a>
-        </div>
-        <div class="trust">
-          <span>🔒 Sichere Anmeldung • 🔁 Bereits an Sync‑Jobs gedacht • ☁️ Render‑Deploy</span>
-        </div>
+    <h2 class="section-title">Warum ebay‑agent‑cockpit?</h2>
+    <div class="grid" style="display:grid;gap:18px;grid-template-columns:repeat(4,minmax(0,1fr))">
+      <article class="feature card">
+        <div class="icon">⚡</div>
+        <h3>Schnell & einfach</h3>
+        <p>In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.</p>
+      </article>
+      <article class="feature card">
+        <div class="icon">🔐</div>
+        <h3>Sicher</h3>
+        <p>Login, Sessions & Best Practices sind standardmäßig aktiv.</p>
+      </article>
+      <article class="feature card">
+        <div class="icon">📈</div>
+        <h3>Skalierbar</h3>
+        <p>Von lokal bis Render‑Deploy. Feature‑Flags & Sync‑Jobs vorbereitet.</p>
+      </article>
+      <article class="feature card">
+        <div class="icon">🧰</div>
+        <h3>Stripe‑Abo</h3>
+        <p>Checkout & Webhook sind integriert. Rechnungen via Stripe.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section muted">
+  <div class="container">
+    <div class="cta-wide card" style="display:flex;gap:18px;justify-content:space-between;align-items:center;flex-wrap:wrap">
+      <div>
+        <h2>Bereit, loszulegen?</h2>
+        <p>Registriere dich gratis und teste das Cockpit.</p>
       </div>
-
-      <div class="hero-illu">
-        <!-- Simple “dashboard” illustration -->
-        <div class="card demo">
-          <div class="demo-nav">
-            <span></span><span></span><span></span>
-          </div>
-          <div class="demo-body">
-            <div class="demo-stats">
-              <div class="stat"><strong>~120 ms</strong><small>Antwortzeit</small></div>
-              <div class="stat"><strong>99.9%</strong><small>Uptime</small></div>
-              <div class="stat"><strong>0</strong><small>Jobs queued</small></div>
-            </div>
-            <div class="demo-rows">
-              <div class="row"></div>
-              <div class="row"></div>
-              <div class="row"></div>
-            </div>
-          </div>
-        </div>
+      <div style="display:flex;gap:12px">
+        <a class="btn btn-primary" href="{{ url_for('register') }}">Jetzt registrieren</a>
+        <a class="btn btn-ghost" href="{{ url_for('public_pricing') }}">Preise ansehen</a>
       </div>
     </div>
   </div>
 </section>
 
-<section class="container section">
-  <h2 class="section-title">Warum ebay‑agent‑cockpit?</h2>
-  <div class="grid">
-    <article class="feature">
-      <div class="icon">⚡</div>
-      <h3>Schnell & einfach</h3>
-      <p>In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.</p>
-    </article>
-    <article class="feature">
-      <div class="icon">🔐</div>
-      <h3>Sicher</h3>
-      <p>Login, Sessions & Best Practices sind standardmäßig aktiv.</p>
-    </article>
-    <article class="feature">
-      <div class="icon">📈</div>
-      <h3>Skalierbar</h3>
-      <p>Von lokal bis Render‑Deploy. Feature‑Flags & Sync‑Jobs vorbereitet.</p>
-    </article>
-    <article class="feature">
-      <div class="icon">🧰</div>
-      <h3>Stripe‑Abo</h3>
-      <p>Abomodell mit Stripe. Checkout & Webhook sind integriert.</p>
-    </article>
-  </div>
-</section>
-
-<section class="container section muted">
-  <div class="cta-wide">
-    <div>
-      <h2>Bereit, loszulegen?</h2>
-      <p>Registriere dich gratis und teste das Cockpit.</p>
-    </div>
-    <div>
-      <a class="btn btn-primary" href="{{ url_for('register') }}">Jetzt registrieren</a>
-      <a class="btn btn-ghost" href="{{ url_for('public_pricing') }}">Preise ansehen</a>
+<section class="section">
+  <div class="container">
+    <h2 class="section-title">Häufige Fragen</h2>
+    <div class="faq-grid" style="display:grid;gap:12px;grid-template-columns:repeat(3,minmax(0,1fr))">
+      <details class="faq card">
+        <summary>Kann ich kostenlos testen?</summary>
+        <p>Ja, du registrierst dich kostenlos und kannst das Cockpit direkt ausprobieren.</p>
+      </details>
+      <details class="faq card">
+        <summary>Wie funktioniert die Bezahlung?</summary>
+        <p>Über Stripe Abo. Der Checkout ist integriert, Rechnungen kommen automatisch von Stripe.</p>
+      </details>
+      <details class="faq card">
+        <summary>Kann ich später kündigen?</summary>
+        <p>Ja, jederzeit. Keine Mindestlaufzeit.</p>
+      </details>
     </div>
   </div>
 </section>
 
-<section class="container section">
-  <h2 class="section-title">Häufige Fragen</h2>
-  <details class="faq">
-    <summary>Kann ich kostenlos testen?</summary>
-    <p>Ja, du registrierst dich kostenlos und kannst das Cockpit direkt ausprobieren.</p>
-  </details>
-  <details class="faq">
-    <summary>Wie funktioniert die Bezahlung?</summary>
-    <p>Über Stripe Abo. Der Checkout ist integriert, Rechnungen kommen automatisch von Stripe.</p>
-  </details>
-  <details class="faq">
-    <summary>Kann ich später kündigen?</summary>
-    <p>Ja, jederzeit. Keine Mindestlaufzeit.</p>
-  </details>
-</section>
+<style>
+  /* sanfte Typo & Abstände – nutzt deine vorhandenen Variablen, fällt aber
+     auf Seiten ohne spezielles CSS freundlich zurück */
+  .display { letter-spacing:.2px; line-height:1.15 }
+  .card { border:1px solid var(--border,#e6e6e6); background:var(--panel,#fff); padding:16px; border-radius:12px }
+  .muted { background:var(--bg-muted,#fafafa) }
+  @media (max-width: 900px){
+    .hero-body{ grid-template-columns:1fr; }
+    .grid{ grid-template-columns:1fr 1fr; }
+    .faq-grid{ grid-template-columns:1fr; }
+  }
+  @media (max-width: 560px){
+    .grid{ grid-template-columns:1fr; }
+  }
+</style>
+
 {% endblock %}
