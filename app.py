@@ -130,6 +130,88 @@ def seed_user():
         )
         db.commit()
 
+def get_or_create_stripe_customer(email: str, name: str | None = None):
+    """Hole Stripe-Customer zur E-Mail; falls keiner existiert, anlegen."""
+    try:
+        # zuerst versuchen, per E-Mail zu finden
+        res = stripe.Customer.list(email=email, limit=1)
+        if res.data:
+            return res.data[0]
+        # sonst anlegen
+        return stripe.Customer.create(
+            email=email,
+            name=name or email,
+            metadata={"app": "ebay-agent-cockpit"}
+        )
+    except Exception as e:
+        raise RuntimeError(f"Stripe Customer Fehler: {e}")
+
+# --- Account: Übersicht -----------------------------------------------------
+@app.get("/account")
+@login_required
+def account():
+    email = session.get("user_email")
+    # Stripe-Kunde ermitteln
+    cust = get_or_create_stripe_customer(email)
+    # Rechnungen ziehen (letzte 12)
+    invoices = []
+    try:
+        inv_list = stripe.Invoice.list(customer=cust.id, limit=12)
+        for inv in inv_list.auto_paging_iter():
+            invoices.append({
+                "number": inv.number,
+                "status": inv.status,
+                "amount": (inv.amount_paid or inv.amount_due or 0)/100.0,
+                "currency": inv.currency.upper() if inv.currency else "EUR",
+                "hosted_invoice_url": getattr(inv, "hosted_invoice_url", None),
+                "created": inv.created
+            })
+    except Exception:
+        pass
+
+    # Abo(s) anzeigen
+    subscriptions = []
+    try:
+        subs = stripe.Subscription.list(customer=cust.id, limit=5)
+        for s in subs.auto_paging_iter():
+            price = s["items"]["data"][0]["price"] if s["items"]["data"] else None
+            subscriptions.append({
+                "id": s.id,
+                "status": s.status,
+                "current_period_end": s.current_period_end,
+                "price": price["id"] if price else None,
+                "nickname": (price.get("nickname") if price else None) or "Abo"
+            })
+    except Exception:
+        pass
+
+    return safe_render("account.html",
+                       title="Mein Konto",
+                       body="Abo & Rechnungen",
+                       email=email,
+                       customer_id=cust.id,
+                       invoices=invoices,
+                       subscriptions=subscriptions)
+
+# --- Account: Billing-Portal (Selbstverwaltung) -----------------------------
+@app.post("/account/billing-portal")
+@login_required
+def account_billing_portal():
+    """Erzeugt eine Stripe Billing Portal Session und leitet dorthin weiter."""
+    email = session.get("user_email")
+    cust = get_or_create_stripe_customer(email)
+    try:
+        session_bp = stripe.billing_portal.Session.create(
+            customer=cust.id,
+            return_url=url_for("account", _external=True)
+        )
+        return redirect(session_bp.url, code=303)
+    except Exception as e:
+        flash(f"Stripe‑Fehler (Billing‑Portal): {e}", "danger")
+        return redirect(url_for("account"))
+
+
+
 # Einmalige Initialisierung
 _initialized = False
 @app.before_request
@@ -153,6 +235,15 @@ def login_required(view):
             return redirect(url_for("login"))
         return view(*args, **kwargs)
     return wrapped
+
+
+from datetime import datetime
+@app.template_filter("datetime")
+def _fmt_ts(value):
+    try:
+        return datetime.fromtimestamp(int(value)).strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return value
 
 
 # =============================================================================
