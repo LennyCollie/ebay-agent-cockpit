@@ -1,39 +1,26 @@
-{% extends "public_base.html" %}
-{% block title %}Preise{% endblock %}
-
+{% extends "base.html" %}
+{% block title %}Preise – ebay-agent-cockpit{% endblock %}
 {% block content %}
-<section class="container">
-  <h1 class="page-title">Preise</h1>
+<h1 class="mb-4">Preise</h1>
+<div class="card shadow-sm border-0">
+  <div class="card-body">
+    <h3 class="card-title mb-1">Ebay Verkaufsagent <small class="text-muted">Premium</small></h3>
+    <p class="text-secondary">Alles drin, was du fürs tägliche Arbeiten brauchst.</p>
+    <ul class="mb-3">
+      <li>💠 Sync‑Jobs vorbereitet</li>
+      <li>📊 Dashboard &amp; Suche</li>
+      <li>🔒 Login, Sessions, Best Practices</li>
+      <li>🚀 Render‑Deploy inklusive</li>
+      <li>💳 Rechnung via Stripe</li>
+    </ul>
+    <p class="fs-4 fw-semibold">9,99 € <span class="fs-6 text-secondary">/ Monat</span></p>
 
-  <div class="pricing-grid">
-    <article class="card">
-      <header class="card-header">
-        <h2 class="card-title">Ebay Verkaufsagent <span class="badge">Premium</span></h2>
-        <p class="card-sub">Alles drin, was du fürs tägliche Arbeiten brauchst.</p>
-      </header>
-
-      <div class="price">
-        <span class="price-amount">{{ price_label or "9,99 €" }}</span>
-        <span class="price-period">/ Monat</span>
-      </div>
-
-      <ul class="feature-list">
-        <li>🔁 Sync‑Jobs vorbereitet</li>
-        <li>📊 Dashboard & Suche</li>
-        <li>🔐 Login, Sessions, Best Practices</li>
-        <li>☁️ Render‑Deploy inklusive</li>
-        <li>🧾 Rechnung via Stripe</li>
-      </ul>
-
-      <div class="card-actions">
-        <a class="btn btn-primary" href="{{ url_for('public_checkout') }}">Abo starten</a>
-        <a class="btn btn-ghost" href="{{ url_for('public_home') }}">Zur Startseite</a>
-      </div>
-    </article>
+    <!-- POST an /checkout → Stripe Session -->
+    <form action="{{ url_for('public_checkout') }}" method="post" class="d-inline">
+      <input type="hidden" name="email" value="{{ session.get('user_email', '') }}">
+      <button type="submit" class="btn btn-primary">Abo starten</button>
+    </form>
+    <a href="{{ url_for('public_home') }}" class="btn btn-link">Zur Startseite</a>
   </div>
-
-  <p class="small mt-lg">
-    Fragen? <a href="{{ url_for('public_home') }}#kontakt">Schreib uns</a> – wir helfen dir gern beim Start.
-  </p>
-</section>
+</div>
 {% endblock %}
