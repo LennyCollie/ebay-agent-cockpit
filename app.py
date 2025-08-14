@@ -62,6 +62,65 @@ def safe_render(template_name: str, **ctx):
 # DB-Helfer
 # =============================================================================
 
+# --- Helpers ---------------------------------------------------------------
+def current_user_is_premium() -> bool:
+    """Liest das Premium-Flag des eingeloggten Users aus der DB."""
+    uid = session.get("user_id")
+    if not uid:
+        return False
+    db = get_db()
+    cur = db.execute("SELECT is_premium FROM users WHERE id = ?", (uid,))
+    row = cur.fetchone()
+    return bool(row and row["is_premium"])
+
+# --- Suche -----------------------------------------------------------------
+@app.get("/search")
+@login_required
+def search_get():
+    # Formular liegt auf dem Dashboard – GET führt zurück dorthin
+    return redirect(url_for("dashboard"))
+
+@app.post("/search")
+@login_required
+def search_post():
+    """
+    Nimmt eine Liste von Suchbegriffen (eine Zeile pro Begriff) entgegen,
+    begrenzt Anzahl für Free-User, und zeigt (vorerst Mock-)Ergebnisse.
+    """
+    raw = (request.form.get("query") or "").strip()
+    # Erlaube Komma- ODER Zeilen-getrennt:
+    parts = []
+    for line in raw.splitlines():
+        parts.extend([p.strip() for p in line.split(",")])
+
+    terms = [p for p in (t.strip() for t in parts) if p]  # sauber + ohne Leere
+    is_prem = current_user_is_premium()
+    limit = 3 if not is_prem else 50  # Premium-Limit kannst du später erhöhen
+
+    if len(terms) > limit:
+        terms = terms[:limit]
+        flash(f"Free-Version: max. {limit} Suchbegriffe – Rest wurde ignoriert.", "warning")
+
+    if not terms:
+        flash("Bitte mindestens einen Suchbegriff eingeben.", "warning")
+        return redirect(url_for("dashboard"))
+
+    # TODO: Hier später echte eBay-API-Abfrage einbauen.
+    # Vorläufige Mock-Ergebnisse:
+    results = [
+        {"term": t, "hits": 0, "note": "API folgt"}
+        for t in terms
+    ]
+
+    return safe_render(
+        "search_results.html",
+        title="Suche",
+        terms=terms,
+        results=results,
+        is_premium=is_prem,
+        limit=limit,
+    )
+
 def get_db():
     if "db" not in g:
         os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)

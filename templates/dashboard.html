@@ -1,27 +1,69 @@
 {% extends "base.html" %}
 {% block title %}Dashboard – ebay-agent-cockpit{% endblock %}
 {% block content %}
-<h1 class="h4 mb-3">Willkommen im Dashboard</h1>
 
-<div class="row g-3">
-  <div class="col-md-6 col-lg-4">
-    <div class="card h-100 shadow-sm border-0">
+<h1 class="mb-4">Willkommen{% if session.get('user_email') %}, {{ session['user_email'] }}{% endif %}</h1>
+
+<div class="row g-4">
+  <!-- Suche -->
+  <div class="col-12 col-lg-7">
+    <div class="card shadow-sm border-0">
       <div class="card-body">
-        <h2 class="h6 mb-2">Schnellaktionen</h2>
-        <div class="d-grid gap-2">
-          <a class="btn btn-outline-primary" href="{{ url_for('public_pricing') }}">Abo verwalten</a>
-          <a class="btn btn-outline-secondary" href="{{ url_for('settings') }}">Einstellungen</a>
-        </div>
+        <h5 class="card-title mb-2">Schnellsuche</h5>
+        <p class="text-secondary small mb-3">
+          Free: bis zu <strong>3</strong> Suchbegriffe (je Zeile oder durch Komma getrennt).
+          Premium: mehr.
+        </p>
+        <form action="{{ url_for('search_post') }}" method="post" class="d-grid gap-2">
+          <textarea
+            name="query"
+            rows="5"
+            class="form-control"
+            placeholder="z.B. Akku 18V, Bosch Professional&#10;Makita Baustellenradio&#10;Milwaukee M18 Akku"
+          ></textarea>
+          <div class="d-flex align-items-center justify-content-between">
+            <small class="text-secondary">Tipp: Jede Zeile = 1 Begriff. Komma geht auch.</small>
+            <button type="submit" class="btn btn-primary">
+              Suchen
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
-  <div class="col-md-6 col-lg-8">
-    <div class="card h-100 shadow-sm border-0">
+
+  <!-- Status/Info -->
+  <div class="col-12 col-lg-5">
+    <div class="card shadow-sm border-0 mb-4">
       <div class="card-body">
-        <h2 class="h6 mb-2">Status</h2>
-        <p class="text-secondary mb-0">Alles bereit. Nutze die Navigation oben, um zu starten.</p>
+        <h5 class="card-title mb-2">Status</h5>
+        <ul class="list-unstyled mb-0">
+          <li>🔐 Login aktiv</li>
+          <li>🧩 Stripe vorbereitet</li>
+          <li>🗄️ DB: {{ 'ok' }}</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h5 class="card-title mb-2">Plan</h5>
+        {% if session.get('user_id') %}
+          <p class="mb-2">
+            {% set prem = false %}
+            {% if prem %} <!-- Platzhalter; echtes Flag kommt aus Server -->
+              ✅ Premium aktiv
+            {% else %}
+              🔓 Du nutzt aktuell die kostenlose Version.
+            {% endif %}
+          </p>
+          <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-primary btn-sm">Upgrade ansehen</a>
+        {% else %}
+          <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Jetzt einloggen</a>
+        {% endif %}
       </div>
     </div>
   </div>
 </div>
+
 {% endblock %}
