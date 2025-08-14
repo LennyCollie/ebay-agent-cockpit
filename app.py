@@ -1,6 +1,8 @@
 import os
 import sqlite3
 from functools import wraps
+import time
+import requests
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -30,6 +32,14 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")  # LIVE oder TEST – kommt aus 
 PRICE_ID = os.getenv("STRIPE_PRICE_PRO")         # z.B. price_...
 SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL")    # optional
 CANCEL_URL = os.getenv("STRIPE_CANCEL_URL")      # optional
+
+
+EBAY_CLIENT_ID = os.getenv("EBAY_CLIENT_ID")          # z.B. xxx-xxx
+EBAY_CLIENT_SECRET = os.getenv("EBAY_CLIENT_SECRET")  # geheim
+EBAY_ENV = os.getenv("EBAY_ENV", "SANDBOX").upper()   # "SANDBOX" oder "PROD"
+
+# Token-Cache (einfach)
+_ebay_token = {"access_token": None, "expires_at": 0}
 
 
 # =============================================================================
@@ -62,6 +72,115 @@ def safe_render(template_name: str, **ctx):
 <p>{body}</p>
 <p style="margin-top:24px"><a href="{url_for('public_home')}">Zur Startseite</a></p>
 </body></html>""", mimetype="text/html")
+
+def _ebay_oauth_token():
+    """
+    Holt ein App-Token von eBay (Browse API). Cached es bis zum Ablauf.
+    Fällt auf None zurück, wenn keine Credentials gesetzt sind oder Fehler.
+    """
+    if not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
+        return None
+
+    now = time.time()
+    if _ebay_token["access_token"] and _ebay_token["expires_at"] - 60 > now:
+        return _ebay_token["access_token"]
+
+    base = "https://api.sandbox.ebay.com" if EBAY_ENV == "SANDBOX" else "https://api.ebay.com"
+    url = f"{base}/identity/v1/oauth2/token"
+    auth = (EBAY_CLIENT_ID, EBAY_CLIENT_SECRET)
+    data = {
+        "grant_type": "client_credentials",
+        # Minimaler Scope für Browse API:
+        "scope": "https://api.ebay.com/oauth/api_scope"
+    }
+    try:
+        r = requests.post(url, data=data, auth=auth, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        _ebay_token["access_token"] = j.get("access_token")
+        _ebay_token["expires_at"] = now + int(j.get("expires_in", 0))
+        return _ebay_token["access_token"]
+    except Exception:
+        return None
+
+def ebay_search_items(query: str, limit: int = 5):
+    """
+    Sucht Artikel mit der eBay Browse API.
+    Wenn kein Token/Fehler -> liefert kleine Mock-Liste zurück, damit die UI funktioniert.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+
+    token = _ebay_oauth_token()
+    if token:
+        base = "https://api.sandbox.ebay.com" if EBAY_ENV == "SANDBOX" else "https://api.ebay.com"
+        url = f"{base}/buy/browse/v1/item_summary/search"
+        try:
+            r = requests.get(
+                url,
+                params={"q": query, "limit": str(limit)},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=15
+            )
+            r.raise_for_status()
+            j = r.json()
+            items = []
+            for it in (j.get("itemSummaries") or [])[:limit]:
+                items.append({
+                    "title": it.get("title"),
+                    "price": f'{it.get("price",{}).get("value","")} {it.get("price",{}).get("currency","")}',
+                    "image": (it.get("image",{}) or {}).get("imageUrl"),
+                    "url": it.get("itemWebUrl"),
+                })
+            return items
+        except Exception:
+            pass  # fällt unten auf Mock zurück
+
+    # Mock (damit du ohne eBay-Keys testen kannst)
+    return [
+        {"title": f"{query} – Beispiel 1", "price": "19.99 EUR", "image": None, "url": "#"},
+        {"title": f"{query} – Beispiel 2", "price": "49.00 EUR", "image": None, "url": "#"},
+        {"title": f"{query} – Beispiel 3", "price": "7.95 EUR",  "image": None, "url": "#"},
+    ][:limit]
+
+@app.route("/search", methods=["GET", "POST"])
+@login_required
+def search():
+    # Premium prüfen
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT is_premium FROM users WHERE id=?", (session["user_id"],))
+    row = cur.fetchone()
+    is_premium = bool(row and row["is_premium"])
+
+    # Limits (Server-seitig durchsetzen!)
+    max_terms = 3 if not is_premium else 20
+    per_query_limit = 5 if not is_premium else 20
+
+    results = {}
+    q_list = []
+
+    if request.method == "POST":
+        # Wir erwarten mehrere Eingabefelder mit name="q[]"
+        q_list = [q.strip() for q in (request.form.getlist("q[]") or []) if q.strip()]
+        if len(q_list) > max_terms:
+            flash(f"Maximal {max_terms} Suchbegriffe in deiner aktuellen Stufe.", "warning")
+            q_list = q_list[:max_terms]
+
+        # Suchen
+        for q in q_list:
+            results[q] = ebay_search_items(q, per_query_limit)
+
+    return safe_render(
+        "search.html",
+        title="Suche",
+        is_premium=is_premium,
+        max_terms=max_terms,
+        per_query_limit=per_query_limit,
+        q_list=q_list,
+        results=results,
+    )
 
 
 # =============================================================================
