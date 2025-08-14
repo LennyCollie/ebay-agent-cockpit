@@ -1,5 +1,24 @@
-{% extends "base.html" %}
+extends "base.html" %}
 {% block title %}Suche – ebay-agent-cockpit{% endblock %}
+{% block content %}
+<h1 class="mb-3">eBay‑Suche</h1>
+<form method="post" action="{{ url_for('search_post') }}" class="row gy-2">
+  <div class="col-12 col-md-6"><input name="term1" class="form-control" placeholder="Suchbegriff 1" required></div>
+  <div class="col-12 col-md-6"><input name="term2" class="form-control" placeholder="Suchbegriff 2"></div>
+  <div class="col-12 col-md-6"><input name="term3" class="form-control" placeholder="Suchbegriff 3"></div>
+
+  <!-- Premium (optional mehr Felder; unsichtbar stören sie nicht) -->
+  <div class="col-12 col-md-6"><input name="term4" class="form-control" placeholder="(Premium) Suchbegriff 4"></div>
+  <div class="col-12 col-md-6"><input name="term5" class="form-control" placeholder="(Premium) Suchbegriff 5"></div>
+
+  <div class="col-12">
+    <button class="btn btn-primary mt-2">Suchen</button>
+  </div>
+</form>
+{% if not is_premium %}
+<p class="text-muted small mt-3">Im kostenlosen Plan werden max. 3 Begriffe verarbeitet.</p>
+{% endif %}
+{% endblock %}
 
 {% block content %}
 <h1 class="mb-3">eBay‑Suche</h1>

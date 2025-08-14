@@ -15,6 +15,10 @@ from flask import (
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 import stripe
+import requests
+EBAY_APP_ID = os.getenv("EBAY_APP_ID")
+EBAY_GLOBAL_ID = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")
+EBAY_RESULTS_LIMIT = int(os.getenv("EBAY_RESULTS_LIMIT", "10"))
 
 # -----------------------------------------------------------------------------
 # Konfiguration
@@ -129,6 +133,67 @@ def _init_once():
         seed_user()
         _initialized = True
 
+def ebay_search_finding(query: str, limit: int = None):
+    """
+    Schneller Einstieg über die eBay Finding API (keine OAuth-Pflicht).
+    Gibt eine Liste von {title, price, currency, url, image} zurück.
+    """
+    if not EBAY_APP_ID:
+        raise RuntimeError("EBAY_APP_ID fehlt (siehe .env).")
+
+    limit = limit or EBAY_RESULTS_LIMIT
+    endpoint = "https://svcs.ebay.com/services/search/FindingService/v1"
+    # JSON-Response aktivieren:
+    headers = {
+        "X-EBAY-SOA-OPERATION-NAME": "findItemsByKeywords",
+        "X-EBAY-SOA-SERVICE-VERSION": "1.13.0",
+        "X-EBAY-SOA-SECURITY-APPNAME": EBAY_APP_ID,
+        "X-EBAY-SOA-GLOBAL-ID": EBAY_GLOBAL_ID,
+        "X-EBAY-SOA-RESPONSE-DATA-FORMAT": "JSON",
+    }
+    params = {
+        "keywords": query.strip(),
+        "paginationInput.entriesPerPage": limit,
+    }
+    try:
+        r = requests.get(endpoint, headers=headers, params=params, timeout=8)
+        r.raise_for_status()
+        data = r.json()
+        # Tief ins JSON greifen (defensiv)
+        items = (
+            data.get("findItemsByKeywordsResponse", [{}])[0]
+                .get("searchResult", [{}])[0]
+                .get("item", [])
+        )
+        results = []
+        for it in items:
+            title = (it.get("title", [""])[0]).strip()
+            view_url = it.get("viewItemURL", [""])[0]
+            gallery = it.get("galleryURL", [""])[0] or ""
+            selling = it.get("sellingStatus", [{}])[0]
+            current = selling.get("currentPrice", [{}])[0]
+            price = current.get("__value__", "")
+            currency = current.get("@currencyId", "")
+
+            # Defensive Normalisierung
+            if not title or not view_url:
+                continue
+            results.append({
+                "title": title,
+                "url": view_url,
+                "image": gallery,
+                "price": price,
+                "currency": currency,
+            })
+        return results
+    except requests.exceptions.RequestException as e:
+        # Netzwerk/API-Fehler – sauber nach außen reichen
+        return {"error": f"Netzwerkfehler: {e}"}
+    except Exception as e:
+        return {"error": f"Unerwartetes Format/Fehler: {e}"}
+
+
+
 # -----------------------------------------------------------------------------
 # Auth-Helfer (MUSS vor den Routen stehen, die ihn nutzen!)
 # -----------------------------------------------------------------------------
@@ -150,6 +215,22 @@ def current_user_is_premium() -> bool:
     row = cur.fetchone()
     return bool(row and row["is_premium"])
 
+def _user_is_premium():
+    # Wenn du is_premium in der DB führst (wie in deiner app.py),
+    # hole sie hier aus der DB. Minimal: Session-Flag oder false.
+    # Beispiel (wenn bei Login session["user_id"] gesetzt wird):
+    try:
+        uid = session.get("user_id")
+        if not uid:
+            return False
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("SELECT is_premium FROM users WHERE id = ?", (uid,))
+        row = cur.fetchone()
+        return bool(row and row["is_premium"])
+    except Exception:
+        return False
+
 # -----------------------------------------------------------------------------
 # Öffentliche Seiten
 # -----------------------------------------------------------------------------
@@ -167,6 +248,45 @@ def public_pricing():
         "public_pricing.html",
         title="Preise",
         body="Übersicht deiner Abo‑Leistungen."
+
+@app.get("/search")
+@login_required
+def search_get():
+    # einfache Suchseite mit Formular
+    return safe_render("search.html", title="Suche", body="Suche starten.")
+
+@app.post("/search")
+@login_required
+def search_post():
+    # Erwartet Felder: term1, term2, term3 (öffentliches Limit 3)
+    # Premium darf mehr – wir verwenden term4..term10 optional
+    terms = []
+    for i in range(1, 11):  # maximal 10 akzeptieren
+        t = (request.form.get(f"term{i}") or "").strip()
+        if t:
+            terms.append(t)
+
+    if not terms:
+        flash("Bitte mindestens einen Suchbegriff eingeben.", "warning")
+        return redirect(url_for("search_get"))
+
+    # Limit für freie / Premium Nutzer
+    max_terms = 3 if not session.get("user_id") or not _user_is_premium() else len(terms)
+    terms = terms[:max_terms]
+
+    # Für jede Query Treffer holen (einzeln, um Limits klein zu halten)
+    all_results = []
+    for q in terms:
+        res = ebay_search_finding(q)
+        if isinstance(res, dict) and res.get("error"):
+            flash(f"eBay‑Fehler für '{q}': {res['error']}", "danger")
+            continue
+        all_results.append({"query": q, "items": res})
+
+    return safe_render("search_results.html",
+                       title="Suchergebnisse",
+                       results=all_results,
+                       is_premium=_user_is_premium())
     )
 
 @app.route("/checkout", methods=["GET", "POST"])
