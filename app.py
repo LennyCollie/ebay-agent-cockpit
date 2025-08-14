@@ -1,5 +1,10 @@
+
+# =============================================================================
+# Imports
+# =============================================================================
 import os
 import sqlite3
+from datetime import datetime
 from functools import wraps
 
 from flask import (
@@ -10,14 +15,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv  # lokal praktisch; auf Render ignoriert
 import stripe
 
+
 # =============================================================================
-# Konfiguration
+# Konfiguration (Env laden, Keys, Pfade)
 # =============================================================================
+load_dotenv()  # nur lokal relevant
 
-load_dotenv()  # lokal: .env lesen
-
-
-# Render ist read-only; nur /tmp ist schreibbar. Lokal z.B. "database.db"
+# Render ist read-only; nur /tmp ist schreibbar. Lokal gern "database.db".
 DB_PATH = (
     os.getenv("DATABASE_FILE")
     or os.getenv("DATABASE_URL")
@@ -26,38 +30,34 @@ DB_PATH = (
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev_key")
 
-# Stripe Keys / IDs
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")  # LIVE oder TEST – kommt aus Env
-PRICE_ID = os.getenv("STRIPE_PRICE_PRO")         # z.B. price_...
-SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL")    # optional
-CANCEL_URL = os.getenv("STRIPE_CANCEL_URL")      # optional
+# Stripe
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+PRICE_ID      = os.getenv("STRIPE_PRICE_PRO")       # z.B. price_...
+SUCCESS_URL   = os.getenv("STRIPE_SUCCESS_URL")
+CANCEL_URL    = os.getenv("STRIPE_CANCEL_URL")
 
 
 # =============================================================================
 # Flask App
 # =============================================================================
-
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SECRET_KEY
 
 
 # =============================================================================
-# Hilfen: Template-Fallback (verhindert 500 bei fehlenden Dateien)
+# Template-Fallback (verhindert 500 bei fehlenden Dateien)
 # =============================================================================
-
 def safe_render(template_name: str, **ctx):
     """
-    Versucht ein Template zu rendern; wenn es nicht existiert, liefert
-    eine einfache HTML-Seite zurück (keine 500er mehr wegen fehlender Templates).
+    Versucht ein Template zu rendern; wenn es fehlt, kommt ein schlanker HTML‑Fallback.
     """
     try:
         return render_template(template_name, **ctx)
     except Exception:
         title = ctx.get("title") or template_name
-        body = ctx.get("body") or ""
+        body  = ctx.get("body") or ""
         return Response(f"""<!doctype html>
-<html lang="de">
-<head><meta charset="utf-8"><title>{title}</title></head>
+<html lang="de"><head><meta charset="utf-8"><title>{title}</title></head>
 <body style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:900px;margin:40px auto;line-height:1.5">
 <h1>{title}</h1>
 <p>{body}</p>
@@ -66,13 +66,11 @@ def safe_render(template_name: str, **ctx):
 
 
 # =============================================================================
-# DB-Helfer
+# DB-Helfer (Connection, Schema, Seed)
 # =============================================================================
-
 def get_db():
     """
-    Öffnet/verwendet eine SQLite-Connection für den Request.
-    Stellt sicher, dass das Zielverzeichnis existiert (für /tmp auf Render).
+    Öffnet/verwendet eine SQLite-Connection für den Request (unter /tmp auf Render).
     """
     if "db" not in g:
         os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
@@ -88,24 +86,24 @@ def close_db(_exc=None):
 
 def ensure_schema():
     """
-    Legt die Tabelle users an (falls fehlt) und ergänzt fehlende Spalten.
+    Legt users an (falls fehlt) und ergänzt fehlende Spalten.
     """
-    db = get_db()
+    db  = get_db()
     cur = db.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL DEFAULT '',
+            email      TEXT UNIQUE NOT NULL,
+            password   TEXT,
             is_premium INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT   DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # fehlende Spalten ergänzen (bei alten DBs)
+    # fehlende Spalten ergänzen
     cur.execute("PRAGMA table_info(users)")
     cols = {r["name"] for r in cur.fetchall()}
     if "password" not in cols:
-        cur.execute("ALTER TABLE users ADD COLUMN password TEXT NOT NULL DEFAULT ''")
+        cur.execute("ALTER TABLE users ADD COLUMN password TEXT")
     if "is_premium" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN is_premium INTEGER DEFAULT 0")
     if "created_at" not in cols:
@@ -117,100 +115,18 @@ def seed_user():
     Optional: Testnutzer anlegen (Env: SEED_USER_EMAIL, SEED_USER_PASSWORD).
     """
     email = (os.getenv("SEED_USER_EMAIL") or "").strip().lower()
-    pw = (os.getenv("SEED_USER_PASSWORD") or "").strip()
+    pw    = (os.getenv("SEED_USER_PASSWORD") or "").strip()
     if not email or not pw:
         return
-    db = get_db()
+    db  = get_db()
     cur = db.cursor()
     cur.execute("SELECT id FROM users WHERE email = ?", (email,))
     if not cur.fetchone():
         cur.execute(
             "INSERT INTO users (email, password, is_premium) VALUES (?, ?, 1)",
-            (email, generate_password_hash(pw))
+            (email, generate_password_hash(pw)),
         )
         db.commit()
-
-def get_or_create_stripe_customer(email: str, name: str | None = None):
-    """Hole Stripe-Customer zur E-Mail; falls keiner existiert, anlegen."""
-    try:
-        # zuerst versuchen, per E-Mail zu finden
-        res = stripe.Customer.list(email=email, limit=1)
-        if res.data:
-            return res.data[0]
-        # sonst anlegen
-        return stripe.Customer.create(
-            email=email,
-            name=name or email,
-            metadata={"app": "ebay-agent-cockpit"}
-        )
-    except Exception as e:
-        raise RuntimeError(f"Stripe Customer Fehler: {e}")
-
-# --- Account: Übersicht -----------------------------------------------------
-@app.get("/account")
-@login_required
-def account():
-    email = session.get("user_email")
-    # Stripe-Kunde ermitteln
-    cust = get_or_create_stripe_customer(email)
-    # Rechnungen ziehen (letzte 12)
-    invoices = []
-    try:
-        inv_list = stripe.Invoice.list(customer=cust.id, limit=12)
-        for inv in inv_list.auto_paging_iter():
-            invoices.append({
-                "number": inv.number,
-                "status": inv.status,
-                "amount": (inv.amount_paid or inv.amount_due or 0)/100.0,
-                "currency": inv.currency.upper() if inv.currency else "EUR",
-                "hosted_invoice_url": getattr(inv, "hosted_invoice_url", None),
-                "created": inv.created
-            })
-    except Exception:
-        pass
-
-    # Abo(s) anzeigen
-    subscriptions = []
-    try:
-        subs = stripe.Subscription.list(customer=cust.id, limit=5)
-        for s in subs.auto_paging_iter():
-            price = s["items"]["data"][0]["price"] if s["items"]["data"] else None
-            subscriptions.append({
-                "id": s.id,
-                "status": s.status,
-                "current_period_end": s.current_period_end,
-                "price": price["id"] if price else None,
-                "nickname": (price.get("nickname") if price else None) or "Abo"
-            })
-    except Exception:
-        pass
-
-    return safe_render("account.html",
-                       title="Mein Konto",
-                       body="Abo & Rechnungen",
-                       email=email,
-                       customer_id=cust.id,
-                       invoices=invoices,
-                       subscriptions=subscriptions)
-
-# --- Account: Billing-Portal (Selbstverwaltung) -----------------------------
-@app.post("/account/billing-portal")
-@login_required
-def account_billing_portal():
-    """Erzeugt eine Stripe Billing Portal Session und leitet dorthin weiter."""
-    email = session.get("user_email")
-    cust = get_or_create_stripe_customer(email)
-    try:
-        session_bp = stripe.billing_portal.Session.create(
-            customer=cust.id,
-            return_url=url_for("account", _external=True)
-        )
-        return redirect(session_bp.url, code=303)
-    except Exception as e:
-        flash(f"Stripe‑Fehler (Billing‑Portal): {e}", "danger")
-        return redirect(url_for("account"))
-
-
 
 # Einmalige Initialisierung
 _initialized = False
@@ -226,7 +142,6 @@ def _init_once():
 # =============================================================================
 # Auth-Helfer
 # =============================================================================
-
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -237,19 +152,53 @@ def login_required(view):
     return wrapped
 
 
-from datetime import datetime
-@app.template_filter("datetime")
-def _fmt_ts(value):
+# =============================================================================
+# Debug & Health
+# =============================================================================
+@app.get("/ping")
+def ping():
+    ensure_schema()
+    return "pong", 200
+
+@app.get("/debug")
+def debug_env():
+    return jsonify({
+        "ok": True,
+        "env": {
+            "DB_PATH": DB_PATH,
+            "STRIPE_SECRET_KEY_set": bool(os.getenv("STRIPE_SECRET_KEY")),
+            "STRIPE_PRICE_PRO": PRICE_ID,
+            "STRIPE_WEBHOOK_SECRET_set": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
+        }
+    })
+
+@app.get("/_debug/stripe")
+def debug_stripe():
+    out = {"ok": False, "can_call_api": False, "price_ok": None, "error": None}
     try:
-        return datetime.fromtimestamp(int(value)).strftime("%d.%m.%Y %H:%M")
-    except Exception:
-        return value
+        stripe.Balance.retrieve()
+        out["can_call_api"] = True
+        if PRICE_ID:
+            try:
+                stripe.Price.retrieve(PRICE_ID)
+                out["price_ok"] = True
+            except Exception as e:
+                out["price_ok"] = False
+                out["error"] = str(e)
+        out["ok"] = out["can_call_api"] and (out["price_ok"] in (True, None))
+    except Exception as e:
+        out["error"] = str(e)
+    return jsonify(out)
+
+# favicon: vermeidet 404/500 im Log
+@app.get("/favicon.ico")
+def favicon():
+    return Response(status=204)
 
 
 # =============================================================================
-# Öffentliche Seiten
+# Öffentliche Seiten & Checkout
 # =============================================================================
-
 @app.get("/public")
 def public_home():
     return safe_render(
@@ -288,22 +237,6 @@ def public_checkout():
     # GET
     return safe_render("public_checkout.html", title="Checkout", body="Checkout Formular.")
 
-
-@app.route("/search", methods=["GET"])
-@login_required
-def search():
-    q = (request.args.get("q") or "").strip()
-    results = []
-    if q:
-        # TODO: Ersetze das später durch echte eBay/DB-Suche
-        # Dummy-Ergebnis, damit die Seite funktioniert
-        results = [
-            {"title": "Beispiel-Artikel A", "sku": "SKU-A", "price": "19,99 €"},
-            {"title": "Beispiel-Artikel B", "sku": "SKU-B", "price": "29,99 €"},
-        ]
-    return render_template("search.html", q=q, results=results)
-
-
 @app.get("/checkout/success")
 def checkout_success():
     return safe_render(
@@ -314,9 +247,8 @@ def checkout_success():
 
 
 # =============================================================================
-# Dashboard & einfache Seiten
+# Dashboard & einfache Seiten (geschützt)
 # =============================================================================
-
 @app.get("/")
 @login_required
 def dashboard():
@@ -338,23 +270,22 @@ def sync_get():
 
 
 # =============================================================================
-# Auth
+# Auth (Login/Registrierung/Logout)
 # =============================================================================
-
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        email = (request.form.get("email") or "").strip().lower()
+        email    = (request.form.get("email") or "").strip().lower()
         password = request.form.get("password") or ""
         if not email or not password:
             flash("Bitte E‑Mail und Passwort eingeben.", "warning")
             return redirect(url_for("login"))
-        db = get_db()
+        db  = get_db()
         cur = db.cursor()
         cur.execute("SELECT id, password FROM users WHERE email = ?", (email,))
         row = cur.fetchone()
         if row and check_password_hash(row["password"], password):
-            session["user_id"] = row["id"]
+            session["user_id"]    = row["id"]
             session["user_email"] = email
             flash("Login erfolgreich!", "success")
             return redirect(url_for("dashboard"))
@@ -365,12 +296,12 @@ def login():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        email = (request.form.get("email") or "").strip().lower()
+        email    = (request.form.get("email") or "").strip().lower()
         password = request.form.get("password") or ""
         if not email or not password:
             flash("Bitte E‑Mail und Passwort angeben.", "warning")
             return redirect(url_for("register"))
-        db = get_db()
+        db  = get_db()
         cur = db.cursor()
         cur.execute("SELECT id FROM users WHERE email = ?", (email,))
         if cur.fetchone():
@@ -393,54 +324,8 @@ def logout():
 
 
 # =============================================================================
-# Debug & Health
-# =============================================================================
-
-@app.get("/ping")
-def ping():
-    ensure_schema()
-    return "pong", 200
-
-@app.get("/debug")
-def debug_env():
-    return jsonify({
-        "ok": True,
-        "env": {
-            "DB_PATH": DB_PATH,
-            "STRIPE_SECRET_KEY_set": bool(os.getenv("STRIPE_SECRET_KEY")),
-            "STRIPE_PRICE_PRO": PRICE_ID,
-            "STRIPE_WEBHOOK_SECRET_set": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
-        }
-    })
-
-@app.get("/_debug/stripe")
-def debug_stripe():
-    out = {"ok": False, "can_call_api": False, "price_ok": None, "error": None}
-    try:
-        stripe.Balance.retrieve()
-        out["can_call_api"] = True
-        if PRICE_ID:
-            try:
-                stripe.Price.retrieve(PRICE_ID)
-                out["price_ok"] = True
-            except Exception as e:
-                out["price_ok"] = False
-                out["error"] = str(e)
-        out["ok"] = out["can_call_api"] and (out["price_ok"] in (True, None))
-    except Exception as e:
-        out["error"] = str(e)
-    return jsonify(out)
-
-# favicon, damit keine Fehler im Log auftauchen
-@app.get("/favicon.ico")
-def favicon():
-    return Response(status=204)
-
-
-# =============================================================================
 # Fehlerseiten
 # =============================================================================
-
 @app.errorhandler(404)
 def _404(e):
     return safe_render("404.html", title="404", body="Seite nicht gefunden."), 404
@@ -453,7 +338,6 @@ def _500(e):
 # =============================================================================
 # Dev-Reset (nur wenn ALLOW_RESET=1)
 # =============================================================================
-
 @app.post("/_dev_reset_db")
 def _dev_reset_db():
     if os.getenv("ALLOW_RESET") != "1":
@@ -470,7 +354,6 @@ def _dev_reset_db():
 # =============================================================================
 # Main
 # =============================================================================
-
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "10000"))
     app.run(host="0.0.0.0", port=port, debug=True)
