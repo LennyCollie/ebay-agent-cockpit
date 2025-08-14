@@ -6,3 +6,4 @@ gunicorn==21.2.0
 Werkzeug==2.2.3
 psycopg2-binary
 stripe>=10.0.0
+pip install requests
