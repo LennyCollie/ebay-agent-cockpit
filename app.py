@@ -374,6 +374,67 @@ def register():
         return redirect(url_for("login"))
     return safe_render("register.html", title="Registrieren", body="Registrierungsformular.")
 
+from urllib.parse import quote_plus
+
+FREE_SEARCH_LIMIT = int(os.getenv("FREE_SEARCH_LIMIT", "3"))
+PREMIUM_SEARCH_LIMIT = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
+
+@app.route("/search", methods=["GET", "POST"])
+def search():
+    # Limit anhand des Nutzerstatus
+    is_premium = bool(session.get("user_id")) and bool(
+        get_db().execute(
+            "SELECT is_premium FROM users WHERE id = ?", (session.get("user_id"),)
+        ).fetchone()["is_premium"]
+        if session.get("user_id")
+        else 0
+    )
+    limit = PREMIUM_SEARCH_LIMIT if is_premium else FREE_SEARCH_LIMIT
+
+    if request.method == "POST":
+        # Form-Felder einsammeln (term1..term10; nur existierende genutzt)
+        terms = []
+        for i in range(1, 11):  # bis 10, falls Premium
+            v = (request.form.get(f"term{i}") or "").strip()
+            if v:
+                terms.append(v)
+
+        if not terms:
+            flash("Bitte mindestens einen Suchbegriff eingeben.", "warning")
+            return redirect(url_for("search"))
+
+        if len(terms) > limit:
+            flash(f"Du kannst aktuell {limit} Begriffe gleichzeitig suchen.", "info")
+            terms = terms[:limit]
+
+        # --- MOCK: Demo-Ergebnisse je Begriff (bis eBay-API kommt) ---
+        results = []
+        for t in terms:
+            results.append({
+                "term": t,
+                "title": f"Demo-Ergebnis für „{t}“",
+                "price": "9,99 €",
+                "url": f"https://www.ebay.de/sch/i.html?_nkw={quote_plus(t)}",
+                "thumb": "https://via.placeholder.com/64x64?text=IMG",
+            })
+
+        return render_template(
+            "search.html",
+            limit=limit,
+            is_premium=is_premium,
+            terms=terms,
+            results=results,
+        )
+
+    # GET
+    return render_template(
+        "search.html",
+        limit=limit,
+        is_premium=is_premium,
+        terms=[],
+        results=None,
+    )
+
 @app.get("/logout")
 def logout():
     session.clear()
