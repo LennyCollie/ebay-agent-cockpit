@@ -209,11 +209,9 @@ def public_home():
 
 @app.get("/pricing")
 def public_pricing():
-    return safe_render(
-        "public_pricing.html",
-        title="Preise",
-        body="Hier erscheint deine Preisseite."
-    )
+    # hier könntest du auch dynamisch von Stripe lesen, für jetzt statisch:
+    return render_template("public_pricing.html", price_label="9,99 €")
+
 
 @app.route("/checkout", methods=["GET", "POST"])
 def public_checkout():
