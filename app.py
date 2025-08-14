@@ -42,6 +42,7 @@ FREE_SEARCH_LIMIT = int(os.getenv("FREE_SEARCH_LIMIT", "3"))  # freie Nutzer: ma
 # Flask-App
 # -----------------------------------------------------------------------------
 app = Flask(__name__)
+app.url_map.strict_slashes = False
 app.config["SECRET_KEY"] = SECRET_KEY
 
 # -----------------------------------------------------------------------------
