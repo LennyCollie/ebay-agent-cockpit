@@ -1,0 +1,44 @@
+:root{
+  --bg:#0b1020; --card:#121833; --text:#e9ecf1; --muted:#a7b0c4;
+  --primary:#5b8cff; --primary-contrast:#0b1020; --border:#1f2647;
+  --success:#29c07d; --warn:#e5b56b; --danger:#ff6b6b;
+  --radius:14px; --pad:18px; --container:1000px;
+}
+*{box-sizing:border-box} html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui, Segoe UI, Arial, sans-serif}
+
+/* layout */
+.container{max-width:var(--container);margin:0 auto;padding:0 20px}
+.nav{position:sticky;top:0;background:rgba(11,16,32,.7);backdrop-filter: blur(10px);border-bottom:1px solid var(--border);z-index:10}
+.nav-row{display:flex;align-items:center;justify-content:space-between;height:64px}
+.brand{color:var(--text);text-decoration:none;font-weight:700}
+.nav-links a{color:var(--text);text-decoration:none;margin-left:16px;opacity:.9}
+.nav-links a:hover{opacity:1}
+.footer{margin-top:64px;border-top:1px solid var(--border);padding:24px 0;color:var(--muted);}
+
+/* components */
+.btn{display:inline-block;padding:10px 16px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);text-decoration:none}
+.btn:hover{border-color:var(--primary)}
+.btn-primary{background:var(--primary);color:var(--primary-contrast);border:none}
+.btn-light{background:#1a2244;color:var(--text)}
+.form{display:grid;gap:12px;max-width:420px}
+label{font-weight:600}
+input{width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:#0e1530;color:var(--text)}
+input:focus{outline:2px solid var(--primary)}
+.muted{color:var(--muted)}
+.mt{margin-top:10px}.mt-lg{margin-top:28px}
+
+/* cards & grid */
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:var(--pad)}
+.list{padding-left:18px;margin:6px 0}
+.hero{padding:40px 0}
+.pricing .plan{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:var(--pad);max-width:420px}
+.price{font-size:28px;font-weight:800;margin:6px 0}
+
+/* flash */
+.flash-stack{margin:12px 0}
+.flash{padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#141b39}
+.flash-success{border-color:var(--success)}
+.flash-danger{border-color:var(--danger)}
+.flash-info{border-color:var(--primary)}
+.flash-warning{border-color:var(--warn)}

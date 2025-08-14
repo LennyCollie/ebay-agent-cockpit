@@ -1,28 +1,17 @@
-<!doctype html>
-<html lang="de">
-  <head>
-    <meta charset="utf-8" />
-    <title>Preise</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link href="{{ url_for('static', filename='css/main.css') }}" rel="stylesheet">
-  </head>
-  <body>
-    <main style="max-width:720px;margin:40px auto;padding:0 16px;">
-      <h1>Preise</h1>
-      <p>Monatlich kündbar, voller Funktionsumfang.</p>
-
-      <div style="border:1px solid #ddd;border-radius:8px;padding:16px;margin-top:16px">
-        <h2>Premium</h2>
-        <p><strong>9,99 €</strong> / Monat</p>
-        <form action="{{ url_for('public_checkout') }}" method="post">
-          <label for="email">E‑Mail (für Rechnung/Stripe):</label><br>
-          <input id="email" name="email" type="email" placeholder="you@example.com" style="width:100%;max-width:360px" />
-          <br><br>
-          <button type="submit">Jetzt abonnieren</button>
-        </form>
-      </div>
-
-      <p style="margin-top:24px"><a href="{{ url_for('public_home') }}">Zur Startseite</a></p>
-    </main>
-  </body>
-</html>
+{% extends "base.html" %}
+{% block title %}Preise – ebay-agent-cockpit{% endblock %}
+{% block content %}
+<h1>Preise</h1>
+<div class="pricing">
+  <div class="plan">
+    <h2>Ebay Verkaufsagent Premium</h2>
+    <div class="price">9,99 € <small>/ Monat</small></div>
+    <ul class="list">
+      <li>Alle Basisfunktionen</li>
+      <li>Automatisierte Syncs</li>
+      <li>Support per E‑Mail</li>
+    </ul>
+    <a href="{{ url_for('public_checkout') }}" class="btn btn-primary">Jetzt abonnieren</a>
+  </div>
+</div>
+{% endblock %}

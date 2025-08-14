@@ -1,18 +1,21 @@
-<!doctype html>
-<html lang="de">
-  <head>
-    <meta charset="utf-8" />
-    <title>Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-  </head>
-  <body>
-    <main style="max-width:720px;margin:40px auto;padding:0 16px;">
-      <h1>Dashboard</h1>
-      <p>Willkommen, {{ session.get('user_email') or 'User' }}!</p>
-      <ul>
-        <li><a href="{{ url_for('public_pricing') }}">Preise</a></li>
-        <li><a href="{{ url_for('logout') }}">Logout</a></li>
-      </ul>
-    </main>
-  </body>
-</html>
+{% extends "base.html" %}
+{% block title %}Dashboard – ebay-agent-cockpit{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<p>Willkommen, {{ session.get('user_email') or 'Nutzer' }}.</p>
+<div class="grid">
+  <div class="card">
+    <h3>Status</h3>
+    <ul class="list">
+      <li>Jobs queued: 0</li>
+      <li>Antwortzeit: ~120 ms</li>
+      <li>Uptime: 99.9%</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Schnellzugriff</h3>
+    <a class="btn" href="{{ url_for('sync_get') }}">Sync starten</a>
+    <a class="btn" href="{{ url_for('settings') }}">Einstellungen</a>
+  </div>
+</div>
+{% endblock %}
