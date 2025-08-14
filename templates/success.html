@@ -1,10 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Danke!{% endblock %}
+{% block title %}Erfolg{% endblock %}
+{% block h1 %}Vielen Dank!{% endblock %}
 {% block content %}
-<div class="bg-white border rounded-xl p-6 max-w-xl">
-  <h1 class="text-2xl font-semibold mb-2">Vielen Dank! ✅</h1>
-  <p>Dein Kauf war erfolgreich. Dein Premium‑Zugang ist jetzt freigeschaltet.</p>
-  <a class="mt-4 inline-block px-4 py-2 bg-slate-900 text-white rounded-md"
-     href="{{ url_for('dashboard') }}">Weiter zum Dashboard</a>
-</div>
+  <div class="card">
+    Dein Premium‑Zugang ist jetzt freigeschaltet.
+    <div style="margin-top:14px"><a class="btn" href="{{ url_for('dashboard') }}">Zum Dashboard</a></div>
+  </div>
 {% endblock %}

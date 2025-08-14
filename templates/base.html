@@ -3,64 +3,38 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{% block title %}ebay‑agent‑cockpit{% endblock %}</title>
-  <!-- Tailwind CDN (nur für schnellen Start) -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="icon" href="data:,">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}ebay-agent-cockpit{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
   {% block head %}{% endblock %}
 </head>
-<body class="min-h-screen bg-slate-50 text-slate-800">
-  <!-- Navbar -->
-  <header class="border-b bg-white">
-    <nav class="max-w-6xl mx-auto flex items-center justify-between p-4">
-      <a href="{{ url_for('public_home') }}" class="font-semibold tracking-tight">
-        <span class="inline-flex items-center gap-2">
-          🧭 <span class="text-slate-900">ebay‑agent‑cockpit</span>
-        </span>
-      </a>
-      <div class="flex items-center gap-3">
-        <a class="text-sm hover:text-slate-900" href="{{ url_for('public_pricing') }}">Preise</a>
-        {% if session.get('user_id') %}
-          <a class="text-sm hover:text-slate-900" href="{{ url_for('dashboard') }}">Dashboard</a>
-          <a class="text-sm text-slate-500 hover:text-rose-600" href="{{ url_for('logout') }}">Logout</a>
-        {% else %}
-          <a class="text-sm hover:text-slate-900" href="{{ url_for('login') }}">Login</a>
-          <a class="text-sm bg-slate-900 text-white px-3 py-1.5 rounded-md" href="{{ url_for('register') }}">Registrieren</a>
-        {% endif %}
-      </div>
-    </nav>
+<body>
+  <header class="appbar">
+    <div class="container" style="display:flex;justify-content:space-between;align-items:center;gap:16px;">
+      <a class="brand" href="{{ url_for('public_home') }}"><span class="dot"></span> ebay‑agent‑cockpit</a>
+      {% include "_navbar.html" %}
+    </div>
   </header>
 
-  <!-- Flash-Meldungen -->
-  {% with msgs = get_flashed_messages(with_categories=true) %}
-  {% if msgs %}
-  <div class="max-w-4xl mx-auto mt-4 px-4">
-    {% for cat, msg in msgs %}
-      <div class="mb-2 rounded-md border p-3
-                  {% if cat in ['success'] %}border-emerald-300 bg-emerald-50 text-emerald-900
-                  {% elif cat in ['warning'] %}border-amber-300 bg-amber-50 text-amber-900
-                  {% elif cat in ['danger','error'] %}border-rose-300 bg-rose-50 text-rose-900
-                  {% else %}border-slate-300 bg-slate-50{% endif %}">
-        {{ msg }}
-      </div>
-    {% endfor %}
-  </div>
-  {% endif %}
-  {% endwith %}
+  <section class="hero">
+    <div class="container">
+      {% block hero %}
+      <h1>{% block h1 %}Dein leichtes Cockpit{% endblock %}</h1>
+      <p class="lead">{% block lead %}{% endblock %}</p>
+      {% endblock %}
+    </div>
+  </section>
 
-  <!-- Inhalt -->
-  <main class="max-w-6xl mx-auto p-4">
+  <main class="container">
+    {% include "_flash.html" %}
     {% block content %}{% endblock %}
   </main>
 
-  <!-- Footer -->
-  <footer class="mt-10 border-t bg-white">
-    <div class="max-w-6xl mx-auto p-4 text-sm text-slate-500">
-      © {{ 2025 }} ebay‑agent‑cockpit
-    </div>
+  <footer class="footer">
+    <div class="container small">© {{ 2025 }} ebay‑agent‑cockpit • <span class="badge">Uptime Live</span></div>
   </footer>
+
   {% block scripts %}{% endblock %}
 </body>
 </html>

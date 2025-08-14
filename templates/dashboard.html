@@ -1,31 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
+{% block h1 %}Dashboard{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-semibold tracking-tight mb-6">Dashboard</h1>
-
-<div class="grid md:grid-cols-3 gap-6">
-  <div class="bg-white border rounded-xl p-5">
-    <div class="text-sm text-slate-500">Status</div>
-    <div class="text-lg font-semibold">Angemeldet als {{ session.get('user_email') }}</div>
-  </div>
-  <div class="bg-white border rounded-xl p-5">
-    <div class="text-sm text-slate-500">Plan</div>
-    <div class="text-lg font-semibold">
-      {% if g.get('is_premium') %}Premium{% else %}Free{% endif %}
+  <div class="grid" style="grid-template-columns:repeat(3,1fr);">
+    <div class="card">
+      <div class="small">Live‑Einblick</div>
+      <div style="font-size:28px;font-weight:700">0</div>
+      <div class="small">Jobs queued</div>
+    </div>
+    <div class="card">
+      <div class="small">Antwortzeit</div>
+      <div style="font-size:28px;font-weight:700">~120 ms</div>
+      <div class="small">letzte Minute</div>
+    </div>
+    <div class="card">
+      <div class="small">Uptime</div>
+      <div style="font-size:28px;font-weight:700">99.9%</div>
+      <div class="small">7 Tage</div>
     </div>
   </div>
-  <div class="bg-white border rounded-xl p-5">
-    <div class="text-sm text-slate-500">Nächste Schritte</div>
-    <div class="text-lg font-semibold">Sync & Suche</div>
-  </div>
-</div>
-
-<!-- Suchbox (Dummy – siehe Route /search unten) -->
-<section class="mt-8 bg-white border rounded-xl p-5">
-  <h2 class="font-medium mb-3">Schnellsuche</h2>
-  <form action="{{ url_for('search') }}" method="get" class="flex gap-2">
-    <input name="q" class="flex-1 border rounded-md px-3 py-2" placeholder="Artikel, SKU, Stichwort …" />
-    <button class="px-4 py-2 bg-slate-900 text-white rounded-md">Suchen</button>
-  </form>
-</section>
 {% endblock %}

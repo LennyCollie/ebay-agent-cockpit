@@ -1,35 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Start · ebay‑agent‑cockpit{% endblock %}
+{% block title %}Start — ebay‑agent‑cockpit{% endblock %}
+{% block h1 %}eBay‑Automatisierung mit Überblick{% endblock %}
+{% block lead %}Angebote verwalten, Prozesse synchronisieren, weniger Klicks — mehr Zeit fürs Wesentliche.{% endblock %}
 {% block content %}
-<section class="grid md:grid-cols-2 gap-8 items-center">
-  <div>
-    <h1 class="text-3xl md:text-4xl font-semibold tracking-tight mb-3">
-      Dein leichtes Cockpit für eBay‑Automatisierung
-    </h1>
-    <p class="text-slate-600 mb-6">
-      Angebote verwalten, Prozesse synchronisieren, weniger Klicks — mehr Zeit fürs Wesentliche.
-    </p>
-    <div class="flex gap-3">
-      <a href="{{ url_for('register') }}" class="bg-slate-900 text-white px-4 py-2 rounded-md">Jetzt starten</a>
-      <a href="{{ url_for('public_pricing') }}" class="px-4 py-2 rounded-md border">Preise ansehen</a>
-    </div>
+  <div class="grid" style="grid-template-columns:repeat(3,1fr);">
+    <div class="card"><h3>Schnell & einfach</h3><p class="small">In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.</p></div>
+    <div class="card"><h3>Sicher</h3><p class="small">Login, Sessions und Backups — Best Practices standardmäßig aktiv.</p></div>
+    <div class="card"><h3>Skalierbar</h3><p class="small">Von lokal bis Render‑Deploy. Feature‑Flags & Sync‑Jobs vorbereitet.</p></div>
   </div>
-  <div class="bg-white border rounded-xl p-6">
-    <h2 class="font-medium mb-2">Live‑Einblick</h2>
-    <div class="grid grid-cols-3 gap-4 text-center">
-      <div>
-        <div class="text-2xl font-semibold">0</div>
-        <div class="text-xs text-slate-500">Jobs queued</div>
-      </div>
-      <div>
-        <div class="text-2xl font-semibold">~120 ms</div>
-        <div class="text-xs text-slate-500">Antwortzeit</div>
-      </div>
-      <div>
-        <div class="text-2xl font-semibold">99.9%</div>
-        <div class="text-xs text-slate-500">Uptime</div>
-      </div>
-    </div>
+  <div style="margin-top:22px">
+    <a class="btn" href="{{ url_for('public_pricing') }}">Preise ansehen</a>
+    <a class="btn ghost" href="{{ url_for('register') }}">Kostenlos starten</a>
   </div>
-</section>
 {% endblock %}

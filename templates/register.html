@@ -1,16 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Registrieren{% endblock %}
+{% block h1 %}Registrieren{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-semibold tracking-tight mb-4">Registrieren</h1>
-<form method="post" class="bg-white border rounded-xl p-6 max-w-md space-y-3">
-  <div>
-    <label class="block text-sm font-medium">E‑Mail</label>
-    <input class="mt-1 w-full border rounded-md px-3 py-2" type="email" name="email" required />
-  </div>
-  <div>
-    <label class="block text-sm font-medium">Passwort</label>
-    <input class="mt-1 w-full border rounded-md px-3 py-2" type="password" name="password" required />
-  </div>
-  <button class="bg-slate-900 text-white px-4 py-2 rounded-md">Konto erstellen</button>
-</form>
+  <form class="card" method="post">
+    <div class="form-row">
+      <label>E‑Mail</label>
+      <input class="input" name="email" type="email" required>
+      <label>Passwort</label>
+      <input class="input" name="password" type="password" required>
+    </div>
+    <div class="form-actions" style="margin-top:12px">
+      <button class="btn" type="submit">Konto anlegen</button>
+      <a class="btn ghost" href="{{ url_for('login') }}">Schon Account? Login</a>
+    </div>
+  </form>
 {% endblock %}

@@ -1,39 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Preise · ebay‑agent‑cockpit{% endblock %}
+{% block title %}Preise — ebay‑agent‑cockpit{% endblock %}
+{% block h1 %}Einfaches Abo{% endblock %}
+{% block lead %}Monatlich kündbar. 14‑Tage Geld‑zurück‑Garantie.{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-semibold tracking-tight mb-6">Preise</h1>
-
-<div class="grid md:grid-cols-3 gap-6">
-  <div class="border bg-white rounded-xl p-6">
-    <h2 class="font-medium mb-2">Free</h2>
-    <div class="text-3xl font-semibold mb-4">0 €<span class="text-base font-normal text-slate-500">/Monat</span></div>
-    <ul class="text-sm text-slate-600 space-y-1 mb-6">
-      <li>• Manuelle Syncs</li>
-      <li>• Basis‑Dashboard</li>
-    </ul>
-    <a class="px-4 py-2 rounded-md border" href="{{ url_for('register') }}">Kostenlos starten</a>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+      <div>
+        <div class="small">Ebay Verkaufsagent Premium</div>
+        <div style="font-size:40px;font-weight:700;line-height:1">9,99 € <span class="small">/ Monat</span></div>
+      </div>
+      <form method="get" action="{{ url_for('public_checkout') }}">
+        <button class="btn" type="submit">Abo starten</button>
+      </form>
+    </div>
   </div>
-
-  <div class="border-2 border-slate-900 rounded-xl p-6 bg-white">
-    <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Empfohlen</div>
-    <h2 class="font-medium mb-2">Premium</h2>
-    <div class="text-3xl font-semibold mb-4">9,99 €<span class="text-base font-normal text-slate-500">/Monat</span></div>
-    <ul class="text-sm text-slate-600 space-y-1 mb-6">
-      <li>• Automatische Syncs</li>
-      <li>• Priorisierter Support</li>
-      <li>• Alle künftigen Features</li>
-    </ul>
-    <a class="px-4 py-2 rounded-md bg-slate-900 text-white" href="{{ url_for('public_checkout') }}">Premium abonnieren</a>
-  </div>
-
-  <div class="border bg-white rounded-xl p-6">
-    <h2 class="font-medium mb-2">Business</h2>
-    <div class="text-3xl font-semibold mb-4">Auf Anfrage</div>
-    <ul class="text-sm text-slate-600 space-y-1 mb-6">
-      <li>• Team‑Features</li>
-      <li>• SLA & Onboarding</li>
-    </ul>
-    <a class="px-4 py-2 rounded-md border" href="mailto:kontakt@example.com">Anfragen</a>
-  </div>
-</div>
 {% endblock %}

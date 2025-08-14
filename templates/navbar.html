@@ -1,18 +1,11 @@
-<header class="nav">
-  <div class="container nav-row">
-    <a class="brand" href="{{ url_for('public_home') }}">ebay-agent-cockpit</a>
-    <nav class="nav-links">
-      <a href="{{ url_for('public_home') }}">Start</a>
-      <a href="{{ url_for('public_pricing') }}">Preise</a>
-      {% if session.get("user_id") %}
-        <a href="{{ url_for('dashboard') }}">Dashboard</a>
-        <a href="{{ url_for('settings') }}">Einstellungen</a>
-        <a href="{{ url_for('logout') }}" class="btn btn-light">Logout</a>
-      {% else %}
-        <a href="{{ url_for('login') }}" class="btn">Login</a>
-        <a href="{{ url_for('register') }}" class="btn btn-primary">Registrieren</a>
-      {% endif %}
-    </nav>
-  </div>
-<li><a href="{{ url_for('account') }}">Account</a></li>
-</header>
+<nav class="nav">
+  <a href="{{ url_for('public_pricing') }}" class="{{ 'active' if request.path.startswith('/pricing') else '' }}">Preise</a>
+  {% if session.get('user_id') %}
+    <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.path=='/' else '' }}">Dashboard</a>
+    <a href="{{ url_for('settings') }}" class="{{ 'active' if request.path.startswith('/settings') else '' }}">Einstellungen</a>
+    <a class="btn ghost" href="{{ url_for('logout') }}">Logout</a>
+  {% else %}
+    <a href="{{ url_for('login') }}" class="{{ 'active' if request.path.startswith('/login') else '' }}">Login</a>
+    <a class="btn" href="{{ url_for('register') }}">Jetzt registrieren</a>
+  {% endif %}
+</nav>
