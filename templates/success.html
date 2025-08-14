@@ -1,9 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Vielen Dank! – ebay-agent-cockpit{% endblock %}
+{% block title %}Danke!{% endblock %}
 {% block content %}
-<div class="success">
-  <h1>Vielen Dank!</h1>
+<div class="bg-white border rounded-xl p-6 max-w-xl">
+  <h1 class="text-2xl font-semibold mb-2">Vielen Dank! ✅</h1>
   <p>Dein Kauf war erfolgreich. Dein Premium‑Zugang ist jetzt freigeschaltet.</p>
-  <p><a href="{{ url_for('dashboard') }}">Zurück zum Dashboard</a></p>
+  <a class="mt-4 inline-block px-4 py-2 bg-slate-900 text-white rounded-md"
+     href="{{ url_for('dashboard') }}">Weiter zum Dashboard</a>
 </div>
 {% endblock %}

@@ -16,7 +16,6 @@ import stripe
 
 load_dotenv()  # lokal: .env lesen
 
-
 # Render ist read-only; nur /tmp ist schreibbar. Lokal z.B. "database.db"
 DB_PATH = (
     os.getenv("DATABASE_FILE")
@@ -196,22 +195,6 @@ def public_checkout():
             return redirect(url_for("public_checkout"))
     # GET
     return safe_render("public_checkout.html", title="Checkout", body="Checkout Formular.")
-
-
-@app.route("/search", methods=["GET"])
-@login_required
-def search():
-    q = (request.args.get("q") or "").strip()
-    results = []
-    if q:
-        # TODO: Ersetze das später durch echte eBay/DB-Suche
-        # Dummy-Ergebnis, damit die Seite funktioniert
-        results = [
-            {"title": "Beispiel-Artikel A", "sku": "SKU-A", "price": "19,99 €"},
-            {"title": "Beispiel-Artikel B", "sku": "SKU-B", "price": "29,99 €"},
-        ]
-    return render_template("search.html", q=q, results=results)
-
 
 @app.get("/checkout/success")
 def checkout_success():

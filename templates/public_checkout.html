@@ -1,12 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Checkout – ebay-agent-cockpit{% endblock %}
+{% block title %}Checkout · ebay‑agent‑cockpit{% endblock %}
 {% block content %}
-<h1>Checkout</h1>
-<p class="muted">Gib optional deine E‑Mail an, damit Stripe sie im Bezahlfenster vorausfüllen kann.</p>
-<form method="post" class="form">
-  <label>E‑Mail (optional)</label>
-  <input type="email" name="email" placeholder="dein.name@example.com">
-  <button class="btn btn-primary">Weiter zur Zahlung</button>
+<h1 class="text-2xl font-semibold tracking-tight mb-4">Premium abonnieren</h1>
+<form method="post" class="bg-white border rounded-xl p-6 max-w-lg">
+  <label class="block text-sm font-medium">E-Mail (optional für Rechnung)</label>
+  <input name="email" type="email" class="mt-1 w-full border rounded-md px-3 py-2" placeholder="dein@mail.de" />
+  <button class="mt-4 bg-slate-900 text-white px-4 py-2 rounded-md">Zum Stripe-Checkout</button>
 </form>
-<p class="muted mt">Hinweis: Die Zahlung wird sicher über Stripe abgewickelt.</p>
 {% endblock %}

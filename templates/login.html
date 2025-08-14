@@ -1,13 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Login – ebay-agent-cockpit{% endblock %}
+{% block title %}Login{% endblock %}
 {% block content %}
-<h1>Login</h1>
-<form method="post" class="form">
-  <label>E‑Mail</label>
-  <input type="email" name="email" required>
-  <label>Passwort</label>
-  <input type="password" name="password" required>
-  <button class="btn btn-primary">Einloggen</button>
+<h1 class="text-2xl font-semibold tracking-tight mb-4">Login</h1>
+<form method="post" class="bg-white border rounded-xl p-6 max-w-md space-y-3">
+  <div>
+    <label class="block text-sm font-medium">E‑Mail</label>
+    <input class="mt-1 w-full border rounded-md px-3 py-2" type="email" name="email" required />
+  </div>
+  <div>
+    <label class="block text-sm font-medium">Passwort</label>
+    <input class="mt-1 w-full border rounded-md px-3 py-2" type="password" name="password" required />
+  </div>
+  <button class="bg-slate-900 text-white px-4 py-2 rounded-md">Einloggen</button>
+  <p class="text-sm text-slate-500">Noch kein Konto?
+    <a class="underline" href="{{ url_for('register') }}">Jetzt registrieren</a></p>
 </form>
-<p class="muted mt">Noch kein Konto? <a href="{{ url_for('register') }}">Jetzt registrieren</a></p>
 {% endblock %}
