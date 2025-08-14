@@ -1,18 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Einstellungen{% endblock %}
-{% block h1 %}Einstellungen{% endblock %}
+{% block title %}Einstellungen – ebay-agent-cockpit{% endblock %}
 {% block content %}
-  <form class="card" method="post">
-    <div class="form-row">
-      <label>Benachrichtigungen</label>
-      <select class="select" name="notif">
-        <option value="all">Alle</option>
-        <option value="important">Nur wichtige</option>
-        <option value="none">Keine</option>
-      </select>
-    </div>
-    <div class="form-actions" style="margin-top:12px">
-      <button class="btn" type="submit">Speichern</button>
-    </div>
-  </form>
+<h1 class="h4 mb-3">Einstellungen</h1>
+<form method="post" class="row g-3">
+  <div class="col-md-6">
+    <label class="form-label">E‑Mail</label>
+    <input name="email" type="email" class="form-control" value="{{ session.get('user_email','') }}">
+  </div>
+  <div class="col-md-6">
+    <label class="form-label">Neues Passwort</label>
+    <input name="password" type="password" class="form-control">
+  </div>
+  <div class="col-12">
+    <button class="btn btn-primary">Speichern</button>
+  </div>
+</form>
 {% endblock %}

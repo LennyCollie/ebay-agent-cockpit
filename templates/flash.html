@@ -1,8 +1,11 @@
 {% with msgs = get_flashed_messages(with_categories=true) %}
   {% if msgs %}
-    <div class="grid">
-      {% for cat,msg in msgs %}
-        <div class="alert {{ 'ok' if cat in ['success','info'] else ('warn' if cat=='warning' else 'err') }}">{{ msg }}</div>
+    <div class="position-sticky" style="top: .5rem; z-index: 1055;">
+      {% for cat, msg in msgs %}
+        <div class="alert alert-{{ 'info' if cat=='message' else cat }} alert-dismissible fade show shadow-sm" role="alert">
+          {{ msg }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
       {% endfor %}
     </div>
   {% endif %}

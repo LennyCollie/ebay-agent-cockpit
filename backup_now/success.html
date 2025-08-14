@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Erfolg{% endblock %}
+{% block h1 %}Vielen Dank!{% endblock %}
+{% block content %}
+  <div class="card">
+    Dein Premium‑Zugang ist jetzt freigeschaltet.
+    <div style="margin-top:14px"><a class="btn" href="{{ url_for('dashboard') }}">Zum Dashboard</a></div>
+  </div>
+{% endblock %}

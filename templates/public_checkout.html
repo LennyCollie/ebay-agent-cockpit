@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Checkout — ebay‑agent‑cockpit{% endblock %}
-{% block h1 %}Checkout{% endblock %}
+{% block title %}Checkout – ebay-agent-cockpit{% endblock %}
 {% block content %}
-  <form class="card" method="post">
-    <div class="form-row">
-      <label>E‑Mail</label>
-      <input class="input" name="email" type="email" placeholder="kunde@mail.de">
-    </div>
-    <div class="form-actions" style="margin-top:12px">
-      <button class="btn" type="submit">Zu Stripe weiter</button>
-      <a class="btn ghost" href="{{ url_for('public_pricing') }}">Zurück</a>
-    </div>
-    <p class="small" style="margin-top:10px;color:#9fb1ff">Zahlung & sichere Abwicklung via Stripe.</p>
-  </form>
+<h1 class="h3 mb-3">Checkout</h1>
+<p class="text-secondary">Gib optional deine E‑Mail an, dann übernimmt Stripe sie vorausgefüllt.</p>
+<form method="post" action="{{ url_for('public_checkout') }}" class="row gy-3">
+  <div class="col-md-6">
+    <label class="form-label">E‑Mail (optional)</label>
+    <input name="email" type="email" class="form-control" value="{{ session.get('user_email','') }}" placeholder="kunde@example.com">
+  </div>
+  <div class="col-12">
+    <button class="btn btn-primary">Weiter zu Stripe</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('public_pricing') }}">Zurück</a>
+  </div>
+</form>
 {% endblock %}

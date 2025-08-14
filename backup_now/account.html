@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Mein Konto{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h1 class="mb-3">Mein Konto</h1>
+  <p class="text-muted mb-4">E-Mail: <strong>{{ email }}</strong></p>
+
+  <form method="post" action="{{ url_for('account_billing_portal') }}">
+    <button class="btn btn-primary">Abo verwalten (Stripe‑Portal)</button>
+  </form>
+
+  <hr class="my-4"/>
+
+  <h2 class="h5 mb-3">Meine Abos</h2>
+  {% if subscriptions %}
+    <div class="table-responsive">
+      <table class="table">
+        <thead><tr>
+          <th>Abo</th><th>Status</th><th>Läuft bis</th><th>Preis-ID</th>
+        </tr></thead>
+        <tbody>
+        {% for s in subscriptions %}
+          <tr>
+            <td>{{ s.nickname }}</td>
+            <td><span class="badge bg-secondary">{{ s.status }}</span></td>
+            <td>{{ s.current_period_end | datetime }}</td>
+            <td><code>{{ s.price }}</code></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-muted">Kein aktives Abo gefunden.</p>
+  {% endif %}
+
+  <h2 class="h5 mt-4 mb-3">Rechnungen</h2>
+  {% if invoices %}
+    <div class="table-responsive">
+      <table class="table">
+        <thead><tr>
+          <th>Nummer</th><th>Status</th><th>Betrag</th><th>Datum</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for inv in invoices %}
+          <tr>
+            <td>{{ inv.number }}</td>
+            <td><span class="badge bg-secondary">{{ inv.status }}</span></td>
+            <td>{{ "%.2f"|format(inv.amount) }} {{ inv.currency }}</td>
+            <td>{{ inv.created | datetime }}</td>
+            <td>
+              {% if inv.hosted_invoice_url %}
+                <a class="btn btn-sm btn-outline-primary" href="{{ inv.hosted_invoice_url }}" target="_blank">Öffnen</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-muted">Noch keine Rechnungen vorhanden.</p>
+  {% endif %}
+</div>
+{% endblock %}

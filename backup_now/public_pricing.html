@@ -1,0 +1,39 @@
+{% extends "public_base.html" %}
+{% block title %}Preise{% endblock %}
+
+{% block content %}
+<section class="container">
+  <h1 class="page-title">Preise</h1>
+
+  <div class="pricing-grid">
+    <article class="card">
+      <header class="card-header">
+        <h2 class="card-title">Ebay Verkaufsagent <span class="badge">Premium</span></h2>
+        <p class="card-sub">Alles drin, was du fürs tägliche Arbeiten brauchst.</p>
+      </header>
+
+      <div class="price">
+        <span class="price-amount">{{ price_label or "9,99 €" }}</span>
+        <span class="price-period">/ Monat</span>
+      </div>
+
+      <ul class="feature-list">
+        <li>🔁 Sync‑Jobs vorbereitet</li>
+        <li>📊 Dashboard & Suche</li>
+        <li>🔐 Login, Sessions, Best Practices</li>
+        <li>☁️ Render‑Deploy inklusive</li>
+        <li>🧾 Rechnung via Stripe</li>
+      </ul>
+
+      <div class="card-actions">
+        <a class="btn btn-primary" href="{{ url_for('public_checkout') }}">Abo starten</a>
+        <a class="btn btn-ghost" href="{{ url_for('public_home') }}">Zur Startseite</a>
+      </div>
+    </article>
+  </div>
+
+  <p class="small mt-lg">
+    Fragen? <a href="{{ url_for('public_home') }}#kontakt">Schreib uns</a> – wir helfen dir gern beim Start.
+  </p>
+</section>
+{% endblock %}

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Erfolg{% endblock %}
-{% block h1 %}Vielen Dank!{% endblock %}
+{% block title %}Danke – ebay-agent-cockpit{% endblock %}
 {% block content %}
-  <div class="card">
-    Dein Premium‑Zugang ist jetzt freigeschaltet.
-    <div style="margin-top:14px"><a class="btn" href="{{ url_for('dashboard') }}">Zum Dashboard</a></div>
-  </div>
+<div class="text-center py-5">
+  <h1 class="mb-3">Vielen Dank! ✅</h1>
+  <p class="lead text-secondary">Dein Kauf war erfolgreich.</p>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-primary mt-3">Zum Dashboard</a>
+</div>
 {% endblock %}

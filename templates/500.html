@@ -1,2 +1,9 @@
-{% extends "base.html" %}{% block h1 %}500 – Da ist was schiefgelaufen{% endblock %}
-{% block content %}<div class="card">Bitte später erneut versuchen.</div>{% endblock %}
+{% extends "base.html" %}
+{% block title %}500 – Fehler{% endblock %}
+{% block content %}
+<div class="text-center py-5">
+  <h1 class="display-6">Upps!</h1>
+  <p class="text-secondary">Es ist ein Fehler aufgetreten.</p>
+  <a class="btn btn-primary" href="{{ url_for('public_home') }}">Zur Startseite</a>
+</div>
+{% endblock %}

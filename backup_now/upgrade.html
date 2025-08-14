@@ -1,0 +1,49 @@
+<<<<<<< HEAD
+      
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Upgrade auf Premium</title>
+    <!-- (Wir klauen uns das CSS vom Dashboard) -->
+    <style>body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f8f9fa;} .top-bar { background-color: #007bff; color: white; padding: 10px 40px; display: flex; justify-content: space-between; align-items: center; } .top-bar a { color: white; text-decoration: none; font-weight: bold; } .container { margin: 20px 40px; } .upgrade-box { text-align: center; background: white; padding: 40px; margin-top: 50px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); } .btn-upgrade { display: inline-block; margin-top: 20px; padding: 15px 30px; font-size: 18px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px; }</style>
+</head>
+<body>
+    <div class="top-bar">
+        <span>Super-Agenten Cockpit</span>
+        <a href="{{ url_for('dashboard') }}">Zurueck zum Dashboard</a>
+    </div>
+    <div class="container">
+        <div class="upgrade-box">
+            <h1>Werde zum Power-User!</h1>
+            <p>Dein kostenloser Account ist auf 2 aktive Suchauftraege limitiert.</p>
+            <h2>Upgrade auf Premium für nur 9,99€ / Monat und erhalte:</h2>
+            <ul>
+                <li><strong>Unlimitierte</strong> Suchauftraege</li>
+                <li>Schnellere Suchintervalle (bald verfuegbar!)</li>
+                <li>Erweiterte Filteroptionen (bald verfuegbar!)</li>
+            </ul>
+            <form action="/create-checkout-session" method="POST">
+                <button type="submit" class="btn-upgrade">Jetzt fuer 9.99 EUR / Monat upgraden</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
+
+    
+=======
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Upgrade</title>
+</head>
+<body>
+    <h1>Upgrade auf Premium</h1>
+    <form action="/checkout" method="post">
+        <button type="submit">Jetzt upgraden (€10)</button>
+    </form>
+</body>
+</html>
+>>>>>>> e87b845cd0e25ed483adbcd17d9fd2ee93b7826f

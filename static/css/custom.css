@@ -1,12 +1,54 @@
-
-/* Kleine visuelle Optimierungen */
-:root{
-  --brand: #4f7cff;
+/* ---------- Pricing Card Styles ---------- */
+.pricing-card {
+  border-radius: 1rem;
+  background: var(--bs-body-bg);
+  box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.05);
 }
-.navbar-brand{ letter-spacing: .2px; }
-.card-title{ font-weight: 600; }
-footer{ background: var(--bs-body-bg); }
 
-/* Abstände & Kanten leicht abrunden */
-.card { border-radius: .75rem; }
-.btn { border-radius: .6rem; }
+.pricing-card .price {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--bs-primary);
+}
+
+.pricing-card .badge-ghost {
+  background-color: transparent;
+  border: 1px solid var(--bs-border-color);
+  color: var(--bs-secondary-color);
+}
+
+.hr-soft {
+  border: 0;
+  border-top: 1px solid var(--bs-border-color);
+  opacity: 0.3;
+}
+
+/* ---------- FAQ Accordion ---------- */
+.faq .accordion-button {
+  font-weight: 500;
+}
+
+.faq .accordion-button:not(.collapsed) {
+  background-color: var(--bs-primary-bg-subtle);
+  color: var(--bs-primary);
+  box-shadow: none;
+}
+
+.faq .accordion-body {
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* ---------- Section Spacing ---------- */
+.section {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+}
+
+.kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--bs-secondary);
+}

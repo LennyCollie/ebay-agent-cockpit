@@ -1,22 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
-{% block h1 %}Dashboard{% endblock %}
+{% block title %}Dashboard – ebay-agent-cockpit{% endblock %}
 {% block content %}
-  <div class="grid" style="grid-template-columns:repeat(3,1fr);">
-    <div class="card">
-      <div class="small">Live‑Einblick</div>
-      <div style="font-size:28px;font-weight:700">0</div>
-      <div class="small">Jobs queued</div>
-    </div>
-    <div class="card">
-      <div class="small">Antwortzeit</div>
-      <div style="font-size:28px;font-weight:700">~120 ms</div>
-      <div class="small">letzte Minute</div>
-    </div>
-    <div class="card">
-      <div class="small">Uptime</div>
-      <div style="font-size:28px;font-weight:700">99.9%</div>
-      <div class="small">7 Tage</div>
+<h1 class="h4 mb-3">Willkommen im Dashboard</h1>
+
+<div class="row g-3">
+  <div class="col-md-6 col-lg-4">
+    <div class="card h-100 shadow-sm border-0">
+      <div class="card-body">
+        <h2 class="h6 mb-2">Schnellaktionen</h2>
+        <div class="d-grid gap-2">
+          <a class="btn btn-outline-primary" href="{{ url_for('public_pricing') }}">Abo verwalten</a>
+          <a class="btn btn-outline-secondary" href="{{ url_for('settings') }}">Einstellungen</a>
+        </div>
+      </div>
     </div>
   </div>
+  <div class="col-md-6 col-lg-8">
+    <div class="card h-100 shadow-sm border-0">
+      <div class="card-body">
+        <h2 class="h6 mb-2">Status</h2>
+        <p class="text-secondary mb-0">Alles bereit. Nutze die Navigation oben, um zu starten.</p>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

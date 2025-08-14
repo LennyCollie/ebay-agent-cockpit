@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen{% endblock %}
+{% block h1 %}Einstellungen{% endblock %}
+{% block content %}
+  <form class="card" method="post">
+    <div class="form-row">
+      <label>Benachrichtigungen</label>
+      <select class="select" name="notif">
+        <option value="all">Alle</option>
+        <option value="important">Nur wichtige</option>
+        <option value="none">Keine</option>
+      </select>
+    </div>
+    <div class="form-actions" style="margin-top:12px">
+      <button class="btn" type="submit">Speichern</button>
+    </div>
+  </form>
+{% endblock %}
