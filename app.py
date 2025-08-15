@@ -1,4 +1,3 @@
-# app.py
 import os
 import sqlite3
 from functools import wraps
@@ -10,53 +9,63 @@ from flask import (
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 import stripe
-import requests
 
 # =============================================================================
-# Konfiguration & Flask
+# Grund-Config
 # =============================================================================
-load_dotenv()
 
+load_dotenv()  # lokal .env laden; auf Render egal
+
+# Render: nur /tmp ist beschreibbar
 DB_PATH = (
     os.getenv("DATABASE_FILE")
     or os.getenv("DATABASE_URL")
     or ("/tmp/agent.db" if os.getenv("RENDER") or os.getenv("DYNO") else "database.db")
 )
 
-app = Flask(__name__)
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev_key")
+SECRET_KEY = os.getenv("SECRET_KEY", "dev_key_change_me")
 
-# Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-PRICE_ID = os.getenv("STRIPE_PRICE_PRO")
-SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL")
-CANCEL_URL = os.getenv("STRIPE_CANCEL_URL")
-
-# eBay
-EBAY_APP_ID = os.getenv("EBAY_APP_ID", "").strip()
-EBAY_GLOBAL_ID = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")
-
+# Suche: Limits
 FREE_SEARCH_LIMIT = int(os.getenv("FREE_SEARCH_LIMIT", "3"))
 PREMIUM_SEARCH_LIMIT = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
+EBAY_APP_ID = os.getenv("EBAY_APP_ID", "").strip()  # optional (für echte API später)
+EBAY_GLOBAL_ID = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")
+
+# Stripe
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY") or ""
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_PRO") or ""
+STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL") or ""
+STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL") or ""
+
+app = Flask(__name__)
+app.config["SECRET_KEY"] = SECRET_KEY
+
 
 # =============================================================================
-# Hilfen
+# Hilfsfunktionen
 # =============================================================================
+
 def safe_render(template_name: str, **ctx):
+    """Template rendern – wenn es fehlt, eine schlichte Seite liefern."""
     try:
         return render_template(template_name, **ctx)
     except Exception:
         title = ctx.get("title") or template_name
         body = ctx.get("body") or ""
-        return Response(f"""<!doctype html>
-<html lang="de"><meta charset="utf-8">
-<title>{title}</title>
-<body style="font-family:system-ui;max-width:900px;margin:40px auto">
-<h1>{title}</h1><p>{body}</p>
-<p style="margin-top:24px"><a href="{url_for('public_home')}">Zur Startseite</a></p>
-</body></html>""", mimetype="text/html")
+        start = url_for("public_home")
+        return Response(
+            f"""<!doctype html><meta charset="utf-8">
+            <title>{title}</title>
+            <body style="font-family:system-ui;max-width:900px;margin:40px auto;line-height:1.5">
+            <h1>{title}</h1><p>{body}</p>
+            <p style="margin-top:24px"><a href="{start}">Zur Startseite</a></p>
+            </body>""",
+            mimetype="text/html"
+        )
+
 
 def get_db():
+    """pro-Request SQLite‑Connection; Verzeichnis ggf. anlegen."""
     if "db" not in g:
         os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
         g.db = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -69,7 +78,9 @@ def close_db(_exc=None):
     if db is not None:
         db.close()
 
+
 def ensure_schema():
+    """Minimal-Tabellen anlegen/ergänzen."""
     db = get_db()
     cur = db.cursor()
     cur.execute("""
@@ -81,7 +92,45 @@ def ensure_schema():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # alte DBs upgraden (idempotent)
+    cur.execute("PRAGMA table_info(users)")
+    cols = {r["name"] for r in cur.fetchall()}
+    if "password" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN password TEXT NOT NULL DEFAULT ''")
+    if "is_premium" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN is_premium INTEGER DEFAULT 0")
+    if "created_at" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP")
     db.commit()
+
+
+def seed_user():
+    """Optional Test-User (SEED_USER_EMAIL / SEED_USER_PASSWORD)."""
+    email = (os.getenv("SEED_USER_EMAIL") or "").strip().lower()
+    pw = (os.getenv("SEED_USER_PASSWORD") or "").strip()
+    if not email or not pw:
+        return
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+    if not cur.fetchone():
+        cur.execute(
+            "INSERT INTO users (email, password, is_premium) VALUES (?, ?, 1)",
+            (email, generate_password_hash(pw))
+        )
+        db.commit()
+
+
+_initialized = False
+@app.before_request
+def _init_once():
+    """Schema/Seed nur 1× pro Prozess."""
+    global _initialized
+    if not _initialized:
+        ensure_schema()
+        seed_user()
+        _initialized = True
+
 
 def login_required(view):
     @wraps(view)
@@ -92,122 +141,160 @@ def login_required(view):
         return view(*args, **kwargs)
     return wrapped
 
-# Einmalige Initialisierung pro Prozess
-_initialized = False
-@app.before_request
-def _init_once():
-    global _initialized
-    if not _initialized:
-        ensure_schema()
-        _initialized = True
 
-# =============================================================================
-# eBay – echte Suche (Finding API)
-# =============================================================================
-def ebay_find_items(term: str, limit: int = 3, global_id: str = EBAY_GLOBAL_ID) -> list[dict]:
-    """
-    Sucht Artikel via eBay Finding API (findItemsByKeywords).
-    Nutzt EBAY_APP_ID (Client-ID). Gibt Liste mit title, price, url, image, term.
-    """
-    if not EBAY_APP_ID:
-        # Fallback, falls keine App-ID gesetzt
-        return [{
-            "title": f"Demo-Ergebnis für „{term}“ (keine EBAY_APP_ID)",
-            "price": 9.99,
-            "url": f"https://www.ebay.de/sch/i.html?_nkw={term}",
-            "image": "",
-            "term": term,
-        }]
-
-    endpoint = "https://svcs.ebay.com/services/search/FindingService/v1"
-    params = {
-        "OPERATION-NAME": "findItemsByKeywords",
-        "SERVICE-VERSION": "1.0.0",
-        "SECURITY-APPNAME": EBAY_APP_ID,
-        "RESPONSE-DATA-FORMAT": "JSON",
-        "REST-PAYLOAD": "",
-        "keywords": term,
-        "paginationInput.entriesPerPage": str(limit),
-        "GLOBAL-ID": global_id,
-    }
-
+def current_search_limit() -> int:
+    """Welches per-term Limit? premium vs. free."""
+    limit = FREE_SEARCH_LIMIT
     try:
-        r = requests.get(endpoint, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
+        if session.get("user_id"):
+            db = get_db()
+            cur = db.cursor()
+            cur.execute("SELECT is_premium FROM users WHERE id = ?", (session["user_id"],))
+            row = cur.fetchone()
+            if row and row["is_premium"]:
+                limit = PREMIUM_SEARCH_LIMIT
+    except Exception:
+        pass
+    return limit
 
-        items = []
-        search_result = data.get("findItemsByKeywordsResponse", [])[0] \
-                            .get("searchResult", [])[0] \
-                            .get("item", [])
 
-        for it in search_result:
-            title = it.get("title", [""])[0]
-            view_url = it.get("viewItemURL", [""])[0]
-            price = it.get("sellingStatus", [{}])[0] \
-                     .get("currentPrice", [{}])[0] \
-                     .get("__value__", "0.00")
-            image_url = it.get("galleryURL", [""])[0]
+def parse_terms_from_form(limit: int) -> list[str]:
+    """
+    Erwartet Felder q1, q2, q3 (oder term1..termN). Liefert bereinigte Liste.
+    """
+    terms = []
+    # bevorzugt q1..qN
+    for key in ("q1", "q2", "q3"):
+        t = (request.form.get(key) or "").strip()
+        if t:
+            terms.append(t)
+    # Fallback: term1..termN
+    i = 1
+    while len(terms) < limit:
+        t = (request.form.get(f"term{i}") or "").strip()
+        if not t:
+            break
+        terms.append(t)
+        i += 1
+    # Duplikate entfernen, leer raus
+    seen = set()
+    cleaned = []
+    for t in terms:
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            cleaned.append(t)
+    return cleaned[:3]  # aktuell max. 3 parallele Begriffe
 
-            items.append({
-                "title": title,
-                "price": float(price),
-                "url": view_url,
-                "image": image_url,
-                "term": term,
-            })
 
-        return items
-
-    except Exception as e:
-        print(f"eBay API Fehler für '{term}': {e}")
-        return [{
-            "title": f"Demo-Ergebnis für „{term}“ (API-Fehler)",
-            "price": 9.99,
+def build_demo_results(terms: list[str]) -> list[dict]:
+    """Demo-Ergebnisse (bis echte eBay-API angeschlossen ist)."""
+    results = []
+    for term in terms:
+        results.append({
+            "title": f"Demo‑Ergebnis für „{term}“",
+            "price": "9,99 €",
             "url": f"https://www.ebay.de/sch/i.html?_nkw={term}",
-            "image": "",
+            "image": "https://via.placeholder.com/64x48?text=%F0%9F%9B%92",
             "term": term,
-        }]
+        })
+    return results
+
 
 # =============================================================================
 # Öffentliche Seiten
 # =============================================================================
+
 @app.get("/public")
 def public_home():
-    return safe_render("public_home.html", title="Start")
+    return safe_render("public_home.html", title="Start", body="Startseite.")
 
 @app.get("/pricing")
 def public_pricing():
-    return safe_render("public_pricing.html", title="Preise")
+    return safe_render("public_pricing.html", title="Preise", body="Preisseite.")
 
 @app.route("/checkout", methods=["GET", "POST"])
 def public_checkout():
     if request.method == "POST":
-        email = (request.form.get("email") or session.get("user_email") or "").strip()
+        email = (request.form.get("email") or "").strip() or None
+        if not stripe.api_key or not STRIPE_PRICE_ID:
+            flash("Stripe ist nicht konfiguriert.", "warning")
+            return redirect(url_for("public_pricing"))
         try:
-            if not PRICE_ID:
-                raise RuntimeError("STRIPE_PRICE_PRO fehlt.")
-            sess = stripe.checkout.Session.create(
+            session_obj = stripe.checkout.Session.create(
                 mode="subscription",
-                line_items=[{"price": PRICE_ID, "quantity": 1}],
-                customer_email=email or None,
-                success_url=SUCCESS_URL or url_for("checkout_success", _external=True),
-                cancel_url=CANCEL_URL or url_for("public_pricing", _external=True),
+                line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
+                customer_email=email,
+                success_url=STRIPE_SUCCESS_URL or url_for("checkout_success", _external=True),
+                cancel_url=STRIPE_CANCEL_URL or url_for("public_pricing", _external=True),
                 allow_promotion_codes=True,
             )
-            return redirect(sess.url, code=303)
+            return redirect(session_obj.url, code=303)
         except Exception as e:
             flash(f"Stripe‑Fehler: {e}", "danger")
             return redirect(url_for("public_pricing"))
-    return safe_render("public_checkout.html", title="Checkout")
+    # GET
+    return safe_render("public_checkout.html", title="Checkout", body="Checkout")
+
 
 @app.get("/checkout/success")
 def checkout_success():
-    return safe_render("success.html", title="Danke")
+    return safe_render("success.html", title="Erfolg", body="Dein Premium‑Zugang ist jetzt freigeschaltet.")
+
+
+# =============================================================================
+# Suche (GET: Formular, POST: Ergebnisse)
+# =============================================================================
+
+@app.route("/search", methods=["GET", "POST"])
+def search():
+    if request.method == "GET":
+        # leeres Formular
+        return safe_render("search.html", title="Suche", body="Suche starten.")
+
+    # POST
+    terms = parse_terms_from_form(limit=3)
+    if not terms:
+        flash("Bitte mindestens einen Suchbegriff eingeben.", "warning")
+        return redirect(url_for("search"))
+
+    per_term_limit = current_search_limit()
+
+    # Hier später echte eBay API verwenden (EBAY_APP_ID prüfen)
+    # Bis dahin: Demo‑Ergebnisse erzeugen:
+    results = build_demo_results(terms)
+
+    # Ergebnisse rendern
+    return safe_render(
+        "search_results.html",
+        title="Suchergebnisse",
+        terms=terms,
+        per_term_limit=per_term_limit,
+        results=results
+    )
+
+
+# =============================================================================
+# Dashboard & Basics (Login nötig)
+# =============================================================================
+
+@app.get("/")
+@login_required
+def dashboard():
+    return safe_render("dashboard.html", title="Dashboard", body="Willkommen im Dashboard.")
+
+@app.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    if request.method == "POST":
+        flash("Einstellungen gespeichert.", "success")
+        return redirect(url_for("settings"))
+    return safe_render("settings.html", title="Einstellungen", body="Einstellungen.")
+
 
 # =============================================================================
 # Auth
 # =============================================================================
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -223,11 +310,11 @@ def login():
         if row and check_password_hash(row["password"], password):
             session["user_id"] = row["id"]
             session["user_email"] = email
-            flash("Login erfolgreich.", "success")
+            flash("Login erfolgreich!", "success")
             return redirect(url_for("dashboard"))
-        flash("Ungültige Zugangsdaten.", "danger")
+        flash("Ungültige E‑Mail oder Passwort.", "danger")
         return redirect(url_for("login"))
-    return safe_render("login.html", title="Login")
+    return safe_render("login.html", title="Login", body="Login‑Formular.")
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -245,74 +332,29 @@ def register():
             return redirect(url_for("register"))
         cur.execute(
             "INSERT INTO users (email, password) VALUES (?, ?)",
-            (email, generate_password_hash(password)),
+            (email, generate_password_hash(password))
         )
         db.commit()
         flash("Registrierung erfolgreich. Bitte einloggen.", "success")
         return redirect(url_for("login"))
-    return safe_render("register.html", title="Registrieren")
+    return safe_render("register.html", title="Registrieren", body="Registrieren.")
 
 @app.get("/logout")
 def logout():
     session.clear()
-    flash("Logout erfolgreich.", "info")
+    flash("Logout erfolgreich!", "info")
     return redirect(url_for("login"))
 
-# =============================================================================
-# Dashboard & Suche
-# =============================================================================
-@app.get("/")
-@login_required
-def dashboard():
-    return safe_render("dashboard.html", title="Dashboard")
-
-@app.route("/search", methods=["GET", "POST"])
-def search():
-    """
-    GET: Formular anzeigen
-    POST: bis zu 3 Suchbegriffe (q1..q3) verarbeiten, Limit abhängig von Premium.
-    Ergebnisse in search_results.html rendern.
-    """
-    if request.method == "GET":
-        return safe_render("search.html", title="Suche")
-
-    # POST
-    # Eingabefelder einsammeln
-    raw = [
-        (request.form.get("q1") or "").strip(),
-        (request.form.get("q2") or "").strip(),
-        (request.form.get("q3") or "").strip(),
-    ]
-    terms = [t for t in raw if t]
-    if not terms:
-        flash("Bitte mindestens einen Suchbegriff eingeben.", "warning")
-        return redirect(url_for("search"))
-
-    # Per-Keyword Limit anhand Premium-Status
-    per_term_limit = FREE_SEARCH_LIMIT
-    try:
-        if session.get("user_id"):
-            db = get_db()
-            cur = db.cursor()
-            cur.execute("SELECT is_premium FROM users WHERE id = ?", (session["user_id"],))
-            row = cur.fetchone()
-            if row and row["is_premium"]:
-                per_term_limit = PREMIUM_SEARCH_LIMIT
-            else:
-                per_term_limit = FREE_SEARCH_LIMIT
-    except Exception:
-        pass
-
-    results = []
-    for term in terms:
-        items = ebay_find_items(term, limit=per_term_limit, global_id=EBAY_GLOBAL_ID)
-        results.extend(items)
-
-    return safe_render("search_results.html", title="Suche", results=results, q1=raw[0], q2=raw[1], q3=raw[2])
 
 # =============================================================================
-# Debug & Sonstiges
+# Debug & Health
 # =============================================================================
+
+@app.get("/ping")
+def ping():
+    ensure_schema()
+    return "pong", 200
+
 @app.get("/debug")
 def debug_env():
     return jsonify({
@@ -322,32 +364,54 @@ def debug_env():
             "EBAY_APP_ID_set": bool(EBAY_APP_ID),
             "FREE_SEARCH_LIMIT": FREE_SEARCH_LIMIT,
             "PREMIUM_SEARCH_LIMIT": PREMIUM_SEARCH_LIMIT,
-            "STRIPE_PRICE_PRO": bool(PRICE_ID),
-            "STRIPE_SECRET_KEY_set": bool(os.getenv("STRIPE_SECRET_KEY")),
+            "STRIPE_PRICE_PRO": STRIPE_PRICE_ID,
+            "STRIPE_SECRET_KEY_set": bool(stripe.api_key),
             "STRIPE_WEBHOOK_SECRET_set": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
         }
     })
 
-@app.get("/ping")
-def ping():
-    ensure_schema()
-    return "pong", 200
+@app.get("/_debug/stripe")
+def _debug_stripe():
+    out = {"ok": False, "can_call_api": False, "price_ok": None, "error": None}
+    try:
+        if stripe.api_key:
+            stripe.Balance.retrieve()
+            out["can_call_api"] = True
+            if STRIPE_PRICE_ID:
+                try:
+                    stripe.Price.retrieve(STRIPE_PRICE_ID)
+                    out["price_ok"] = True
+                except Exception as e:
+                    out["price_ok"] = False
+                    out["error"] = str(e)
+        out["ok"] = out["can_call_api"] and (out["price_ok"] in (True, None))
+    except Exception as e:
+        out["error"] = str(e)
+    return jsonify(out)
+
 
 @app.get("/favicon.ico")
 def favicon():
     return Response(status=204)
 
+
+# =============================================================================
+# Fehlerseiten
+# =============================================================================
+
 @app.errorhandler(404)
 def _404(e):
-    return safe_render("404.html", title="404", body="Seite nicht gefunden."), 404
+    return safe_render("404.html", title="404 – Seite nicht gefunden", body="Upps! Diese Adresse gibt es nicht."), 404
 
 @app.errorhandler(500)
 def _500(e):
-    return safe_render("500.html", title="500", body="Interner Fehler."), 500
+    return safe_render("500.html", title="500 – Fehler", body="Interner Fehler."), 500
+
 
 # =============================================================================
-# Main
+# Main (lokal)
 # =============================================================================
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "10000"))
     app.run(host="0.0.0.0", port=port, debug=True)
