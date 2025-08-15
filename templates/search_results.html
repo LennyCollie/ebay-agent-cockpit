@@ -1,39 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Ergebnisse – ebay-agent-cockpit{% endblock %}
+{% block title %}Suchergebnisse – ebay-agent-cockpit{% endblock %}
 {% block content %}
-<h1 class="mb-3">Suchergebnisse</h1>
+<h1>Suchergebnisse</h1>
+<p class="text-secondary">Begriffe: {{ terms|join(', ') }} · Limit pro Begriff: {{ per_term_limit }}</p>
 
-{% if results|length == 0 %}
-  <div class="alert alert-warning">Keine Ergebnisse gefunden.</div>
-{% endif %}
-
-{% for block in results %}
-  <h5 class="mt-4">Suchbegriff: <code>{{ block.query }}</code></h5>
-  <div class="table-responsive">
-    <table class="table align-middle">
-      <thead>
-        <tr>
-          <th>Bild</th>
-          <th>Titel</th>
-          <th>Preis</th>
-          <th>Link</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for it in block.items %}
-        <tr>
-          <td style="width: 90px">
-            {% if it.image %}
-              <img src="{{ it.image }}" alt="" style="max-width:80px;max-height:80px;object-fit:contain">
-            {% endif %}
-          </td>
-          <td>{{ it.title }}</td>
-          <td>{{ it.price }} {{ it.currency }}</td>
-          <td><a href="{{ it.url }}" target="_blank" rel="noopener">Öffnen ↗</a></td>
-        </tr>
+<div class="table-responsive">
+  <table class="table align-middle">
+    <thead><tr><th>Bild</th><th>Titel</th><th>Preis</th><th>Aktion</th></tr></thead>
+    <tbody>
+      {% for r in results %}
+      <tr>
+        <td style="width:64px"><img src="{{ r.image }}" width="64" height="48" alt=""></td>
+        <td>
+          <div class="fw-semibold">{{ r.title }}</div>
+          <div class="text-secondary small">Suchbegriff: „{{ r.term }}“</div>
+        </td>
+        <td>{{ r.price }}</td>
+        <td><a class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener" href="{{ r.url }}">Auf eBay öffnen</a></td>
+      </tr>
       {% endfor %}
-      </tbody>
-    </table>
-  </div>
-{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<a class="btn btn-link" href="{{ url_for('search') }}">Neue Suche</a>
 {% endblock %}
