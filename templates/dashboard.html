@@ -66,4 +66,54 @@
   </div>
 </div>
 
+<h1 class="mb-4">Dashboard</h1>
+
+<p class="text-secondary">Willkommen im Dashboard. Unten siehst du den Status deiner Jobs.</p>
+
+{% if session.get('user_id') %}
+  <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
+{% endif %}
+
+<table class="table table-sm align-middle mt-3">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Job</th>
+      <th>Status</th>
+      <th>Letzter Lauf</th>
+    </tr>
+  </thead>
+  <tbody id="jobs-body">
+    <tr><td colspan="4" class="text-secondary">Lade Daten…</td></tr>
+  </tbody>
+</table>
+
+<script>
+(async () => {
+  try {
+    const res = await fetch("/api/get_all_jobs", {credentials: "same-origin"});
+    const data = await res.json();
+    const body = document.getElementById("jobs-body");
+    body.innerHTML = "";
+    if (data.ok && Array.isArray(data.jobs) && data.jobs.length) {
+      for (const j of data.jobs) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${j.id ?? ""}</td>
+          <td>${j.name ?? ""}</td>
+          <td>${j.status ?? ""}</td>
+          <td>${j.last_run ?? ""}</td>
+        `;
+        body.appendChild(tr);
+      }
+    } else {
+      body.innerHTML = `<tr><td colspan="4" class="text-secondary">Keine Jobs gefunden.</td></tr>`;
+    }
+  } catch (e) {
+    document.getElementById("jobs-body").innerHTML =
+      `<tr><td colspan="4" class="text-danger">Fehler beim Laden der Jobs.</td></tr>`;
+  }
+})();
+</script>
+
 {% endblock %}

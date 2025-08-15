@@ -1,5 +1,7 @@
 import os
 import sqlite3
+import requests
+from urllib.parse import urlencode
 from functools import wraps
 from datetime import datetime
 
@@ -34,8 +36,9 @@ SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL")     # optional
 CANCEL_URL = os.getenv("STRIPE_CANCEL_URL")       # optional
 
 # eBay (Platzhalter – später nutzen wir das)
-EBAY_APP_ID = os.getenv("EBAY_APP_ID")
 
+EBAY_APP_ID = os.getenv("EBAY_APP_ID", "").strip()
+EBAY_GLOBAL_ID = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")  # z.B. EBAY-DE, EBAY-US, EBAY-GB
 # =============================================================================
 # Flask
 # =============================================================================
@@ -124,6 +127,7 @@ def _init_once():
         seed_user()
         _initialized = True
 
+
 # =============================================================================
 # Auth-Helfer
 # =============================================================================
@@ -144,6 +148,62 @@ def current_user_is_premium() -> bool:
         "SELECT is_premium FROM users WHERE id = ?", (session["user_id"],)
     ).fetchone()
     return bool(row and row["is_premium"])
+
+def ebay_find_items(keyword: str, limit: int = 5, global_id: str = "EBAY-DE"):
+    """
+    Sucht Artikel per eBay Finding API (App-ID reicht).
+    Gibt eine Liste normalisierter Items zurück:
+    [{"title", "price", "currency", "image", "url", "source"}]
+    """
+    out = []
+    if not EBAY_APP_ID or not keyword:
+        return out
+
+    base_url = "https://svcs.ebay.com/services/search/FindingService/v1"
+    params = {
+        "OPERATION-NAME": "findItemsByKeywords",
+        "SERVICE-VERSION": "1.13.0",
+        "SECURITY-APPNAME": EBAY_APP_ID,
+        "RESPONSE-DATA-FORMAT": "JSON",
+        "REST-PAYLOAD": "",
+        "GLOBAL-ID": global_id,
+        "keywords": keyword,
+        "paginationInput.entriesPerPage": str(limit),
+        "sortOrder": "BestMatch",
+        # Bilder/Extras:
+        "outputSelector": "PictureURLLarge",
+    }
+
+    try:
+        r = requests.get(base_url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+
+        resp = data.get("findItemsByKeywordsResponse", [{}])[0]
+        items = resp.get("searchResult", [{}])[0].get("item", []) or []
+
+        for it in items:
+            title = (it.get("title") or [""])[0]
+            view_url = (it.get("viewItemURL") or [""])[0]
+            gallery = (it.get("galleryURL") or [""])[0]
+            pic_lg = (it.get("pictureURLLarge") or [""])[0]  # nur wenn vorhanden
+            selling = (it.get("sellingStatus") or [{}])[0]
+            price_node = (selling.get("currentPrice") or [{}])[0]
+            price = price_node.get("__value__")
+            currency = price_node.get("@currencyId")
+
+            out.append({
+                "title": title,
+                "price": price,
+                "currency": currency or "EUR",
+                "image": pic_lg or gallery or None,
+                "url": view_url,
+                "source": "ebay",
+            })
+    except Exception as e:
+        # Keine harte Exception ins UI – wir bleiben robust:
+        print(f"[ebay_find_items] error for '{keyword}': {e}")
+    return out
 
 # =============================================================================
 # Öffentliche Seiten
@@ -219,24 +279,55 @@ def search():
             flash("Bitte mindestens einen Suchbegriff eingeben.", "warning")
         else:
             # Platzhalter/Mock – wird im nächsten Schritt durch echte eBay‑API ersetzt
-            results = []
-            for t in terms:
-                results.append({
-                    "term": t,
-                    "title": f"Demo-Ergebnis für „{t}“",
-                    "price": "9,99 €",
-                    "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
-                    "thumb": "https://via.placeholder.com/64x64?text=IMG"
-                })
+           # ------------- POST: echte eBay-Suche -------------
+terms_raw = [
+    (request.form.get("q1") or "").strip(),
+    (request.form.get("q2") or "").strip(),
+    (request.form.get("q3") or "").strip(),
+]
+terms = [t for t in terms_raw if t]
+if not terms:
+    flash("Bitte mindestens einen Suchbegriff eingeben.", "info")
+    return redirect(url_for("search"))
 
-    return safe_render(
-        "search.html",
-        title="Suche",
-        limit=limit,
-        is_premium=is_premium,
-        terms=terms,
-        results=results
-    )
+# Limit je nach Premium-Status
+per_term_limit = 3  # Default
+try:
+    if session.get("user_id"):  # eingeloggt
+        # wenn du Premium prüfst:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("SELECT is_premium FROM users WHERE id = ?", (session["user_id"],))
+        row = cur.fetchone()
+        if row and row["is_premium"]:
+            per_term_limit = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
+        else:
+            per_term_limit = int(os.getenv("FREE_SEARCH_LIMIT", "3"))
+except Exception:
+    pass
+
+results = []
+for term in terms:
+    # echte API
+    items = ebay_find_items(term, limit=per_term_limit, global_id=EBAY_GLOBAL_ID)
+    # Falls API nichts liefert, Dummy-Eintrag zeigen (optional)
+    if not items:
+        items = [{
+            "title": f"Keine Treffer für „{term}“",
+            "price": None,
+            "currency": "",
+            "image": None,
+            "url": "https://www.ebay.de/sch/i.html?_nkw=" + urlencode({"_": term})[2:],  # einfache Fallback-Suche
+            "source": "ebay",
+        }]
+    results.extend(items)
+
+return render_template(
+    "search.html",
+    terms=terms,
+    results=results,
+    per_term_limit=per_term_limit,
+)
 
 # =============================================================================
 # Dashboard & einfache Seiten
@@ -260,6 +351,25 @@ def settings():
 def sync_get():
     flash("Sync gestartet (Demo).", "info")
     return redirect(url_for("dashboard"))
+
+@app.get("/dashboard")
+@login_required
+def dashboard_page():
+    # expliziter Alias, falls irgendwo /dashboard verlinkt ist
+    return safe_render("dashboard.html", title="Dashboard", body="Willkommen im Dashboard.")
+
+@app.get("/api/get_all_jobs")
+@login_required
+def api_get_all_jobs():
+    """
+    Stub/Beispiel: liefert (noch) statische Demodaten zurück.
+    Ersetze das später durch echte Jobdaten.
+    """
+    demo_jobs = [
+        {"id": 1, "name": "Produktsync", "status": "idle", "last_run": "2025-08-15T06:00:00Z"},
+        {"id": 2, "name": "Preisupdate", "status": "ok", "last_run": "2025-08-15T05:30:00Z"},
+    ]
+    return jsonify({"ok": True, "jobs": demo_jobs})
 
 # =============================================================================
 # Auth
@@ -338,6 +448,7 @@ def debug_env():
             "FREE_SEARCH_LIMIT": FREE_SEARCH_LIMIT,
             "PREMIUM_SEARCH_LIMIT": PREMIUM_SEARCH_LIMIT,
             "EBAY_APP_ID_set": bool(EBAY_APP_ID),
+            "EBAY_GLOBAL_ID": EBAY_GLOBAL_ID,
             "STRIPE_SECRET_KEY_set": bool(os.getenv("STRIPE_SECRET_KEY")),
             "STRIPE_PRICE_PRO": PRICE_ID,
             "STRIPE_WEBHOOK_SECRET_set": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
