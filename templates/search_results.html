@@ -1,39 +1,64 @@
 {% extends "base.html" %}
-{% block title %}Ergebnisse – ebay-agent-cockpit{% endblock %}
-{% block content %}
-<h1 class="mb-3">Suchergebnisse</h1>
+{% block title %}Suchergebnisse – ebay-agent-cockpit{% endblock %}
 
-{% if results|length == 0 %}
-  <div class="alert alert-warning">Keine Ergebnisse gefunden.</div>
+{% block content %}
+<h1 class="h3 mb-3">Suchergebnisse</h1>
+
+{% if terms and terms|length > 0 %}
+  <p class="text-secondary mb-4">
+    Gesucht nach:
+    {% for t in terms %}
+      <span class="badge text-bg-secondary me-1">{{ t }}</span>
+    {% endfor %}
+  </p>
 {% endif %}
 
-{% for block in results %}
-  <h5 class="mt-4">Suchbegriff: <code>{{ block.query }}</code></h5>
+{% if results and results|length > 0 %}
   <div class="table-responsive">
     <table class="table align-middle">
       <thead>
         <tr>
-          <th>Bild</th>
+          <th style="width:72px;">Bild</th>
           <th>Titel</th>
-          <th>Preis</th>
-          <th>Link</th>
+          <th style="width:120px;">Preis</th>
+          <th style="width:140px;">Aktion</th>
         </tr>
       </thead>
       <tbody>
-      {% for it in block.items %}
+        {% for r in results %}
         <tr>
-          <td style="width: 90px">
-            {% if it.image %}
-              <img src="{{ it.image }}" alt="" style="max-width:80px;max-height:80px;object-fit:contain">
+          <td>
+            {% if r.img %}
+              <img src="{{ r.img }}" alt="" class="img-thumbnail" style="max-width:64px;">
+            {% else %}
+              <div class="bg-body-secondary rounded" style="width:64px;height:48px;"></div>
             {% endif %}
           </td>
-          <td>{{ it.title }}</td>
-          <td>{{ it.price }} {{ it.currency }}</td>
-          <td><a href="{{ it.url }}" target="_blank" rel="noopener">Öffnen ↗</a></td>
+          <td>
+            <div class="fw-semibold">{{ r.title }}</div>
+            {% if r.term %}
+              <div class="text-secondary small">Suchbegriff: „{{ r.term }}“</div>
+            {% endif %}
+          </td>
+          <td>{{ r.price or "–" }}</td>
+          <td>
+            {% if r.url %}
+              <a href="{{ r.url }}" target="_blank" class="btn btn-sm btn-outline-primary">Auf eBay öffnen</a>
+            {% else %}
+              <span class="text-secondary">–</span>
+            {% endif %}
+          </td>
         </tr>
-      {% endfor %}
+        {% endfor %}
       </tbody>
     </table>
   </div>
-{% endfor %}
+{% else %}
+  <div class="alert alert-info">Keine Ergebnisse gefunden.</div>
+{% endif %}
+
+<div class="mt-3">
+  <a href="{{ url_for('search') }}" class="btn btn-secondary">Neue Suche</a>
+  <a href="{{ url_for('public_home') }}" class="btn btn-link">Zur Startseite</a>
+</div>
 {% endblock %}
