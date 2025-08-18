@@ -52,3 +52,9 @@
   font-weight: 600;
   color: var(--bs-secondary);
 }
+
+/* ===== UX: Keine "Eieruhr" über dem Stats-Kärtchen ===== */
+.stats-card,
+.stats-card * {
+  cursor: default !important;
+}

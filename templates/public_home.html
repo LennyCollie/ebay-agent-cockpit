@@ -1,74 +1,107 @@
-
 {% extends "base.html" %}
 {% block title %}Start – ebay-agent-cockpit{% endblock %}
+
 {% block content %}
-<section class="py-5">
+<div class="container py-5">
   <div class="row align-items-center g-4">
     <div class="col-lg-7">
-      <h1 class="display-6 fw-semibold mb-3">Dein leichtes Cockpit für eBay‑Automatisierung</h1>
-      <p class="lead text-secondary mb-4">Angebote verwalten, Prozesse synchronisieren, weniger Klicks — mehr Zeit fürs Wesentliche.</p>
-      <div class="d-flex flex-wrap gap-2 mb-3">
-        <a class="btn btn-primary btn-lg px-4" href="{{ url_for('register') }}">Kostenlos starten</a>
-        <a class="btn btn-outline-primary btn-lg px-4" href="{{ url_for('public_pricing') }}">Preise ansehen</a>
+      <h1 class="display-5 fw-semibold mb-3">
+        Dein leichtes Cockpit für <span class="text-primary">eBay-Automatisierung</span>
+      </h1>
+      <p class="lead text-muted mb-4">
+        Angebote verwalten, Prozesse synchronisieren, weniger Klicks — mehr Zeit fürs Wesentliche.
+      </p>
+
+      <div class="d-flex flex-wrap gap-2 mb-2">
+        <!-- Gastmodus: sofort loslegen -->
+        <a class="btn btn-primary btn-lg" href="{{ url_for('start_free') }}">
+          Kostenlos starten
+        </a>
+
+        {% if session.get('user_id') %}
+          <!-- Schon eingeloggt: direkt zur Suche -->
+          <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('search') }}">
+            Suche öffnen
+          </a>
+        {% else %}
+          <!-- Registrierung explizit anbieten -->
+          <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('register') }}">
+            Kostenlos starten mit Registrierung
+          </a>
+        {% endif %}
+
+        <a class="btn btn-link btn-lg" href="{{ url_for('public_pricing') }}">
+          Preise ansehen
+        </a>
       </div>
-      <div class="small text-secondary d-flex flex-wrap gap-3">
-        <span>🔒 Sichere Anmeldung</span>
-        <span>🔁 Sync‑Jobs vorbereitet</span>
-        <span>☁️ Render‑Deploy</span>
+
+      <p class="text-muted mb-5">
+        <small>
+          Ohne Registrierung sind <strong>{{ FREE_SEARCH_LIMIT }}</strong> Suchen gratis.
+          Mit Konto kannst du später jederzeit upgraden.
+        </small>
+      </p>
+
+      <div class="d-flex flex-wrap gap-3">
+        <span class="badge text-bg-light border">🔒 Sichere Anmeldung</span>
+        <span class="badge text-bg-light border">🔁 Sync-Jobs vorbereitet</span>
+        <span class="badge text-bg-light border">🚀 Render-Deploy inklusive</span>
+        <span class="badge text-bg-light border">💳 Stripe-Abo & Rechnung</span>
       </div>
     </div>
+
     <div class="col-lg-5">
-      <div class="card shadow-sm border-0">
-        <div class="card-header bg-body-tertiary small d-flex gap-1"><span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill">●</span><span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill">●</span><span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill">●</span></div>
+      <!-- HIER: stats-card sorgt dafür, dass kein "Wait"-Cursor erscheint -->
+      <div class="card shadow-sm stats-card">
         <div class="card-body">
-          <div class="row g-3 mb-3">
-            <div class="col"><div class="border rounded p-3 text-center"><div class="fw-semibold">~120 ms</div><div class="text-secondary small">Antwortzeit</div></div></div>
-            <div class="col"><div class="border rounded p-3 text-center"><div class="fw-semibold">99.9%</div><div class="text-secondary small">Uptime</div></div></div>
-            <div class="col"><div class="border rounded p-3 text-center"><div class="fw-semibold">0</div><div class="text-secondary small">Jobs queued</div></div></div>
+          <div class="d-flex gap-2 mb-3">
+            <span class="badge rounded-pill bg-secondary-subtle text-secondary">●</span>
+            <span class="badge rounded-pill bg-secondary-subtle text-secondary">●</span>
+            <span class="badge rounded-pill bg-secondary-subtle text-secondary">●</span>
           </div>
-          <div class="vstack gap-2">
-            <div class="placeholder-glow"><span class="placeholder col-12" style="height:10px;"></span></div>
-            <div class="placeholder-glow"><span class="placeholder col-10" style="height:10px;"></span></div>
-            <div class="placeholder-glow"><span class="placeholder col-8"  style="height:10px;"></span></div>
+          <div class="row g-3 text-center">
+            <div class="col-4">
+              <div class="h5 mb-0">~120 ms</div>
+              <div class="text-muted small">Antwortzeit</div>
+            </div>
+            <div class="col-4">
+              <div class="h5 mb-0">99.9%</div>
+              <div class="text-muted small">Uptime</div>
+            </div>
+            <div class="col-4">
+              <div class="h5 mb-0">0</div>
+              <div class="text-muted small">Jobs queued</div>
+            </div>
           </div>
+          <hr>
+          <div class="progress mb-2"><div class="progress-bar" style="width:85%"></div></div>
+          <div class="progress mb-2"><div class="progress-bar" style="width:65%"></div></div>
+          <div class="progress"><div class="progress-bar" style="width:45%"></div></div>
         </div>
       </div>
     </div>
   </div>
-</section>
 
-<section class="py-5 border-top">
-  <h2 class="h4 mb-4">Warum ebay‑agent‑cockpit?</h2>
-  <div class="row g-4">
-    {% for item in [
-      ('⚡','Schnell & einfach','In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.'),
-      ('🔐','Sicher','Login, Sessions & Best Practices standardmäßig aktiv.'),
-      ('📈','Skalierbar','Von lokal bis Render‑Deploy. Feature‑Flags & Sync‑Jobs vorbereitet.'),
-      ('🧰','Stripe‑Abo','Checkout & Webhook integriert. Rechnungen über Stripe.')
-    ] %}
-    <div class="col-md-6 col-lg-3">
-      <div class="card h-100 border-0 shadow-sm">
-        <div class="card-body">
-          <div class="fs-3 mb-2">{{ item[0] }}</div>
-          <h3 class="h6 mb-1">{{ item[1] }}</h3>
-          <p class="text-secondary mb-0">{{ item[2] }}</p>
-        </div>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-</section>
-
-<section class="bg-body-tertiary py-5 rounded-3">
-  <div class="d-lg-flex align-items-center justify-content-between gap-3">
-    <div class="mb-3 mb-lg-0">
-      <h2 class="h4 mb-1">Bereit, loszulegen?</h2>
-      <p class="text-secondary mb-0">Registriere dich gratis und teste das Cockpit.</p>
-    </div>
-    <div class="d-flex gap-2">
-      <a class="btn btn-primary btn-lg" href="{{ url_for('register') }}">Jetzt registrieren</a>
-      <a class="btn btn-outline-primary btn-lg" href="{{ url_for('public_pricing') }}">Preise ansehen</a>
+  <div class="mt-5">
+    <h2 class="h4 mb-3">Warum ebay-agent-cockpit?</h2>
+    <div class="row g-3">
+      <div class="col-md-3"><div class="card h-100"><div class="card-body">
+        <div class="mb-2 fs-4">⚡</div><h3 class="h6">Schnell & einfach</h3>
+        <p class="text-muted small mb-0">In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.</p>
+      </div></div></div>
+      <div class="col-md-3"><div class="card h-100"><div class="card-body">
+        <div class="mb-2 fs-4">🔐</div><h3 class="h6">Sicher</h3>
+        <p class="text-muted small mb-0">Login, Sessions & Best Practices standardmäßig aktiv.</p>
+      </div></div></div>
+      <div class="col-md-3"><div class="card h-100"><div class="card-body">
+        <div class="mb-2 fs-4">📈</div><h3 class="h6">Skalierbar</h3>
+        <p class="text-muted small mb-0">Von lokal bis Render-Deploy. Feature-Flags & Sync-Jobs vorbereitet.</p>
+      </div></div></div>
+      <div class="col-md-3"><div class="card h-100"><div class="card-body">
+        <div class="mb-2 fs-4">💳</div><h3 class="h6">Stripe-Abo</h3>
+        <p class="text-muted small mb-0">Checkout & Webhook integriert. Rechnungen über Stripe.</p>
+      </div></div></div>
     </div>
   </div>
-</section>
+</div>
 {% endblock %}
