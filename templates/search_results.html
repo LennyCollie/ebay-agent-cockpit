@@ -58,7 +58,8 @@
 {% endif %}
 
 <div class="mt-3">
-  <a href="/search" class="btn btn-secondary">Neue Suche</a>
+  <!-- Wichtig: richtige Endpoints benutzen -->
+  <a href="{{ url_for('search') }}" class="btn btn-secondary">Neue Suche</a>
   <a href="{{ url_for('public_home') }}" class="btn btn-link">Zur Startseite</a>
 </div>
 {% endblock %}
