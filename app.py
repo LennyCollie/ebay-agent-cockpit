@@ -560,15 +560,20 @@ def debug_env():
             "STRIPE_PRICE_PRO_set": bool(STRIPE_PRICE_PRO),
             "STRIPE_SECRET_KEY_set": bool(STRIPE_SECRET_KEY),
             "STRIPE_WEBHOOK_SECRET_set": bool(STRIPE_WEBHOOK_SECRET),
+            # >>> NEU: eBay-Flags
+            "LIVE_SEARCH": os.getenv("LIVE_SEARCH", "0"),
+            "EBAY_CLIENT_ID_set": bool(os.getenv("EBAY_CLIENT_ID")),
+            "EBAY_CLIENT_SECRET_set": bool(os.getenv("EBAY_CLIENT_SECRET")),
+            "EBAY_SCOPES": os.getenv("EBAY_SCOPES", ""),
+            "EBAY_GLOBAL_ID": os.getenv("EBAY_GLOBAL_ID", ""),
         },
         "session": {
-            "free_search_count": session.get("free_search_count", 0),
-            "is_premium": session.get("is_premium", False),
+            "free_search_count": int(session.get("free_search_count", 0)),
+            "is_premium": bool(session.get("is_premium", False)),
             "user_email": session.get("user_email", "guest"),
-        }
+        },
     }
     return jsonify(data)
-
 @app.route("/healthz")
 def healthz():
     return "ok", 200
