@@ -16,42 +16,71 @@ from flask import (
 # ------------------------------------------------------------
 # App & Basis-Config
 # ------------------------------------------------------------
-def as_bool(val: Optional[str]) -> bool:
-    return str(val).lower() in {"1", "true", "yes", "on"}
+import os
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
-app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
+def as_bool(val: str | None) -> bool:
+    return str(val).strip().lower() in {"1", "true", "yes", "on"}
 
-# DB-Pfad (sqlite:///instance/db.sqlite3)
-DB_URL = os.getenv("DB_PATH", "sqlite:///instance/db.sqlite3")
-def _sqlite_file_from_url(url: str) -> Path:
-    if url.startswith("sqlite:///"):
-        return Path(url.replace("sqlite:///", "", 1))
-    return Path(url)
-DB_FILE = _sqlite_file_from_url(DB_URL)
-DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+def getenv_any(*names: str, default: str = "") -> str:
+    """Gibt den ersten gesetzten ENV-Wert in names zurück (fallback),
+    sonst default. Damit funktionieren alte und neue Variablennamen."""
+    for n in names:
+        v = os.getenv(n)
+        if v:
+            return v
+    return default
 
-FREE_SEARCH_LIMIT = int(os.getenv("FREE_SEARCH_LIMIT", "3"))
-PREMIUM_SEARCH_LIMIT = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
+# -----------------------------------------------
+# eBay OAuth + Legacy-Fallback
+# -----------------------------------------------
+# Neu (bevorzugt):
+EBAY_CLIENT_ID     = getenv_any("EBAY_CLIENT_ID", "EBAY_APP_ID")
+EBAY_CLIENT_SECRET = getenv_any("EBAY_CLIENT_SECRET", "EBAY_CERT_ID")
+EBAY_SCOPES        = os.getenv("EBAY_SCOPES", "https://api.ebay.com/oauth/api_scope")
 
-# Ergebnisse & Cache
-PER_PAGE_DEFAULT = int(os.getenv("RESULTS_PER_PAGE", "20"))
-SEARCH_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
+# Region/Marketplace
+EBAY_GLOBAL_ID     = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")
 
-# ------------------------------------------------------------
-# eBay – Client Credentials + Browse API
-# ------------------------------------------------------------
-EBAY_CLIENT_ID = os.getenv("EBAY_CLIENT_ID", "")
-EBAY_CLIENT_SECRET = os.getenv("EBAY_CLIENT_SECRET", "")
-EBAY_MARKETPLACE_ID = os.getenv("EBAY_MARKETPLACE_ID", "EBAY_DE")
-EBAY_SCOPE = os.getenv("EBAY_SCOPE", "https://api.ebay.com/oauth/api_scope")
-EBAY_CURRENCY = os.getenv("EBAY_CURRENCY", "EUR")
+# Live-Search-Schalter
+LIVE_SEARCH        = as_bool(os.getenv("LIVE_SEARCH", "0"))
 
-_EBAY_TOKEN = {"access_token": None, "expires_at": 0}
+# Optional: Affiliates/Partner-Tag (wirkt nur auf Ergebnis-URLs, falls gesetzt)
+AFFILIATE_PARAMS   = os.getenv("AFFILIATE_PARAMS", "")  # z. B. "campid=XXXX;customid=YOURTAG"
 
-_http = requests.Session()
-_http.headers.update({"User-Agent": "ebay-agent-cockpit/1.0"})
+# -----------------------------------------------
+# Stripe-Flags (wie gehabt)
+# -----------------------------------------------
+STRIPE_SECRET_KEY      = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_PRICE_PRO       = os.getenv("STRIPE_PRICE_PRO", "")
+STRIPE_WEBHOOK_SECRET  = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_OK = bool(STRIPE_SECRET_KEY)
 
+# -----------------------------------------------
+# Debug-/Health-Route erweitern (falls sie schon existiert, diesen Inhalt nutzen)
+# -----------------------------------------------
+@app.route("/debug")
+def debug_env():
+    data = {
+        "env": {
+            "DB_PATH": os.getenv("DB_PATH", "sqlite:///instance/db.sqlite3"),
+            "EBAY_CLIENT_ID_set": bool(EBAY_CLIENT_ID),
+            "EBAY_CLIENT_SECRET_set": bool(EBAY_CLIENT_SECRET),
+            "EBAY_GLOBAL_ID": EBAY_GLOBAL_ID,
+            "EBAY_SCOPES": EBAY_SCOPES,
+            "FREE_SEARCH_LIMIT": int(os.getenv("FREE_SEARCH_LIMIT", "3")),
+            "PREMIUM_SEARCH_LIMIT": int(os.getenv("PREMIUM_SEARCH_LIMIT", "10")),
+            "LIVE_SEARCH": "1" if LIVE_SEARCH else "0",
+            "STRIPE_PRICE_PRO_set": bool(STRIPE_PRICE_PRO),
+            "STRIPE_SECRET_KEY_set": bool(STRIPE_SECRET_KEY),
+            "STRIPE_WEBHOOK_SECRET_set": bool(STRIPE_WEBHOOK_SECRET),
+        },
+        "session": {
+            "free_search_count": int(session.get("free_search_count", 0)),
+            "is_premium": bool(session.get("is_premium", False)),
+            "user_email": session.get("user_email", "guest"),
+        }
+    }
+    return jsonify(data)
 # ------------------------------------------------------------
 # Stripe (optional; fällt sauber zurück, wenn nicht konfiguriert)
 # ------------------------------------------------------------
