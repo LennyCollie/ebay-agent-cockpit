@@ -5,7 +5,7 @@
 <h1 class="h3 mb-3">Artikel suchen</h1>
 <p class="text-secondary">Bis zu drei Begriffe gleichzeitig.</p>
 
-<form method="post" action="{{ url_for('search') }}" class="vstack gap-3">
+<form method="post" action="/search" class="vstack gap-3">
   <div>
     <label for="q1" class="form-label">Suchbegriff 1</label>
     <input type="text" id="q1" name="q1" class="form-control"
@@ -26,8 +26,7 @@
 
   <div class="d-flex gap-2">
     <button type="submit" class="btn btn-primary">Suchen</button>
-    <a href="{{ url_for('search') }}" class="btn btn-outline-secondary">Zurücksetzen</a>
+    <a href="/search" class="btn btn-outline-secondary">Zurücksetzen</a>
   </div>
 </form>
-
 {% endblock %}
