@@ -6,8 +6,6 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from urllib.parse import urlencode
-from flask import request  # (falls nicht oben importiert)
-
 
 import requests
 from flask import (
@@ -25,7 +23,6 @@ def as_bool(val: Optional[str]) -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
 
 def getenv_any(*names: str, default: str = "") -> str:
-    """Ersten gesetzten ENV-Wert aus names zurückgeben (Fallback-Kette)."""
     for n in names:
         v = os.getenv(n)
         if v:
@@ -51,14 +48,12 @@ DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 # -------------------------------------------------------------------
 # eBay – OAuth Client Credentials + Suche
 # -------------------------------------------------------------------
-# Neue Variablennamen bevorzugt, alte kompatibel:
 EBAY_CLIENT_ID     = getenv_any("EBAY_CLIENT_ID", "EBAY_APP_ID")
 EBAY_CLIENT_SECRET = getenv_any("EBAY_CLIENT_SECRET", "EBAY_CERT_ID")
 EBAY_SCOPES        = os.getenv("EBAY_SCOPES", "https://api.ebay.com/oauth/api_scope")
-EBAY_GLOBAL_ID     = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")  # nur Info
+EBAY_GLOBAL_ID     = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")
 LIVE_SEARCH        = as_bool(os.getenv("LIVE_SEARCH", "0"))
 
-# Marketplace-ID & Währung für Browse-API
 def _marketplace_from_global(gid: str) -> str:
     gid = (gid or "").upper()
     if gid in {"EBAY-DE", "EBAY_DE"}: return "EBAY_DE"
@@ -72,20 +67,16 @@ def _currency_for_marketplace(mkt: str) -> str:
     if mkt == "EBAY_US": return "USD"
     if mkt == "EBAY_GB": return "GBP"
     if mkt == "EBAY_FR": return "EUR"
-    return "EUR"  # DE default
+    return "EUR"
 
 EBAY_MARKETPLACE_ID = _marketplace_from_global(EBAY_GLOBAL_ID)
 EBAY_CURRENCY       = _currency_for_marketplace(EBAY_MARKETPLACE_ID)
 
-# Optional: Affiliate-Parameter (werden an itemWebUrl angehängt)
-AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # z.B. "campid=XXXX;customid=YOURTAG"
-
+# Optional: Affiliate-Parameter (an itemWebUrl anhängen)
+AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # "campid=XXXX;customid=YOURTAG"
 def _append_affiliate(url: Optional[str]) -> Optional[str]:
-    if not url:
+    if not url or not AFFILIATE_PARAMS:
         return url
-    if not AFFILIATE_PARAMS:
-        return url
-    # "a=b;c=d" -> ["a=b", "c=d"] -> "a=b&c=d"
     parts = [p.strip() for p in AFFILIATE_PARAMS.split(";") if p.strip()]
     q = "&".join(parts)
     sep = "&" if "?" in url else "?"
@@ -93,13 +84,12 @@ def _append_affiliate(url: Optional[str]) -> Optional[str]:
 
 # HTTP Session + Token Cache
 _http = requests.Session()
-_EBAY_TOKEN = {"access_token": None, "expires_at": 0.0}
+_EBAY_TOKEN: Dict[str, float | str | None] = {"access_token": None, "expires_at": 0.0}
 
 def ebay_get_token() -> Optional[str]:
-    """Holt/Cachet ein Client-Credentials Token für eBay."""
     tok = _EBAY_TOKEN.get("access_token")
     if tok and time.time() < float(_EBAY_TOKEN.get("expires_at") or 0):
-        return tok
+        return str(tok)
 
     if not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
         print("[ebay_get_token] missing client id/secret")
@@ -115,13 +105,10 @@ def ebay_get_token() -> Optional[str]:
         j = r.json() or {}
         _EBAY_TOKEN["access_token"] = j.get("access_token")
         _EBAY_TOKEN["expires_at"]   = time.time() + int(j.get("expires_in", 7200)) - 60
-        return _EBAY_TOKEN["access_token"]
+        return str(_EBAY_TOKEN["access_token"])
     except Exception as e:
         print(f"[ebay_get_token] {e}")
         return None
-        current_app.logger.exception("Stripe Checkout error")
-    flash(f"Stripe-Fehler: {e}", "danger")
-    return redirect(url_for("public_pricing"))
 
 def _build_ebay_filters(price_min: str, price_max: str, conditions: List[str]) -> Optional[str]:
     parts: List[str] = []
@@ -138,14 +125,11 @@ def _build_ebay_filters(price_min: str, price_max: str, conditions: List[str]) -
 
 def _map_sort(ui_sort: str) -> Optional[str]:
     s = (ui_sort or "").strip()
-    if not s or s == "best":
-        return None            # Best Match (Default)
-    if s == "price_asc":
-        return "price"
-    if s == "price_desc":
-        return "-price"
-    if s == "newly":
-        return "newlyListed"
+    if not s or s == "best":  # Best Match
+        return None
+    if s == "price_asc":  return "price"
+    if s == "price_desc": return "-price"
+    if s == "newly":      return "newlyListed"
     return None
 
 def ebay_search_one(term: str, limit: int, offset: int,
@@ -180,7 +164,7 @@ def ebay_search_one(term: str, limit: int, offset: int,
         print(f"[ebay_search_one] {e}")
         return [], None
 
-# Demo-Backend (wenn LIVE_SEARCH=0 oder Keys fehlen)
+# Demo-Backend
 def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[List[Dict], int]:
     total = max(30, len(terms) * 40)
     start = (page - 1) * per_page
@@ -197,7 +181,7 @@ def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[Li
         })
     return items, total
 
-# Mini-Cache (pro identischer Suche)
+# Mini-Cache
 _search_cache: dict = {}  # key -> (ts, (items, total_estimated))
 def _cache_get(key):
     row = _search_cache.get(key)
@@ -213,10 +197,7 @@ def _cache_set(key, payload):
     _search_cache[key] = (time.time(), payload)
 
 def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: int) -> Tuple[List[Dict], Optional[int]]:
-    # Live nur, wenn explizit erlaubt und Keys vorhanden
-    if not LIVE_SEARCH:
-        return _backend_search_demo(terms, page, per_page)
-    if not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
+    if not LIVE_SEARCH or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
         return _backend_search_demo(terms, page, per_page)
 
     filter_str = _build_ebay_filters(filters.get("price_min",""), filters.get("price_max",""), filters.get("conditions") or [])
@@ -274,10 +255,8 @@ except Exception:
     STRIPE_OK = False
     stripe = None
 
-
 @app.post("/webhook")
 def stripe_webhook():
-    # Sicherheits-Check: Signatur verifizieren
     wh_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
     if not STRIPE_OK or not wh_secret:
         return "webhook not configured", 400
@@ -292,21 +271,16 @@ def stripe_webhook():
     except stripe.error.SignatureVerificationError:  # type: ignore
         return "invalid signature", 400
 
-    # --- Ereignisse behandeln ---
     etype = event.get("type")
     data  = event.get("data", {}).get("object", {})
 
-    # Abo/Checkout erfolgreich abgeschlossen
     if etype in ("checkout.session.completed", "customer.subscription.created"):
-        # Identifikation des Users: bevorzugt client_reference_id (User-ID),
-        # sonst Metadata/Email als Fallback
         user_id = data.get("client_reference_id")
         email   = (
             (data.get("customer_details") or {}).get("email")
             or data.get("customer_email")
             or (data.get("metadata") or {}).get("email")
         )
-
         conn = get_db()
         cur  = conn.cursor()
         if user_id:
@@ -316,14 +290,10 @@ def stripe_webhook():
         conn.commit()
         conn.close()
 
-    # (Optional) weitere Events, z. B. Kündigung o. überfällige Rechnung:
-    # elif etype in ("customer.subscription.deleted", "invoice.payment_failed"):
-    #     ...
-
-    # Stripe möchte 2xx sehen
     return jsonify({"received": True})
+
 # -------------------------------------------------------------------
-# DB (Mini-User-Tabelle mit Premium-Flag)
+# DB (Mini-User-Tabelle)
 # -------------------------------------------------------------------
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_FILE), detect_types=sqlite3.PARSE_DECLTYPES)
@@ -337,17 +307,17 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,         -- Demo (in echt hash!)
+            password TEXT NOT NULL,
             is_premium INTEGER NOT NULL DEFAULT 0
         )
     """)
     conn.commit()
     conn.close()
 
-init_db()  # Flask 3: direkt ausführen
+init_db()
 
 # -------------------------------------------------------------------
-# Template-Fallback (bricht nie ab, wenn Datei fehlt)
+# Template-Fallback
 # -------------------------------------------------------------------
 def safe_render(template_name: str, **ctx):
     try:
@@ -375,7 +345,6 @@ def safe_render(template_name: str, **ctx):
 # Context-Processor (Limits + QS-Helper)
 # -------------------------------------------------------------------
 def _build_query(existing: dict, **extra) -> str:
-    """Querystring mit Support für Mehrfachwerte (z. B. condition=NEW&condition=USED)."""
     merged = {**existing, **{k: v for k, v in extra.items() if v is not None}}
     pairs = []
     for k, v in merged.items():
@@ -495,7 +464,7 @@ def start_free():
     return redirect(url_for("search"))
 
 # -------------------------------------------------------------------
-# Suche (Form + Ergebnisse) – PRG + Pagination + Filter
+# Suche – PRG + Pagination + Filter
 # -------------------------------------------------------------------
 def _collect_params(src) -> dict:
     params = {
@@ -507,7 +476,6 @@ def _collect_params(src) -> dict:
         "sort": (src.get("sort") or "best").strip(),
         "per_page": (src.get("per_page") or "").strip(),
     }
-    # condition kann mehrfach vorkommen
     try:
         params["condition"] = src.getlist("condition")
     except Exception:
@@ -520,10 +488,8 @@ def _params_to_terms(params: dict) -> List[str]:
 
 @app.route("/search", methods=["GET", "POST"])
 def search():
-    # POST -> Redirect mit Querystring (PRG)
     if request.method == "POST":
         params = _collect_params(request.form)
-        # Free-Limit nur beim Absenden zählen
         if not session.get("is_premium", False):
             count = int(session.get("free_search_count", 0))
             if count >= FREE_SEARCH_LIMIT:
@@ -533,7 +499,6 @@ def search():
         params["page"] = 1
         return redirect(url_for("search", **params))
 
-    # GET -> tatsächliche Suche
     params = _collect_params(request.args)
     terms  = _params_to_terms(params)
     if not terms:
@@ -596,7 +561,7 @@ def search():
     )
 
 # -------------------------------------------------------------------
-# Stripe Checkout (optional)
+# Stripe Checkout (einmalig, mit Metadaten)
 # -------------------------------------------------------------------
 @app.route("/checkout", methods=["POST"])
 def public_checkout():
@@ -605,41 +570,10 @@ def public_checkout():
         return redirect(url_for("public_pricing"))
     try:
         success_url = url_for("checkout_success", _external=True)
-        cancel_url  = url_for("checkout_cancel", _external=True)
-        session_stripe = stripe.checkout.Session.create(  # type: ignore
-            mode="subscription",
-            line_items=[{"price": STRIPE_PRICE_PRO, "quantity": 1}],
-            success_url=success_url,
-            cancel_url=cancel_url,
-            allow_promotion_codes=True,
-        )
-        return redirect(session_stripe.url, code=303)
-    except Exception as e:
-        flash(f"Stripe-Fehler: {e}", "danger")
-        return redirect(url_for("public_pricing"))
+        cancel_url  = url_for("checkout_cancel",  _external=True)
 
-@app.route("/checkout/success")
-def checkout_success():
-    flash("Dein Premium-Zugang ist jetzt freigeschaltet.", "success")
-    return safe_render("success.html", title="Erfolg")
-
-@app.route("/checkout/cancel")
-def checkout_cancel():
-    flash("Vorgang abgebrochen.", "info")
-    return redirect(url_for("public_pricing"))
-
-@app.route("/checkout", methods=["POST"])
-def public_checkout():
-    if not STRIPE_OK or not STRIPE_SECRET_KEY or not STRIPE_PRICE_PRO:
-        flash("Stripe ist nicht konfiguriert.", "warning")
-        return redirect(url_for("public_pricing"))
-    try:
-        success_url = url_for("checkout_success", _external=True)
-        cancel_url  = url_for("checkout_cancel", _external=True)
-
-        # << NEU: Benutzer-Metadaten mitschicken >>
-        client_ref  = str(session.get("user_id") or "")
-        user_email  = session.get("user_email") or ""
+        client_ref = str(session.get("user_id") or "")
+        user_email = session.get("user_email") or ""
 
         session_stripe = stripe.checkout.Session.create(  # type: ignore
             mode="subscription",
@@ -655,6 +589,16 @@ def public_checkout():
     except Exception as e:
         flash(f"Stripe-Fehler: {e}", "danger")
         return redirect(url_for("public_pricing"))
+
+@app.route("/checkout/success")
+def checkout_success():
+    flash("Dein Premium-Zugang ist jetzt freigeschaltet.", "success")
+    return safe_render("success.html", title="Erfolg")
+
+@app.route("/checkout/cancel")
+def checkout_cancel():
+    flash("Vorgang abgebrochen.", "info")
+    return redirect(url_for("public_pricing"))
 
 # -------------------------------------------------------------------
 # Debug / Health
@@ -672,6 +616,15 @@ def debug_ebay():
 
 @app.route("/debug")
 def debug_env():
+    # user_email sinnvoll auflösen
+    user_email = session.get("user_email") or ""
+    if not user_email and session.get("user_id"):
+        conn = get_db()
+        row = conn.execute("SELECT email FROM users WHERE id=?", (session["user_id"],)).fetchone()
+        conn.close()
+        if row and row["email"]:
+            user_email = row["email"]
+
     data = {
         "env": {
             "DB_PATH": DB_URL,
@@ -689,13 +642,7 @@ def debug_env():
         "session": {
             "free_search_count": int(session.get("free_search_count", 0)),
             "is_premium": bool(session.get("is_premium", False)),
-            "user_email = session.get("user_email") or ""
-             if not user_email and session.get("user_id"):
-                 conn = get_db()
-                 row = conn.execute("SELECT email FROM users WHERE id=?", (session["user_id"],)).fetchone()
-                 conn.close()
-                 if row and row["email"]:
-                     user_email = row["email"]
+            "user_email": user_email,
         },
     }
     return jsonify(data)
