@@ -1,48 +1,68 @@
-import os, ssl, smtplib, socket, datetime, requests
+# heartbeat.py
+import os
+import ssl
+import smtplib
+import sys
+import datetime as dt
+from email.message import EmailMessage
+
+def env(name: str, default: str = "") -> str:
+    v = os.getenv(name)
+    return v if v is not None and v != "" else default
+
+SMTP_HOST = env("SMTP_HOST")
+SMTP_PORT = int(env("SMTP_PORT", "587"))
+SMTP_USER = env("SMTP_USER")
+SMTP_PASSWORD = env("SMTP_PASSWORD")
+FROM_EMAIL = env("FROM_EMAIL") or SMTP_USER
+TO_EMAILS = [e.strip() for e in env("EMAIL_TO", FROM_EMAIL).split(",") if e.strip()]
 
 def send_email(subject: str, body: str) -> None:
-    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    user = os.getenv("SMTP_USER")
-    pwd  = os.getenv("SMTP_PASSWORD")
-    from_email = os.getenv("FROM_EMAIL") or user
-    to_email   = os.getenv("EMAIL_TO") or from_email
-    if not all([host, port, user, pwd, from_email, to_email]):
-        print("[heartbeat] missing SMTP config; skip")
-        return
-    msg = f"From: {from_email}\r\nTo: {to_email}\r\nSubject: {subject}\r\n\r\n{body}\r\n"
-    ctx = ssl.create_default_context()
-    if port == 465:
-        with smtplib.SMTP_SSL(host, port, context=ctx, timeout=25) as s:
-            s.login(user, pwd); s.sendmail(from_email, [to_email], msg)
-    else:
-        with smtplib.SMTP(host, port, timeout=25) as s:
-            s.ehlo(); s.starttls(context=ctx); s.ehlo()
-            s.login(user, pwd); s.sendmail(from_email, [to_email], msg)
+    """Sendet eine UTF-8-kodierte E-Mail via SMTP, unterstützt 587 (STARTTLS) und 465 (SSL)."""
+    if not (SMTP_HOST and SMTP_PORT and SMTP_USER and SMTP_PASSWORD and FROM_EMAIL and TO_EMAILS):
+        raise RuntimeError("SMTP env vars fehlen (HOST/PORT/USER/PASSWORD/FROM_EMAIL/EMAIL_TO).")
 
-def check_http(url: str) -> str:
+    msg = EmailMessage()
+    msg["From"] = FROM_EMAIL
+    msg["To"] = ", ".join(TO_EMAILS)
+    msg["Subject"] = subject  # EmailMessage kodiert selbst RFC-konform (UTF-8 / QP/Base64)
+    msg.set_content(body)      # ebenfalls UTF-8
+
+    ctx = ssl.create_default_context()
+
+    if SMTP_PORT == 465:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx, timeout=25) as s:
+            s.login(SMTP_USER, SMTP_PASSWORD)
+            s.send_message(msg)
+    else:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=25) as s:
+            s.ehlo()
+            s.starttls(context=ctx)
+            s.ehlo()
+            s.login(SMTP_USER, SMTP_PASSWORD)
+            s.send_message(msg)
+
+def main() -> int:
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    when = now_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    subject = "ebay-agent: Daily heartbeat ✓"  # ✓ & Umlaute ok
+    body = (
+        "Hallo,\n\n"
+        "dies ist der tägliche Heartbeat vom Render-Cron.\n"
+        f"Zeit (UTC): {when}\n"
+        f"Host: {SMTP_HOST}\n"
+        "\nViele Grüße\nHeartbeat\n"
+    )
+
+    print(f"[heartbeat] sending to {TO_EMAILS} via {SMTP_HOST}:{SMTP_PORT} as {FROM_EMAIL}")
     try:
-        r = requests.get(url, timeout=10)
-        return f"{r.status_code} {r.reason}"
+        send_email(subject, body)
+        print("[heartbeat] sent ✓")
+        return 0
     except Exception as e:
-        return f"ERROR: {e}"
+        print(f"[heartbeat] ERROR: {e}", file=sys.stderr)
+        return 1
 
 if __name__ == "__main__":
-    now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-    svc  = os.getenv("RENDER_SERVICE_NAME", "unknown-service")
-    host = socket.gethostname()
-    commit = os.getenv("RENDER_GIT_COMMIT", "")[:7] or "n/a"
-    # Webservice Health (falls gesetzt)
-    health_url = os.getenv("HEALTH_URL", "https://ebay-agent-cockpit.onrender.com/healthz")
-    http_status = check_http(health_url)
-
-    body = (
-        f"✅ Heartbeat OK\n"
-        f"- Time:   {now}\n"
-        f"- Service:{svc}\n"
-        f"- Host:   {host}\n"
-        f"- Commit: {commit}\n"
-        f"- Health: {health_url} -> {http_status}\n"
-    )
-    send_email(subject="ebay-agent: Daily heartbeat ✔", body=body)
-    print("[heartbeat] sent")
+    sys.exit(main())
