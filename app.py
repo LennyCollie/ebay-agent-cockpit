@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from urllib.parse import urlencode
+from flask import request  # (falls nicht oben importiert)
+
 
 import requests
 from flask import (
@@ -117,6 +119,9 @@ def ebay_get_token() -> Optional[str]:
     except Exception as e:
         print(f"[ebay_get_token] {e}")
         return None
+        current_app.logger.exception("Stripe Checkout error")
+    flash(f"Stripe-Fehler: {e}", "danger")
+    return redirect(url_for("public_pricing"))
 
 def _build_ebay_filters(price_min: str, price_max: str, conditions: List[str]) -> Optional[str]:
     parts: List[str] = []
@@ -269,6 +274,54 @@ except Exception:
     STRIPE_OK = False
     stripe = None
 
+
+@app.post("/webhook")
+def stripe_webhook():
+    # Sicherheits-Check: Signatur verifizieren
+    wh_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    if not STRIPE_OK or not wh_secret:
+        return "webhook not configured", 400
+
+    payload = request.data
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, wh_secret)  # type: ignore
+    except ValueError:
+        return "invalid payload", 400
+    except stripe.error.SignatureVerificationError:  # type: ignore
+        return "invalid signature", 400
+
+    # --- Ereignisse behandeln ---
+    etype = event.get("type")
+    data  = event.get("data", {}).get("object", {})
+
+    # Abo/Checkout erfolgreich abgeschlossen
+    if etype in ("checkout.session.completed", "customer.subscription.created"):
+        # Identifikation des Users: bevorzugt client_reference_id (User-ID),
+        # sonst Metadata/Email als Fallback
+        user_id = data.get("client_reference_id")
+        email   = (
+            (data.get("customer_details") or {}).get("email")
+            or data.get("customer_email")
+            or (data.get("metadata") or {}).get("email")
+        )
+
+        conn = get_db()
+        cur  = conn.cursor()
+        if user_id:
+            cur.execute("UPDATE users SET is_premium=1 WHERE id=?", (user_id,))
+        elif email:
+            cur.execute("UPDATE users SET is_premium=1 WHERE lower(email)=lower(?)", (email,))
+        conn.commit()
+        conn.close()
+
+    # (Optional) weitere Events, z. B. Kündigung o. überfällige Rechnung:
+    # elif etype in ("customer.subscription.deleted", "invoice.payment_failed"):
+    #     ...
+
+    # Stripe möchte 2xx sehen
+    return jsonify({"received": True})
 # -------------------------------------------------------------------
 # DB (Mini-User-Tabelle mit Premium-Flag)
 # -------------------------------------------------------------------
@@ -575,6 +628,34 @@ def checkout_cancel():
     flash("Vorgang abgebrochen.", "info")
     return redirect(url_for("public_pricing"))
 
+@app.route("/checkout", methods=["POST"])
+def public_checkout():
+    if not STRIPE_OK or not STRIPE_SECRET_KEY or not STRIPE_PRICE_PRO:
+        flash("Stripe ist nicht konfiguriert.", "warning")
+        return redirect(url_for("public_pricing"))
+    try:
+        success_url = url_for("checkout_success", _external=True)
+        cancel_url  = url_for("checkout_cancel", _external=True)
+
+        # << NEU: Benutzer-Metadaten mitschicken >>
+        client_ref  = str(session.get("user_id") or "")
+        user_email  = session.get("user_email") or ""
+
+        session_stripe = stripe.checkout.Session.create(  # type: ignore
+            mode="subscription",
+            line_items=[{"price": STRIPE_PRICE_PRO, "quantity": 1}],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            allow_promotion_codes=True,
+            client_reference_id=client_ref if client_ref else None,
+            customer_email=user_email if user_email else None,
+            metadata={"email": user_email} if user_email else None,
+        )
+        return redirect(session_stripe.url, code=303)
+    except Exception as e:
+        flash(f"Stripe-Fehler: {e}", "danger")
+        return redirect(url_for("public_pricing"))
+
 # -------------------------------------------------------------------
 # Debug / Health
 # -------------------------------------------------------------------
@@ -608,7 +689,13 @@ def debug_env():
         "session": {
             "free_search_count": int(session.get("free_search_count", 0)),
             "is_premium": bool(session.get("is_premium", False)),
-            "user_email": session.get("user_email", "guest"),
+            "user_email = session.get("user_email") or ""
+             if not user_email and session.get("user_id"):
+                 conn = get_db()
+                 row = conn.execute("SELECT email FROM users WHERE id=?", (session["user_id"],)).fetchone()
+                 conn.close()
+                 if row and row["email"]:
+                     user_email = row["email"]
         },
     }
     return jsonify(data)
