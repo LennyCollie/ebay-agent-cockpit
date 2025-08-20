@@ -14,6 +14,16 @@ from flask import (
 )
 
 # -------------------------------------------------------------------
+# Optional: Amazon-Provider failsafe import
+# -------------------------------------------------------------------
+try:
+    from providers.amazon import amazon_search_simple, AMZ_ENABLED  # type: ignore
+except Exception:
+    AMZ_ENABLED = False
+    def amazon_search_simple(keyword: str, limit: int = 10, sort: Optional[str] = None) -> List[Dict]:
+        return []
+
+# -------------------------------------------------------------------
 # App & Basis-Konfig
 # -------------------------------------------------------------------
 app = Flask(__name__)
@@ -23,6 +33,7 @@ def as_bool(val: Optional[str]) -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
 
 def getenv_any(*names: str, default: str = "") -> str:
+    """Gibt den ersten gesetzten ENV-Wert aus names zurück (Fallback-Kette)."""
     for n in names:
         v = os.getenv(n)
         if v:
@@ -37,17 +48,20 @@ SEARCH_CACHE_TTL      = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
 
 # DB (SQLite Pfad auch für Render kompatibel)
 DB_URL = os.getenv("DB_PATH", "sqlite:///instance/db.sqlite3")
+
 def _sqlite_file_from_url(url: str) -> Path:
     if url.startswith("sqlite:///"):
         rel = url.replace("sqlite:///", "", 1)
         return Path(rel)
     return Path(url)
+
 DB_FILE = _sqlite_file_from_url(DB_URL)
 DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # -------------------------------------------------------------------
 # eBay – OAuth Client Credentials + Suche
 # -------------------------------------------------------------------
+# neue Namen bevorzugt, alte kompatibel:
 EBAY_CLIENT_ID     = getenv_any("EBAY_CLIENT_ID", "EBAY_APP_ID")
 EBAY_CLIENT_SECRET = getenv_any("EBAY_CLIENT_SECRET", "EBAY_CERT_ID")
 EBAY_SCOPES        = os.getenv("EBAY_SCOPES", "https://api.ebay.com/oauth/api_scope")
@@ -67,13 +81,14 @@ def _currency_for_marketplace(mkt: str) -> str:
     if mkt == "EBAY_US": return "USD"
     if mkt == "EBAY_GB": return "GBP"
     if mkt == "EBAY_FR": return "EUR"
-    return "EUR"
+    return "EUR"  # Default
 
 EBAY_MARKETPLACE_ID = _marketplace_from_global(EBAY_GLOBAL_ID)
 EBAY_CURRENCY       = _currency_for_marketplace(EBAY_MARKETPLACE_ID)
 
 # Optional: Affiliate-Parameter (an itemWebUrl anhängen)
-AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # "campid=XXXX;customid=YOURTAG"
+AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # z. B. "campid=XXXX;customid=YOURTAG"
+
 def _append_affiliate(url: Optional[str]) -> Optional[str]:
     if not url or not AFFILIATE_PARAMS:
         return url
@@ -87,6 +102,7 @@ _http = requests.Session()
 _EBAY_TOKEN: Dict[str, float | str | None] = {"access_token": None, "expires_at": 0.0}
 
 def ebay_get_token() -> Optional[str]:
+    """Client-Credentials Token holen & cachen."""
     tok = _EBAY_TOKEN.get("access_token")
     if tok and time.time() < float(_EBAY_TOKEN.get("expires_at") or 0):
         return str(tok)
@@ -164,7 +180,7 @@ def ebay_search_one(term: str, limit: int, offset: int,
         print(f"[ebay_search_one] {e}")
         return [], None
 
-# Demo-Backend
+# Demo-Backend (wenn Live aus oder Keys fehlen)
 def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[List[Dict], int]:
     total = max(30, len(terms) * 40)
     start = (page - 1) * per_page
@@ -178,11 +194,13 @@ def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[Li
             "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
             "img": "https://via.placeholder.com/64x48?text=%20",
             "term": t,
+            "source": "demo"
         })
     return items, total
 
 # Mini-Cache
 _search_cache: dict = {}  # key -> (ts, (items, total_estimated))
+
 def _cache_get(key):
     row = _search_cache.get(key)
     if not row:
@@ -200,7 +218,11 @@ def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: i
     if not LIVE_SEARCH or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
         return _backend_search_demo(terms, page, per_page)
 
-    filter_str = _build_ebay_filters(filters.get("price_min",""), filters.get("price_max",""), filters.get("conditions") or [])
+    filter_str = _build_ebay_filters(
+        filters.get("price_min",""),
+        filters.get("price_max",""),
+        filters.get("conditions") or []
+    )
     sort       = _map_sort(filters.get("sort", "best"))
 
     n        = max(1, len(terms))
@@ -223,19 +245,58 @@ def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: i
     total_estimated = sum(totals) if totals else None
     return items_all[:per_page], total_estimated
 
+def _merge_sources(ebay_items: List[Dict], amz_items: List[Dict], per_page: int) -> List[Dict]:
+    """Einfache Interleave-Strategie: eBay zuerst, dann Amazon – für mehr Vielfalt."""
+    out: List[Dict] = []
+    i = j = 0
+    while len(out) < per_page and (i < len(ebay_items) or j < len(amz_items)):
+        if i < len(ebay_items):
+            out.append({**ebay_items[i], "source": ebay_items[i].get("source", "ebay")})
+            i += 1
+        if len(out) >= per_page:
+            break
+        if j < len(amz_items):
+            item = dict(amz_items[j])
+            if "source" not in item:
+                item["source"] = "amazon"
+            out.append(item)
+            j += 1
+    return out
+
 def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int):
     key = (tuple(terms),
            filters.get("price_min") or "",
            filters.get("price_max") or "",
            filters.get("sort") or "best",
            tuple(filters.get("conditions") or []),
-           page, per_page)
+           page, per_page,
+           "AMZ" if AMZ_ENABLED else "NOAMZ",
+           "LIVE" if LIVE_SEARCH else "DEMO")
+
     cached = _cache_get(key)
     if cached:
         return cached
-    items, total = _backend_search_ebay(terms, filters, page, per_page)
-    _cache_set(key, (items, total))
-    return items, total
+
+    # 1) eBay
+    items_ebay, total_estimated = _backend_search_ebay(terms, filters, page, per_page)
+
+    # 2) optional Amazon (erster Begriff, kleines Limit)
+    items_amz: List[Dict] = []
+    if LIVE_SEARCH and AMZ_ENABLED and terms:
+        try:
+            items_amz = amazon_search_simple(
+                keyword=terms[0],
+                limit=min(10, per_page),
+                sort=filters.get("sort")
+            )
+        except Exception as e:
+            print(f"[amazon] {e}")
+
+    # 3) mischen
+    items = _merge_sources(items_ebay, items_amz, per_page) if items_amz else items_ebay
+
+    _cache_set(key, (items, total_estimated))
+    return items, total_estimated
 
 # -------------------------------------------------------------------
 # Stripe (optional – fällt zurück, wenn nicht konfiguriert)
@@ -246,7 +307,7 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 STRIPE_OK = False
 try:
-    import stripe as _stripe
+    import stripe as _stripe  # type: ignore
     if STRIPE_SECRET_KEY:
         _stripe.api_key = STRIPE_SECRET_KEY
     STRIPE_OK = True
@@ -257,7 +318,7 @@ except Exception:
 
 @app.post("/webhook")
 def stripe_webhook():
-    wh_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    wh_secret = STRIPE_WEBHOOK_SECRET
     if not STRIPE_OK or not wh_secret:
         return "webhook not configured", 400
 
@@ -345,6 +406,7 @@ def safe_render(template_name: str, **ctx):
 # Context-Processor (Limits + QS-Helper)
 # -------------------------------------------------------------------
 def _build_query(existing: dict, **extra) -> str:
+    """Querystring mit Support für Mehrfachwerte (z. B. condition=NEW&condition=USED)."""
     merged = {**existing, **{k: v for k, v in extra.items() if v is not None}}
     pairs = []
     for k, v in merged.items():
@@ -476,6 +538,7 @@ def _collect_params(src) -> dict:
         "sort": (src.get("sort") or "best").strip(),
         "per_page": (src.get("per_page") or "").strip(),
     }
+    # condition kann mehrfach vorkommen
     try:
         params["condition"] = src.getlist("condition")
     except Exception:
@@ -488,8 +551,10 @@ def _params_to_terms(params: dict) -> List[str]:
 
 @app.route("/search", methods=["GET", "POST"])
 def search():
+    # POST -> Redirect mit Querystring (PRG)
     if request.method == "POST":
         params = _collect_params(request.form)
+        # Free-Limit nur beim Absenden zählen
         if not session.get("is_premium", False):
             count = int(session.get("free_search_count", 0))
             if count >= FREE_SEARCH_LIMIT:
@@ -499,6 +564,7 @@ def search():
         params["page"] = 1
         return redirect(url_for("search", **params))
 
+    # GET -> tatsächliche Suche
     params = _collect_params(request.args)
     terms  = _params_to_terms(params)
     if not terms:
@@ -638,6 +704,9 @@ def debug_env():
             "STRIPE_PRICE_PRO_set": bool(STRIPE_PRICE_PRO),
             "STRIPE_SECRET_KEY_set": bool(STRIPE_SECRET_KEY),
             "STRIPE_WEBHOOK_SECRET_set": bool(STRIPE_WEBHOOK_SECRET),
+            "AMZ_ENABLED": AMZ_ENABLED,
+            "AMZ_ASSOC_TAG_set": bool(os.getenv("AMZ_ASSOC_TAG")),
+            "AMZ_ACCESS_KEY_set": bool(os.getenv("AMZ_ACCESS_KEY")),
         },
         "session": {
             "free_search_count": int(session.get("free_search_count", 0)),

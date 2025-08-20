@@ -2,105 +2,112 @@
 {% block title %}Suche – ebay-agent-cockpit{% endblock %}
 
 {% block content %}
-<h1 class="h3 mb-3">Artikel suchen</h1>
-<p class="text-secondary">Bis zu drei Begriffe gleichzeitig. Optional mit Filtern verfeinern.</p>
+<h1 class="h3 mb-2">Artikel suchen</h1>
+<p class="text-secondary mb-4">
+  Bis zu drei Begriffe gleichzeitig. Ohne Konto sind <strong>{{ FREE_SEARCH_LIMIT }}</strong> Suchen gratis.
+</p>
 
-<form method="post" action="{{ url_for('search') }}" class="vstack gap-4">
+<form method="post" action="{{ url_for('search') }}" class="vstack gap-3">
 
   <!-- Suchbegriffe -->
   <div class="row g-3">
-    <div class="col-md-4">
+    <div class="col-lg-4">
       <label for="q1" class="form-label">Suchbegriff 1</label>
       <input type="text" id="q1" name="q1" class="form-control"
-             value="{{ request.form.get('q1','') }}" placeholder="z. B. iPhone 11">
+             value="{{ request.args.get('q1','') }}" placeholder="z. B. iPhone 11">
     </div>
-    <div class="col-md-4">
+    <div class="col-lg-4">
       <label for="q2" class="form-label">Suchbegriff 2 (optional)</label>
       <input type="text" id="q2" name="q2" class="form-control"
-             value="{{ request.form.get('q2','') }}" placeholder="z. B. Lautsprecher">
+             value="{{ request.args.get('q2','') }}" placeholder="z. B. AirPods Pro">
     </div>
-    <div class="col-md-4">
+    <div class="col-lg-4">
       <label for="q3" class="form-label">Suchbegriff 3 (optional)</label>
       <input type="text" id="q3" name="q3" class="form-control"
-             value="{{ request.form.get('q3','') }}" placeholder="z. B. iPhone 8">
+             value="{{ request.args.get('q3','') }}" placeholder="z. B. iPhone 8">
     </div>
   </div>
 
   <!-- Erweiterte Filter -->
-  {% set selected_conditions = request.form.getlist('condition') %}
-  {% set sel_sort = request.form.get('sort','best') %}
-  <div class="card border-0 shadow-sm">
+  <div class="card">
     <div class="card-body">
-      <div class="d-flex align-items-center justify-content-between">
-        <h2 class="h6 mb-0">Erweiterte Filter</h2>
-      </div>
-
-      <div class="row g-3 mt-1">
+      <div class="row g-3">
         <!-- Preisbereich -->
-        <div class="col-6 col-md-3">
-          <label class="form-label">Min. Preis</label>
+        <div class="col-md-6 col-lg-4">
+          <label class="form-label d-block">Preisbereich</label>
           <div class="input-group">
-            <span class="input-group-text">€</span>
-            <input type="number" step="0.01" min="0" inputmode="decimal"
-                   class="form-control" name="price_min"
-                   value="{{ request.form.get('price_min','') }}"
-                   placeholder="z. B. 50">
+            <span class="input-group-text">Min</span>
+            <input type="text" name="price_min" class="form-control" inputmode="decimal"
+                   value="{{ request.args.get('price_min','') }}" placeholder="z. B. 50">
+            <span class="input-group-text">Max</span>
+            <input type="text" name="price_max" class="form-control" inputmode="decimal"
+                   value="{{ request.args.get('price_max','') }}" placeholder="z. B. 300">
           </div>
+          <div class="form-text">Währung: wird automatisch ({{ EBAY_GLOBAL_ID }}) erkannt.</div>
         </div>
-        <div class="col-6 col-md-3">
-          <label class="form-label">Max. Preis</label>
-          <div class="input-group">
-            <span class="input-group-text">€</span>
-            <input type="number" step="0.01" min="0" inputmode="decimal"
-                   class="form-control" name="price_max"
-                   value="{{ request.form.get('price_max','') }}"
-                   placeholder="z. B. 500">
+
+        <!-- Zustand -->
+        <div class="col-md-6 col-lg-5">
+          <label class="form-label d-block">Zustand</label>
+          {% set selected_conds = request.args.getlist('condition') %}
+          <div class="row gy-1">
+            <div class="col-6 col-xl-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="c_new" name="condition" value="NEW"
+                       {% if 'NEW' in selected_conds %}checked{% endif %}>
+                <label for="c_new" class="form-check-label">Neu</label>
+              </div>
+            </div>
+            <div class="col-6 col-xl-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="c_used" name="condition" value="USED"
+                       {% if 'USED' in selected_conds %}checked{% endif %}>
+                <label for="c_used" class="form-check-label">Gebraucht</label>
+              </div>
+            </div>
+            <div class="col-6 col-xl-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="c_open" name="condition" value="OPEN_BOX"
+                       {% if 'OPEN_BOX' in selected_conds %}checked{% endif %}>
+                <label for="c_open" class="form-check-label">Open Box</label>
+              </div>
+            </div>
+            <div class="col-6 col-xl-6">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="c_mfr" name="condition" value="MANUFACTURER_REFURBISHED"
+                       {% if 'MANUFACTURER_REFURBISHED' in selected_conds %}checked{% endif %}>
+                <label for="c_mfr" class="form-check-label">Vom Hersteller ref.</label>
+              </div>
+            </div>
+            <div class="col-6 col-xl-6">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="c_seller" name="condition" value="SELLER_REFURBISHED"
+                       {% if 'SELLER_REFURBISHED' in selected_conds %}checked{% endif %}>
+                <label for="c_seller" class="form-check-label">Vom Händler ref.</label>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Sortierung -->
-        <div class="col-md-3">
-          <label class="form-label">Sortierung</label>
-          <select class="form-select" name="sort">
-            <option value="best"        {{ 'selected' if sel_sort=='best' else '' }}>Best Match (Standard)</option>
-            <option value="price_asc"   {{ 'selected' if sel_sort=='price_asc' else '' }}>Preis ↑ (günstig zuerst)</option>
-            <option value="price_desc"  {{ 'selected' if sel_sort=='price_desc' else '' }}>Preis ↓ (teuer zuerst)</option>
-            <option value="newly"       {{ 'selected' if sel_sort=='newly' else '' }}>Neu eingestellt</option>
+        <!-- Sortierung & Anzahl -->
+        <div class="col-md-6 col-lg-3">
+          <label for="sort" class="form-label">Sortierung</label>
+          {% set sort_val = request.args.get('sort', 'best') %}
+          <select id="sort" name="sort" class="form-select mb-3">
+            <option value="best"       {% if sort_val=='best' %}selected{% endif %}>Relevanz (Best Match)</option>
+            <option value="price_asc"  {% if sort_val=='price_asc' %}selected{% endif %}>Preis ↑</option>
+            <option value="price_desc" {% if sort_val=='price_desc' %}selected{% endif %}>Preis ↓</option>
+            <option value="newly"      {% if sort_val=='newly' %}selected{% endif %}>Neu eingestellt</option>
+          </select>
+
+          <label for="per_page" class="form-label">Treffer pro Seite</label>
+          {% set per_val = request.args.get('per_page', '20') %}
+          <select id="per_page" name="per_page" class="form-select">
+            {% for n in [12,20,36,60] %}
+              <option value="{{ n }}" {% if per_val|string == n|string %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
           </select>
         </div>
-      </div>
-
-      <!-- Zustände -->
-      <div class="mt-3">
-        <label class="form-label d-block mb-1">Zustand</label>
-        <div class="d-flex flex-wrap gap-3">
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="condNEW" name="condition" value="NEW"
-                   {{ 'checked' if 'NEW' in selected_conditions else '' }}>
-            <label class="form-check-label" for="condNEW">Neu</label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="condUSED" name="condition" value="USED"
-                   {{ 'checked' if 'USED' in selected_conditions else '' }}>
-            <label class="form-check-label" for="condUSED">Gebraucht</label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="condOPEN" name="condition" value="OPEN_BOX"
-                   {{ 'checked' if 'OPEN_BOX' in selected_conditions else '' }}>
-            <label class="form-check-label" for="condOPEN">Geöffnet/OVP</label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="condREF" name="condition" value="SELLER_REFURBISHED"
-                   {{ 'checked' if 'SELLER_REFURBISHED' in selected_conditions else '' }}>
-            <label class="form-check-label" for="condREF">Generalüberholt (Händler)</label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="condCERT" name="condition" value="CERTIFIED_REFURBISHED"
-                   {{ 'checked' if 'CERTIFIED_REFURBISHED' in selected_conditions else '' }}>
-            <label class="form-check-label" for="condCERT">Zertifiziert überholt</label>
-          </div>
-        </div>
-        <div class="form-text">Mehrere Zustände kombinierbar. Leer = alle.</div>
       </div>
     </div>
   </div>
@@ -110,5 +117,9 @@
     <button type="submit" class="btn btn-primary">Suchen</button>
     <a href="{{ url_for('search') }}" class="btn btn-outline-secondary">Zurücksetzen</a>
   </div>
+
+  <p class="text-muted small mt-2 mb-0">
+    Tipp: Premium-Nutzer können mehr filtern und mehr Ergebnisse pro Seite sehen (bis {{ PREMIUM_SEARCH_LIMIT }} Begriffe).
+  </p>
 </form>
 {% endblock %}

@@ -17,3 +17,30 @@ __pycache__/
 
 /venv/
 .env
+
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# venv
+venv/
+.venv/
+
+# lokale Artefakte
+instance/
+.env
+.DS_Store
+
+Kopie.env
+Amazon - Variablen.txt
+CronJob.txt
+Textdokument (neu) (2).txt
+*.env
+*.env.*
+secrets/
+Kopie.env
+*.env
+*.env.*
+secrets/
