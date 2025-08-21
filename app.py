@@ -1,100 +1,167 @@
-import os
-import time
-import math
+# app.py
+from __future__ import annotations
+
 import base64
+import math
+import os
 import sqlite3
+import time
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
-from jinja2 import TemplateNotFound
-from werkzeug.routing import BuildError
 
 import requests
 from flask import (
-    Flask, render_template, request, redirect, url_for,
-    session, flash, jsonify
+    Flask,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    flash,
+    url_for,
 )
 
 # ------------------------------------------------------------
-# App & Basics
+# App-Basis
 # ------------------------------------------------------------
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
 
-def as_bool(val: Optional[str]) -> bool:
-    return str(val).strip().lower() in {"1", "true", "yes", "on"}
+
+# ------------------------------------------------------------
+# Kleine Helfer
+# ------------------------------------------------------------
+def as_bool(v: Optional[str]) -> bool:
+    return str(v).strip().lower() in {"1", "true", "yes", "on"}
 
 def getenv_any(*names: str, default: str = "") -> str:
     for n in names:
-        v = os.getenv(n)
-        if v:
-            return v
+        val = os.getenv(n)
+        if val:
+            return val
     return default
 
-# Limits / Defaults
-FREE_SEARCH_LIMIT     = int(os.getenv("FREE_SEARCH_LIMIT", "3"))
-PREMIUM_SEARCH_LIMIT  = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
-PER_PAGE_DEFAULT      = int(os.getenv("PER_PAGE_DEFAULT", "20"))
-SEARCH_CACHE_TTL      = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
 
+# ------------------------------------------------------------
+# Limits / Defaults
+# ------------------------------------------------------------
+FREE_SEARCH_LIMIT    = int(os.getenv("FREE_SEARCH_LIMIT", "3"))
+PREMIUM_SEARCH_LIMIT = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
+PER_PAGE_DEFAULT     = int(os.getenv("PER_PAGE_DEFAULT", "20"))
+SEARCH_CACHE_TTL     = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
+LIVE_SEARCH          = as_bool(os.getenv("LIVE_SEARCH", "0"))
+
+
+# ------------------------------------------------------------
 # DB (SQLite)
+# ------------------------------------------------------------
 DB_URL = os.getenv("DB_PATH", "sqlite:///instance/db.sqlite3")
+
 def _sqlite_file_from_url(url: str) -> Path:
     if url.startswith("sqlite:///"):
-        rel = url.replace("sqlite:///", "", 1)
-        return Path(rel)
+        return Path(url.replace("sqlite:///", "", 1))
     return Path(url)
+
 DB_FILE = _sqlite_file_from_url(DB_URL)
 DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 
+def get_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(DB_FILE), detect_types=sqlite3.PARSE_DECLTYPES)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db() -> None:
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            is_premium INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+
 # ------------------------------------------------------------
-# eBay – OAuth & Search
+# Safe Render (Fallback-HTML, wenn Template fehlt ODER url_for bricht)
+# ------------------------------------------------------------
+from jinja2 import TemplateNotFound
+from werkzeug.routing import BuildError
+
+def safe_render(template_name: str, **ctx):
+    try:
+        return render_template(template_name, **ctx)
+    except (TemplateNotFound, BuildError):
+        title = ctx.get("title") or "ebay-agent-cockpit"
+        try:
+            home = url_for("public_home")
+        except Exception:
+            home = "/"
+        return f"""<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="container py-4">
+<div class="alert alert-warning">Template <code>{template_name}</code> fiel zurück auf Fallback.</div>
+<h1 class="h4">{title}</h1>
+<p><a class="btn btn-primary" href="{home}">Zur Startseite</a></p>
+</body></html>"""
+
+
+# ------------------------------------------------------------
+# eBay API (optional live)
 # ------------------------------------------------------------
 EBAY_CLIENT_ID     = getenv_any("EBAY_CLIENT_ID", "EBAY_APP_ID")
 EBAY_CLIENT_SECRET = getenv_any("EBAY_CLIENT_SECRET", "EBAY_CERT_ID")
 EBAY_SCOPES        = os.getenv("EBAY_SCOPES", "https://api.ebay.com/oauth/api_scope")
 EBAY_GLOBAL_ID     = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")
-LIVE_SEARCH        = as_bool(os.getenv("LIVE_SEARCH", "0"))
 
 def _marketplace_from_global(gid: str) -> str:
     gid = (gid or "").upper()
-    if gid in {"EBAY-DE", "EBAY_DE"}: return "EBAY_DE"
-    if gid in {"EBAY-US", "EBAY_US"}: return "EBAY_US"
-    if gid in {"EBAY-GB", "EBAY_GB"}: return "EBAY_GB"
-    if gid in {"EBAY-FR", "EBAY_FR"}: return "EBAY_FR"
-    return "EBAY_DE"
+    return {
+        "EBAY-DE": "EBAY_DE", "EBAY_DE": "EBAY_DE",
+        "EBAY-US": "EBAY_US", "EBAY_US": "EBAY_US",
+        "EBAY-GB": "EBAY_GB", "EBAY_GB": "EBAY_GB",
+        "EBAY-FR": "EBAY_FR", "EBAY_FR": "EBAY_FR",
+    }.get(gid, "EBAY_DE")
 
 def _currency_for_marketplace(mkt: str) -> str:
     mkt = (mkt or "").upper()
-    if mkt == "EBAY_US": return "USD"
-    if mkt == "EBAY_GB": return "GBP"
-    if mkt == "EBAY_FR": return "EUR"
-    return "EUR"
+    return {"EBAY_US": "USD", "EBAY_GB": "GBP", "EBAY_FR": "EUR"}.get(mkt, "EUR")
 
 EBAY_MARKETPLACE_ID = _marketplace_from_global(EBAY_GLOBAL_ID)
 EBAY_CURRENCY       = _currency_for_marketplace(EBAY_MARKETPLACE_ID)
 
-# Optional: Affiliate-Parameter (an itemWebUrl anhängen)
-AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # "campid=XXXX;customid=YOURTAG"
+# Affiliate-Parameter (werden an itemWebUrl gehängt)
+AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # z. B. "campid=XXXX;customid=YOURTAG"
 def _append_affiliate(url: Optional[str]) -> Optional[str]:
     if not url or not AFFILIATE_PARAMS:
         return url
     parts = [p.strip() for p in AFFILIATE_PARAMS.split(";") if p.strip()]
+    if not parts:
+        return url
     q = "&".join(parts)
     sep = "&" if "?" in url else "?"
-    return f"{url}{sep}{q}" if q else url
+    return f"{url}{sep}{q}"
 
-# HTTP Session + Token Cache
 _http = requests.Session()
 _EBAY_TOKEN: Dict[str, float | str | None] = {"access_token": None, "expires_at": 0.0}
 
 def ebay_get_token() -> Optional[str]:
+    # Token aus Cache?
     tok = _EBAY_TOKEN.get("access_token")
     if tok and time.time() < float(_EBAY_TOKEN.get("expires_at") or 0):
         return str(tok)
 
-    if not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
-        print("[ebay_get_token] missing client id/secret")
+    # Kein Live? Kein Token.
+    if not LIVE_SEARCH or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
         return None
 
     token_url = "https://api.ebay.com/identity/v1/oauth2/token"
@@ -127,10 +194,11 @@ def _build_ebay_filters(price_min: str, price_max: str, conditions: List[str]) -
 
 def _map_sort(ui_sort: str) -> Optional[str]:
     s = (ui_sort or "").strip()
-    if not s or s == "best":  return None
-    if s == "price_asc":      return "price"
-    if s == "price_desc":     return "-price"
-    if s == "newly":          return "newlyListed"
+    if not s or s == "best":   # Best Match
+        return None
+    if s == "price_asc":  return "price"
+    if s == "price_desc": return "-price"
+    if s == "newly":      return "newlyListed"
     return None
 
 def ebay_search_one(term: str, limit: int, offset: int,
@@ -159,27 +227,26 @@ def ebay_search_one(term: str, limit: int, offset: int,
             price = (it.get("price") or {}).get("value")
             cur   = (it.get("price") or {}).get("currency")
             price_str = f"{price} {cur}" if price and cur else "–"
-            items.append({
-                "title": title, "price": price_str, "url": web, "img": img,
-                "term": term, "source": "ebay"
-            })
+            items.append({"title": title, "price": price_str, "url": web, "img": img, "term": term, "source": "ebay"})
         return items, (int(total) if isinstance(total, int) else None)
     except Exception as e:
         print(f"[ebay_search_one] {e}")
         return [], None
 
-# ------------------------------------------------------------
-# Amazon (Optional Provider)
-# ------------------------------------------------------------
-try:
-    from providers.amazon import amazon_search_simple, AMZ_ENABLED
-except Exception:
-    AMZ_ENABLED = False
-    def amazon_search_simple(keyword: str, limit: int = 10, sort: Optional[str] = None) -> List[Dict]:
-        return []
 
 # ------------------------------------------------------------
-# Demo-Backend (wenn LIVE_SEARCH=0)
+# Amazon Provider (optional)
+# ------------------------------------------------------------
+try:
+    from providers.amazon import amazon_search_simple, AMZ_ENABLED  # type: ignore
+except Exception:
+    AMZ_ENABLED = False
+    def amazon_search_simple(*args, **kwargs):  # type: ignore
+        return []
+
+
+# ------------------------------------------------------------
+# Demo-Backend (wenn LIVE_SEARCH off)
 # ------------------------------------------------------------
 def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[List[Dict], int]:
     total = max(30, len(terms) * 40)
@@ -194,12 +261,16 @@ def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[Li
             "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
             "img": "https://via.placeholder.com/64x48?text=%20",
             "term": t,
-            "source": "ebay",
+            "source": "demo",
         })
     return items, total
 
-# Mini-Cache
-_search_cache: dict = {}  # key -> (ts, (items, total))
+
+# ------------------------------------------------------------
+# Suche + Cache
+# ------------------------------------------------------------
+_search_cache: Dict = {}  # key -> (ts, (items, total_estimated))
+
 def _cache_get(key):
     row = _search_cache.get(key)
     if not row:
@@ -241,19 +312,17 @@ def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: i
     return items_all[:per_page], total_estimated
 
 def _merge_sources(ebay_items: List[Dict], amz_items: List[Dict], per_page: int) -> List[Dict]:
-    out = []
+    out: List[Dict] = []
     i = j = 0
     while len(out) < per_page and (i < len(ebay_items) or j < len(amz_items)):
         if i < len(ebay_items):
-            out.append({**ebay_items[i], "source": "ebay"})
-            i += 1
-        if len(out) >= per_page: break
+            out.append(ebay_items[i]); i += 1
+        if len(out) >= per_page:
+            break
         if j < len(amz_items):
-            item = amz_items[j]
-            if "source" not in item:
-                item["source"] = "amazon"
-            out.append(item)
-            j += 1
+            item = dict(amz_items[j])
+            item.setdefault("source", "amazon")
+            out.append(item); j += 1
     return out
 
 def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int):
@@ -269,132 +338,25 @@ def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int
 
     items_ebay, total_estimated = _backend_search_ebay(terms, filters, page, per_page)
 
-    # Amazon optional
     items_amz: List[Dict] = []
     if LIVE_SEARCH and AMZ_ENABLED and terms:
-        first_term = terms[0]
         try:
-            items_amz = amazon_search_simple(first_term, limit=min(10, per_page), sort=filters.get("sort"))
+            items_amz = amazon_search_simple(
+                keyword=terms[0],
+                limit=min(10, per_page),
+                sort=filters.get("sort"),
+            )
         except Exception as e:
             print(f"[amazon] {e}")
 
-    merged = _merge_sources(items_ebay, items_amz, per_page)
-    result = (merged if merged else items_ebay, total_estimated)
-    _cache_set(key, result)
-    return result
+    items = _merge_sources(items_ebay, items_amz, per_page) if items_amz else items_ebay
+    payload = (items, total_estimated)
+    _cache_set(key, payload)
+    return payload
+
 
 # ------------------------------------------------------------
-# Stripe (optional)
-# ------------------------------------------------------------
-STRIPE_SECRET_KEY     = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_PRICE_PRO      = os.getenv("STRIPE_PRICE_PRO", "")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-
-STRIPE_OK = False
-try:
-    import stripe as _stripe
-    if STRIPE_SECRET_KEY:
-        _stripe.api_key = STRIPE_SECRET_KEY
-    STRIPE_OK = True
-    stripe = _stripe
-except Exception:
-    STRIPE_OK = False
-    stripe = None
-
-@app.post("/webhook")
-def stripe_webhook():
-    wh_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-    if not STRIPE_OK or not wh_secret:
-        return "webhook not configured", 400
-
-    payload = request.data
-    sig_header = request.headers.get("Stripe-Signature", "")
-
-    try:
-        event = stripe.Webhook.construct_event(payload, sig_header, wh_secret)  # type: ignore
-    except ValueError:
-        return "invalid payload", 400
-    except stripe.error.SignatureVerificationError:  # type: ignore
-        return "invalid signature", 400
-
-    etype = event.get("type")
-    data  = event.get("data", {}).get("object", {})
-
-    if etype in ("checkout.session.completed", "customer.subscription.created"):
-        user_id = data.get("client_reference_id")
-        email   = (
-            (data.get("customer_details") or {}).get("email")
-            or data.get("customer_email")
-            or (data.get("metadata") or {}).get("email")
-        )
-        conn = get_db()
-        cur  = conn.cursor()
-        if user_id:
-            cur.execute("UPDATE users SET is_premium=1 WHERE id=?", (user_id,))
-        elif email:
-            cur.execute("UPDATE users SET is_premium=1 WHERE lower(email)=lower(?)", (email,))
-        conn.commit()
-        conn.close()
-
-    return jsonify({"received": True})
-
-# ------------------------------------------------------------
-# DB / User
-# ------------------------------------------------------------
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_FILE), detect_types=sqlite3.PARSE_DECLTYPES)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_db() -> None:
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            is_premium INTEGER NOT NULL DEFAULT 0
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-init_db()
-
-# ------------------------------------------------------------
-# Template-Fallback
-# ------------------------------------------------------------
-def safe_render(template_name: str, **ctx):
-    try:
-        return render_template(template_name, **ctx)
-    except (TemplateNotFound, BuildError) as e:
-        title = ctx.get("title", "ebay-agent-cockpit")
-        # versuche eine sichere Home-URL zu bauen
-        try:
-            home = url_for("public_home")
-        except Exception:
-            home = "/public"
-        # schlanker HTML-Fallback
-        return f"""<!doctype html>
-<html lang="de">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title}</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="container py-4">
-  <div class="alert alert-warning">
-    Template <code>{template_name}</code> fiel zurück auf Fallback.
-    {e.__class__.__name__}: {str(e)}
-  </div>
-  <h1 class="h4">{title}</h1>
-  <p><a class="btn btn-primary" href="{home}">Zur Startseite</a></p>
-</body>
-</html>"""
-# ------------------------------------------------------------
-# Context Processor
+# Context-Processor
 # ------------------------------------------------------------
 def _build_query(existing: dict, **extra) -> str:
     merged = {**existing, **{k: v for k, v in extra.items() if v is not None}}
@@ -418,8 +380,9 @@ def inject_limits_and_helpers():
         "qs": _build_query,
     }
 
+
 # ------------------------------------------------------------
-# Session Defaults
+# Session-Defaults
 # ------------------------------------------------------------
 @app.before_request
 def _ensure_session_defaults():
@@ -427,135 +390,89 @@ def _ensure_session_defaults():
     session.setdefault("is_premium", False)
     session.setdefault("user_email", "guest")
 
+
 def _user_search_limit() -> int:
     return PREMIUM_SEARCH_LIMIT if session.get("is_premium") else FREE_SEARCH_LIMIT
 
-# ------------------------------------------------------------
-# Auth (Demo)
-# ------------------------------------------------------------
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "GET":
-        return safe_render("register.html", title="Registrieren")
 
+# ------------------------------------------------------------
+# Auth (sehr simpel)
+# ------------------------------------------------------------
+@app.get("/register")
+def register_form():
+    return safe_render("register.html", title="Registrieren")
+
+@app.post("/register")
+def register_submit():
     email = (request.form.get("email") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
     if not email or not password:
         flash("Bitte E-Mail und Passwort angeben.", "warning")
-        return redirect(url_for("register"))
-
+        return redirect(url_for("register_form"))
     conn = get_db()
     try:
         conn.execute("INSERT INTO users (email, password, is_premium) VALUES (?, ?, 0)", (email, password))
         conn.commit()
     except sqlite3.IntegrityError:
         flash("Diese E-Mail ist bereits registriert.", "warning")
-        return redirect(url_for("register"))
+        return redirect(url_for("register_form"))
     finally:
         conn.close()
-
     flash("Registrierung erfolgreich. Bitte einloggen.", "success")
-    return redirect(url_for("login"))
+    return redirect(url_for("login_form"))
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "GET":
-        return safe_render("login.html", title="Login")
+@app.get("/login")
+def login_form():
+    return safe_render("login.html", title="Login")
 
+@app.post("/login")
+def login_submit():
     email = (request.form.get("email") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
-
     conn = get_db()
     row = conn.execute("SELECT id, password, is_premium FROM users WHERE email = ?", (email,)).fetchone()
     conn.close()
-
     if not row or row["password"] != password:
         flash("E-Mail oder Passwort ist falsch.", "warning")
-        return redirect(url_for("login"))
-
+        return redirect(url_for("login_form"))
     session["user_id"]    = int(row["id"])
     session["user_email"] = email
     session["is_premium"] = bool(row["is_premium"])
     flash("Login erfolgreich.", "success")
     return redirect(url_for("dashboard"))
 
-@app.route("/logout")
+@app.get("/logout")
 def logout():
     session.clear()
     flash("Logout erfolgreich.", "info")
     return redirect(url_for("public_home"))
 
+
 # ------------------------------------------------------------
 # Public / Dashboard
 # ------------------------------------------------------------
-@app.route("/")
+@app.get("/")
 def root_redirect():
     return redirect(url_for("public_home"))
 
-@app.route("/public")
+@app.get("/public")
 def public_home():
     return safe_render("public_home.html", title="Start – ebay-agent-cockpit")
 
-@app.route("/pricing")
+@app.get("/pricing")
 def public_pricing():
     return safe_render("public_pricing.html", title="Preise – ebay-agent-cockpit")
 
-@app.route("/dashboard")
+@app.get("/dashboard")
 def dashboard():
     if not session.get("user_id"):
         flash("Bitte einloggen.", "info")
-        return redirect(url_for("login"))
+        return redirect(url_for("login_form"))
     return safe_render("dashboard.html", title="Dashboard")
 
-@app.route("/start-free")
-@app.route("/free")
-def start_free():
-    session["is_premium"]        = False
-    session["free_search_count"] = 0
-    session["user_email"]        = "guest"
-    return redirect(url_for("search"))
-
-# 1a) Checkout-Endpoint eindeutig als 'public_checkout' registrieren
-@app.route("/checkout", methods=["POST"], endpoint="public_checkout")
-def public_checkout():
-    if not STRIPE_OK or not STRIPE_SECRET_KEY or not STRIPE_PRICE_PRO:
-        flash("Stripe ist nicht konfiguriert.", "warning")
-        return redirect(url_for("public_pricing"))
-    try:
-        success_url = url_for("checkout_success", _external=True)
-        cancel_url  = url_for("checkout_cancel",  _external=True)
-        client_ref  = str(session.get("user_id") or "")
-        user_email  = session.get("user_email") or ""
-        session_stripe = stripe.checkout.Session.create(  # type: ignore
-            mode="subscription",
-            line_items=[{"price": STRIPE_PRICE_PRO, "quantity": 1}],
-            success_url=success_url,
-            cancel_url=cancel_url,
-            allow_promotion_codes=True,
-            client_reference_id=client_ref if client_ref else None,
-            customer_email=user_email if user_email else None,
-            metadata={"email": user_email} if user_email else None,
-        )
-        return redirect(session_stripe.url, code=303)
-    except Exception as e:
-        flash(f"Stripe-Fehler: {e}", "danger")
-        return redirect(url_for("public_pricing"))
-
-# 1b) Pricing-Route übergibt Flag, ob der Checkout-Button gezeigt werden soll
-@app.route("/pricing")
-def public_pricing():
-    show_checkout = bool(STRIPE_PRICE_PRO and STRIPE_SECRET_KEY) and STRIPE_OK
-    return safe_render("public_pricing.html",
-                       title="Preise – ebay-agent-cockpit",
-                       show_checkout=show_checkout)
-
-# 1c) (Optional) Kleine Debug-Hilfe: Liste aller registrierten Routen
-@app.get("/_debug/routes")
-def _debug_routes():
-    return jsonify(sorted([f"{r.endpoint} -> {str(r)}" for r in app.url_map.iter_rules()]))
 
 # ------------------------------------------------------------
-# Suche
+# Suche – PRG + Pagination + Filter
 # ------------------------------------------------------------
 def _collect_params(src) -> dict:
     params = {
@@ -581,9 +498,10 @@ def _params_to_terms(params: dict) -> List[str]:
 def search():
     if request.method == "POST":
         params = _collect_params(request.form)
+        # Limit für Free-User
         if not session.get("is_premium", False):
             count = int(session.get("free_search_count", 0))
-            if count >= FREE_SEARCH_LIMIT:
+            if count >= _user_search_limit():
                 flash(f"Kostenloses Limit ({FREE_SEARCH_LIMIT}) erreicht – bitte Upgrade buchen.", "info")
                 return redirect(url_for("public_pricing"))
             session["free_search_count"] = count + 1
@@ -651,21 +569,124 @@ def search():
         base_qs=base_qs
     )
 
+
+# ------------------------------------------------------------
+# Stripe (optional)
+# ------------------------------------------------------------
+STRIPE_SECRET_KEY     = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_PRICE_PRO      = os.getenv("STRIPE_PRICE_PRO", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+try:
+    import stripe as _stripe  # type: ignore
+    if STRIPE_SECRET_KEY:
+        _stripe.api_key = STRIPE_SECRET_KEY
+    stripe = _stripe
+    STRIPE_OK = True
+except Exception:
+    stripe = None
+    STRIPE_OK = False
+
+@app.post("/checkout")
+def public_checkout():
+    if not STRIPE_OK or not STRIPE_SECRET_KEY or not STRIPE_PRICE_PRO:
+        flash("Stripe ist nicht konfiguriert.", "warning")
+        return redirect(url_for("public_pricing"))
+    try:
+        success_url = url_for("checkout_success", _external=True)
+        cancel_url  = url_for("checkout_cancel",  _external=True)
+
+        client_ref = str(session.get("user_id") or "")
+        user_email = session.get("user_email") or ""
+
+        session_stripe = stripe.checkout.Session.create(  # type: ignore
+            mode="subscription",
+            line_items=[{"price": STRIPE_PRICE_PRO, "quantity": 1}],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            allow_promotion_codes=True,
+            client_reference_id=client_ref if client_ref else None,
+            customer_email=user_email if user_email else None,
+            metadata={"email": user_email} if user_email else None,
+        )
+        return redirect(session_stripe.url, code=303)
+    except Exception as e:
+        flash(f"Stripe-Fehler: {e}", "danger")
+        return redirect(url_for("public_pricing"))
+
+@app.get("/checkout/success")
+def checkout_success():
+    flash("Dein Premium-Zugang ist jetzt freigeschaltet.", "success")
+    return safe_render("success.html", title="Erfolg")
+
+@app.get("/checkout/cancel")
+def checkout_cancel():
+    flash("Vorgang abgebrochen.", "info")
+    return redirect(url_for("public_pricing"))
+
+@app.post("/webhook")
+def stripe_webhook():
+    if not STRIPE_OK or not STRIPE_WEBHOOK_SECRET:
+        return "webhook not configured", 400
+
+    payload = request.data
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)  # type: ignore
+    except Exception:
+        return "invalid", 400
+
+    etype = event.get("type")
+    data  = event.get("data", {}).get("object", {})
+
+    if etype in ("checkout.session.completed", "customer.subscription.created"):
+        user_id = data.get("client_reference_id")
+        email   = (
+            (data.get("customer_details") or {}).get("email")
+            or data.get("customer_email")
+            or (data.get("metadata") or {}).get("email")
+        )
+        conn = get_db()
+        cur  = conn.cursor()
+        if user_id:
+            cur.execute("UPDATE users SET is_premium=1 WHERE id=?", (user_id,))
+        elif email:
+            cur.execute("UPDATE users SET is_premium=1 WHERE lower(email)=lower(?)", (email,))
+        conn.commit()
+        conn.close()
+
+    return jsonify({"received": True})
+
+
 # ------------------------------------------------------------
 # Debug / Health
 # ------------------------------------------------------------
-@app.route("/_debug/ebay")
+@app.get("/_debug/ebay")
 def debug_ebay():
     return jsonify({
         "configured": bool(EBAY_CLIENT_ID and EBAY_CLIENT_SECRET),
-        "marketplace": EBAY_MARKETPLACE_ID,
         "currency": EBAY_CURRENCY,
-        "token_cached": bool(_EBAY_TOKEN["access_token"]),
-        "token_valid_for_s": max(0, int(float(_EBAY_TOKEN.get("expires_at", 0)) - time.time())),
+        "marketplace": EBAY_MARKETPLACE_ID,
         "live_search": LIVE_SEARCH,
+        "token_cached": bool(_EBAY_TOKEN.get("access_token")),
+        "token_valid_for_s": max(0, int(float(_EBAY_TOKEN.get("expires_at", 0)) - time.time())),
     })
 
-@app.route("/debug")
+@app.get("/_debug/files")
+def debug_files():
+    root = Path("templates")
+    found = []
+    if root.exists():
+        for p in root.rglob("*.html"):
+            found.append(str(p).replace("\\", "/"))
+    return jsonify({
+        "cwd": os.getcwd(),
+        "template_folder": str(root.resolve()),
+        "templates_found": found,
+    })
+
+@app.get("/debug")
 def debug_env():
     user_email = session.get("user_email") or ""
     if not user_email and session.get("user_id"):
@@ -674,7 +695,6 @@ def debug_env():
         conn.close()
         if row and row["email"]:
             user_email = row["email"]
-
     data = {
         "env": {
             "DB_PATH": DB_URL,
@@ -698,27 +718,13 @@ def debug_env():
     }
     return jsonify(data)
 
-@app.route("/healthz")
+@app.get("/healthz")
 def healthz():
     return "ok", 200
 
-from pathlib import Path
-
-@app.get("/_debug/files")
-def debug_files():
-    root = Path(__file__).resolve().parent
-    tdir = (root / "templates")
-    files = []
-    if tdir.exists():
-        files = sorted(str(p.relative_to(root)) for p in tdir.rglob("*") if p.is_file())
-    return jsonify({
-        "cwd": str(root),
-        "template_folder": str(tdir),
-        "templates_found": files
-    })
 
 # ------------------------------------------------------------
-# Run (lokal)
+# Lokaler Start
 # ------------------------------------------------------------
 if __name__ == "__main__":
     port  = int(os.getenv("PORT", "5000"))
