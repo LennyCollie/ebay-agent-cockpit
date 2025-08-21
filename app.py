@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from urllib.parse import urlencode
+from jinja2 import TemplateNotFound
+from werkzeug.routing import BuildError
 
 import requests
 from flask import (
@@ -366,29 +368,31 @@ init_db()
 def safe_render(template_name: str, **ctx):
     try:
         return render_template(template_name, **ctx)
-    except Exception as ex:
-        # Logge die echte Ursache
-        app.logger.exception("Template-Render-Fehler für %s", template_name)
-        title = ctx.get("title", template_name)
-        body  = ctx.get("body", "")
+    except (TemplateNotFound, BuildError) as e:
+        title = ctx.get("title", "ebay-agent-cockpit")
+        # versuche eine sichere Home-URL zu bauen
         try:
             home = url_for("public_home")
         except Exception:
-            home = "/"
+            home = "/public"
+        # schlanker HTML-Fallback
         return f"""<!doctype html>
-<html lang="de"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
 <body class="container py-4">
-<div class="alert alert-warning">
-Template <code>{template_name}</code> fiel zurück auf Fallback.<br>
-<small><strong>{type(ex).__name__}</strong>: {str(ex)}</small>
-</div>
-<h1 class="h4">{title}</h1>
-<div class="mb-3">{body}</div>
-<p><a class="btn btn-primary" href="{home}">Zur Startseite</a></p>
-</body></html>"""
+  <div class="alert alert-warning">
+    Template <code>{template_name}</code> fiel zurück auf Fallback.
+    {e.__class__.__name__}: {str(e)}
+  </div>
+  <h1 class="h4">{title}</h1>
+  <p><a class="btn btn-primary" href="{home}">Zur Startseite</a></p>
+</body>
+</html>"""
 # ------------------------------------------------------------
 # Context Processor
 # ------------------------------------------------------------
@@ -510,6 +514,45 @@ def start_free():
     session["free_search_count"] = 0
     session["user_email"]        = "guest"
     return redirect(url_for("search"))
+
+# 1a) Checkout-Endpoint eindeutig als 'public_checkout' registrieren
+@app.route("/checkout", methods=["POST"], endpoint="public_checkout")
+def public_checkout():
+    if not STRIPE_OK or not STRIPE_SECRET_KEY or not STRIPE_PRICE_PRO:
+        flash("Stripe ist nicht konfiguriert.", "warning")
+        return redirect(url_for("public_pricing"))
+    try:
+        success_url = url_for("checkout_success", _external=True)
+        cancel_url  = url_for("checkout_cancel",  _external=True)
+        client_ref  = str(session.get("user_id") or "")
+        user_email  = session.get("user_email") or ""
+        session_stripe = stripe.checkout.Session.create(  # type: ignore
+            mode="subscription",
+            line_items=[{"price": STRIPE_PRICE_PRO, "quantity": 1}],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            allow_promotion_codes=True,
+            client_reference_id=client_ref if client_ref else None,
+            customer_email=user_email if user_email else None,
+            metadata={"email": user_email} if user_email else None,
+        )
+        return redirect(session_stripe.url, code=303)
+    except Exception as e:
+        flash(f"Stripe-Fehler: {e}", "danger")
+        return redirect(url_for("public_pricing"))
+
+# 1b) Pricing-Route übergibt Flag, ob der Checkout-Button gezeigt werden soll
+@app.route("/pricing")
+def public_pricing():
+    show_checkout = bool(STRIPE_PRICE_PRO and STRIPE_SECRET_KEY) and STRIPE_OK
+    return safe_render("public_pricing.html",
+                       title="Preise – ebay-agent-cockpit",
+                       show_checkout=show_checkout)
+
+# 1c) (Optional) Kleine Debug-Hilfe: Liste aller registrierten Routen
+@app.get("/_debug/routes")
+def _debug_routes():
+    return jsonify(sorted([f"{r.endpoint} -> {str(r)}" for r in app.url_map.iter_rules()]))
 
 # ------------------------------------------------------------
 # Suche
