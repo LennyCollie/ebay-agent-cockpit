@@ -16,8 +16,7 @@ from flask import (
 # ------------------------------------------------------------
 # App & Basics
 # ------------------------------------------------------------
-app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
+app = Flask(__name__, template_folder="templates", static_folder="static")app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
 
 def as_bool(val: Optional[str]) -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
@@ -366,8 +365,10 @@ init_db()
 def safe_render(template_name: str, **ctx):
     try:
         return render_template(template_name, **ctx)
-    except Exception:
-        title = ctx.get("title", "ebay-agent-cockpit")
+    except Exception as ex:
+        # Logge die echte Ursache
+        app.logger.exception("Template-Render-Fehler für %s", template_name)
+        title = ctx.get("title", template_name)
         body  = ctx.get("body", "")
         try:
             home = url_for("public_home")
@@ -379,12 +380,14 @@ def safe_render(template_name: str, **ctx):
 <title>{title}</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
 <body class="container py-4">
-<div class="alert alert-warning">Template <code>{template_name}</code> nicht gefunden – Fallback aktiv.</div>
+<div class="alert alert-warning">
+Template <code>{template_name}</code> fiel zurück auf Fallback.<br>
+<small><strong>{type(ex).__name__}</strong>: {str(ex)}</small>
+</div>
 <h1 class="h4">{title}</h1>
 <div class="mb-3">{body}</div>
 <p><a class="btn btn-primary" href="{home}">Zur Startseite</a></p>
 </body></html>"""
-
 # ------------------------------------------------------------
 # Context Processor
 # ------------------------------------------------------------
@@ -654,6 +657,21 @@ def debug_env():
 @app.route("/healthz")
 def healthz():
     return "ok", 200
+
+from pathlib import Path
+
+@app.get("/_debug/files")
+def debug_files():
+    root = Path(__file__).resolve().parent
+    tdir = (root / "templates")
+    files = []
+    if tdir.exists():
+        files = sorted(str(p.relative_to(root)) for p in tdir.rglob("*") if p.is_file())
+    return jsonify({
+        "cwd": str(root),
+        "template_folder": str(tdir),
+        "templates_found": files
+    })
 
 # ------------------------------------------------------------
 # Run (lokal)

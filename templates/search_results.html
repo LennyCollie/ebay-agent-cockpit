@@ -1,198 +1,58 @@
 {% extends "base.html" %}
-{% block title %}Suchergebnisse – ebay-agent-cockpit{% endblock %}
-
+{% block title %}Suchergebnisse{% endblock %}
 {% block content %}
 <h1 class="h3 mb-3">Suchergebnisse</h1>
 
-{# Gesuchte Begriffe #}
-{% if terms and terms|length > 0 %}
-  <p class="text-secondary mb-2">
-    Gesucht nach:
-    {% for t in terms %}
-      <span class="badge text-bg-secondary me-1">{{ t }}</span>
-    {% endfor %}
-  </p>
+{% if terms %}
+<p class="mb-3">Gesucht nach:
+  {% for t in terms %}
+    <span class="badge bg-light text-dark me-1">{{ t }}</span>
+  {% endfor %}
+</p>
 {% endif %}
 
-{# Aktive Filter kurz zusammenfassen #}
-{% if filters %}
-  <div class="mb-3 d-flex flex-wrap gap-2">
-    {% if filters.price_min or filters.price_max %}
-      <span class="badge text-bg-light border">Preis: {{ filters.price_min or '–' }} – {{ filters.price_max or '–' }}</span>
-    {% endif %}
-    {% if filters.sort %}
-      <span class="badge text-bg-light border">Sortierung: {{ filters.sort }}</span>
-    {% endif %}
-    {% if filters.conditions and filters.conditions|length %}
-      <span class="badge text-bg-light border">Zustand: {{ filters.conditions|join(', ') }}</span>
-    {% endif %}
-  </div>
-{% endif %}
-
-{% if results and results|length > 0 %}
-
-  {# === Mobile/Tablet: Card-Grid (sichtbar < lg) === #}
-  <div class="d-lg-none">
-    <div class="row row-cols-1 row-cols-sm-2 g-3">
+{% if results %}
+<div class="table-responsive">
+  <table class="table align-middle">
+    <thead>
+      <tr><th style="width:80px">Bild</th><th>Titel</th><th style="width:160px">Preis</th><th style="width:160px">Aktion</th></tr>
+    </thead>
+    <tbody>
       {% for r in results %}
-      <div class="col">
-        <div class="card h-100 shadow-sm">
-          <div class="ratio ratio-4x3 bg-light rounded-top">
-            {% if r.img %}
-              <img src="{{ r.img }}" alt=""
-                   class="w-100 h-100"
-                   style="object-fit: cover; border-top-left-radius:.375rem; border-top-right-radius:.375rem;">
-            {% else %}
-              <div class="w-100 h-100" style="background:#f3f4f6;"></div>
-            {% endif %}
-          </div>
-
-          <div class="card-body">
-            <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
-              <div class="fw-semibold">
-              {{ r.title }}
-              {% if r.source == 'ebay' %
-               <span class="src-badge src-ebay">eBay</span>
-              {% elif r.source == 'amazon' %}
-               <span class="src-badge src-amazon">Amazon</span>
-              {% endif %}
-          </div>
-          <div class="small text-muted">Suchbegriff: „{{ r.term }}“</div>
-              {% set s = (r.source or '')|lower %}
-              {% if s == 'amazon' %}
-                <span class="badge text-bg-warning">Amazon</span>
-              {% elif s == 'ebay' %}
-                <span class="badge text-bg-primary">eBay</span>
-              {% elif s == 'demo' %}
-                <span class="badge text-bg-secondary">Demo</span>
-              {% if r.img %}
-                <img src="{{ r.img }}" alt="" class="result-img">
-              {% endif %}
-            </div>
-
+      <tr>
+        <td>
+          {% if r.img %}
+            <img src="{{ r.img }}" alt="" class="img-thumbnail" style="width:72px; height:auto;">
+          {% endif %}
+        </td>
+        <td>
+          <div class="d-flex flex-column">
+            <div class="fw-semibold">{{ r.title }}</div>
             {% if r.term %}
-              <div class="text-secondary small mb-2">Suchbegriff: „{{ r.term }}“</div>
+              <small class="text-muted">Suchbegriff: „{{ r.term }}“</small>
             {% endif %}
-
-            <div class="d-flex justify-content-between align-items-center">
-              <div class="fw-bold">{{ r.price or "–" }}</div>
-
-            <a class="btn btn-sm btn-primary" target="_blank" href="{{ r.url }}">
-              {% if r.source == 'amazon' %}Auf Amazon öffnen{% else %}Auf eBay öffnen{% endif %}
-            </a>
-
-              {% set is_amz = (r.source or '')|lower == 'amazon' %}
-              {% if r.url %}
-                <a href="{{ r.url }}" target="_blank" rel="noopener"
-                   class="btn btn-sm {{ 'btn-warning' if is_amz else 'btn-outline-primary' }}">
-                  {{ 'Auf Amazon öffnen' if is_amz else 'Auf eBay öffnen' }}
-                </a>
-              {% else %}
-                <span class="text-muted small">–</span>
-              {% endif %}
+            {% set src = r.source or 'ebay' %}
+            <div class="mt-1">
+              <span class="badge badge-src {{ 'bg-warning text-dark' if src=='amazon' else 'bg-primary' }}">
+                {{ 'Amazon' if src=='amazon' else 'eBay' }}
+              </span>
             </div>
           </div>
-        </div>
-      </div>
+        </td>
+        <td>{{ r.price or '–' }}</td>
+        <td>
+          {% if r.url %}
+          <a class="btn btn-sm btn-outline-primary" href="{{ r.url }}" target="_blank" rel="noopener">
+            Auf {{ 'Amazon' if (r.source or '')=='amazon' else 'eBay' }} öffnen
+          </a>
+          {% endif %}
+        </td>
+      </tr>
       {% endfor %}
-    </div>
-  </div>
-
-  {# === Desktop: Tabelle (sichtbar ≥ lg) === #}
-  <div class="d-none d-lg-block">
-    <div class="table-responsive">
-      <table class="table align-middle">
-        <thead>
-          <tr>
-            <th style="width:80px;">Bild</th>
-            <th>Titel</th>
-            <th style="width:140px;">Preis</th>
-            <th style="width:170px;">Aktion</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in results %}
-          <tr>
-            <td>
-              {% if r.img %}
-                <img src="{{ r.img }}" alt="" class="img-thumbnail" style="max-width:72px; border-radius:8px;">
-              {% else %}
-                <div class="bg-body-secondary rounded" style="width:72px;height:54px;"></div>
-              {% endif %}
-            </td>
-            <td>
-              <div class="d-flex align-items-center gap-2 flex-wrap">
-                <div class="fw-semibold">{{ r.title }}</div>
-
-                {% set s = (r.source or '')|lower %}
-                {% if s == 'amazon' %}
-                  <span class="badge text-bg-warning">Amazon</span>
-                {% elif s == 'ebay' %}
-                  <span class="badge text-bg-primary">eBay</span>
-                {% elif s == 'demo' %}
-                  <span class="badge text-bg-secondary">Demo</span>
-                {% endif %}
-              </div>
-              {% if r.term %}
-                <div class="text-secondary small">Suchbegriff: „{{ r.term }}“</div>
-              {% endif %}
-            </td>
-            <td class="fw-bold">{{ r.price or "–" }}</td>
-            <td>
-              {% set is_amz = (r.source or '')|lower == 'amazon' %}
-              {% if r.url %}
-                <a href="{{ r.url }}" target="_blank" rel="noopener"
-                   class="btn btn-sm {{ 'btn-warning' if is_amz else 'btn-outline-primary' }}">
-                  {{ 'Auf Amazon öffnen' if is_amz else 'Auf eBay öffnen' }}
-                </a>
-              {% else %}
-                <span class="text-muted">–</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  {# Pagination (gemeinsam für beide Ansichten) #}
-  {% if pagination %}
-  <nav class="mt-4" aria-label="Seiten">
-    <ul class="pagination">
-      <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-        <a class="page-link"
-           href="{% if pagination.has_prev %}?{{ qs(base_qs, page=pagination.page-1) }}{% else %}#{% endif %}">
-          Zurück
-        </a>
-      </li>
-
-      {% if pagination.total_pages %}
-        <li class="page-item disabled">
-          <span class="page-link">Seite {{ pagination.page }} / {{ pagination.total_pages }}</span>
-        </li>
-      {% else %}
-        <li class="page-item disabled">
-          <span class="page-link">Seite {{ pagination.page }}</span>
-        </li>
-      {% endif %}
-
-      <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-        <a class="page-link"
-           href="{% if pagination.has_next %}?{{ qs(base_qs, page=pagination.page+1) }}{% else %}#{% endif %}">
-          Weiter
-        </a>
-      </li>
-    </ul>
-  </nav>
-  {% endif %}
-
-{% else %}
-  <div class="alert alert-info">Keine Ergebnisse gefunden.</div>
-{% endif %}
-
-<div class="mt-3 d-flex gap-2">
-  <a href="{{ url_for('search') }}" class="btn btn-secondary">Neue Suche</a>
-  <a href="{{ url_for('public_home') }}" class="btn btn-link">Zur Startseite</a>
+    </tbody>
+  </table>
 </div>
+{% else %}
+  <div class="alert alert-info">Keine Ergebnisse.</div>
+{% endif %}
 {% endblock %}
