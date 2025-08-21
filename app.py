@@ -16,7 +16,8 @@ from flask import (
 # ------------------------------------------------------------
 # App & Basics
 # ------------------------------------------------------------
-app = Flask(__name__, template_folder="templates", static_folder="static")app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
+app = Flask(__name__, template_folder="templates", static_folder="static")
+app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
 
 def as_bool(val: Optional[str]) -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
