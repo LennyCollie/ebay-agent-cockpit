@@ -13,19 +13,9 @@ from flask import (
     session, flash, jsonify
 )
 
-# -------------------------------------------------------------------
-# Optional: Amazon-Provider failsafe import
-# -------------------------------------------------------------------
-try:
-    from providers.amazon import amazon_search_simple, AMZ_ENABLED  # type: ignore
-except Exception:
-    AMZ_ENABLED = False
-    def amazon_search_simple(keyword: str, limit: int = 10, sort: Optional[str] = None) -> List[Dict]:
-        return []
-
-# -------------------------------------------------------------------
-# App & Basis-Konfig
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
+# App & Basics
+# ------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
 
@@ -33,7 +23,6 @@ def as_bool(val: Optional[str]) -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
 
 def getenv_any(*names: str, default: str = "") -> str:
-    """Gibt den ersten gesetzten ENV-Wert aus names zurück (Fallback-Kette)."""
     for n in names:
         v = os.getenv(n)
         if v:
@@ -46,22 +35,19 @@ PREMIUM_SEARCH_LIMIT  = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
 PER_PAGE_DEFAULT      = int(os.getenv("PER_PAGE_DEFAULT", "20"))
 SEARCH_CACHE_TTL      = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
 
-# DB (SQLite Pfad auch für Render kompatibel)
+# DB (SQLite)
 DB_URL = os.getenv("DB_PATH", "sqlite:///instance/db.sqlite3")
-
 def _sqlite_file_from_url(url: str) -> Path:
     if url.startswith("sqlite:///"):
         rel = url.replace("sqlite:///", "", 1)
         return Path(rel)
     return Path(url)
-
 DB_FILE = _sqlite_file_from_url(DB_URL)
 DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-# -------------------------------------------------------------------
-# eBay – OAuth Client Credentials + Suche
-# -------------------------------------------------------------------
-# neue Namen bevorzugt, alte kompatibel:
+# ------------------------------------------------------------
+# eBay – OAuth & Search
+# ------------------------------------------------------------
 EBAY_CLIENT_ID     = getenv_any("EBAY_CLIENT_ID", "EBAY_APP_ID")
 EBAY_CLIENT_SECRET = getenv_any("EBAY_CLIENT_SECRET", "EBAY_CERT_ID")
 EBAY_SCOPES        = os.getenv("EBAY_SCOPES", "https://api.ebay.com/oauth/api_scope")
@@ -81,14 +67,13 @@ def _currency_for_marketplace(mkt: str) -> str:
     if mkt == "EBAY_US": return "USD"
     if mkt == "EBAY_GB": return "GBP"
     if mkt == "EBAY_FR": return "EUR"
-    return "EUR"  # Default
+    return "EUR"
 
 EBAY_MARKETPLACE_ID = _marketplace_from_global(EBAY_GLOBAL_ID)
 EBAY_CURRENCY       = _currency_for_marketplace(EBAY_MARKETPLACE_ID)
 
 # Optional: Affiliate-Parameter (an itemWebUrl anhängen)
-AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # z. B. "campid=XXXX;customid=YOURTAG"
-
+AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # "campid=XXXX;customid=YOURTAG"
 def _append_affiliate(url: Optional[str]) -> Optional[str]:
     if not url or not AFFILIATE_PARAMS:
         return url
@@ -102,7 +87,6 @@ _http = requests.Session()
 _EBAY_TOKEN: Dict[str, float | str | None] = {"access_token": None, "expires_at": 0.0}
 
 def ebay_get_token() -> Optional[str]:
-    """Client-Credentials Token holen & cachen."""
     tok = _EBAY_TOKEN.get("access_token")
     if tok and time.time() < float(_EBAY_TOKEN.get("expires_at") or 0):
         return str(tok)
@@ -141,11 +125,10 @@ def _build_ebay_filters(price_min: str, price_max: str, conditions: List[str]) -
 
 def _map_sort(ui_sort: str) -> Optional[str]:
     s = (ui_sort or "").strip()
-    if not s or s == "best":  # Best Match
-        return None
-    if s == "price_asc":  return "price"
-    if s == "price_desc": return "-price"
-    if s == "newly":      return "newlyListed"
+    if not s or s == "best":  return None
+    if s == "price_asc":      return "price"
+    if s == "price_desc":     return "-price"
+    if s == "newly":          return "newlyListed"
     return None
 
 def ebay_search_one(term: str, limit: int, offset: int,
@@ -174,13 +157,28 @@ def ebay_search_one(term: str, limit: int, offset: int,
             price = (it.get("price") or {}).get("value")
             cur   = (it.get("price") or {}).get("currency")
             price_str = f"{price} {cur}" if price and cur else "–"
-            items.append({"title": title, "price": price_str, "url": web, "img": img, "term": term})
+            items.append({
+                "title": title, "price": price_str, "url": web, "img": img,
+                "term": term, "source": "ebay"
+            })
         return items, (int(total) if isinstance(total, int) else None)
     except Exception as e:
         print(f"[ebay_search_one] {e}")
         return [], None
 
-# Demo-Backend (wenn Live aus oder Keys fehlen)
+# ------------------------------------------------------------
+# Amazon (Optional Provider)
+# ------------------------------------------------------------
+try:
+    from providers.amazon import amazon_search_simple, AMZ_ENABLED
+except Exception:
+    AMZ_ENABLED = False
+    def amazon_search_simple(keyword: str, limit: int = 10, sort: Optional[str] = None) -> List[Dict]:
+        return []
+
+# ------------------------------------------------------------
+# Demo-Backend (wenn LIVE_SEARCH=0)
+# ------------------------------------------------------------
 def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[List[Dict], int]:
     total = max(30, len(terms) * 40)
     start = (page - 1) * per_page
@@ -194,13 +192,12 @@ def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[Li
             "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
             "img": "https://via.placeholder.com/64x48?text=%20",
             "term": t,
-            "source": "demo"
+            "source": "ebay",
         })
     return items, total
 
 # Mini-Cache
-_search_cache: dict = {}  # key -> (ts, (items, total_estimated))
-
+_search_cache: dict = {}  # key -> (ts, (items, total))
 def _cache_get(key):
     row = _search_cache.get(key)
     if not row:
@@ -218,11 +215,7 @@ def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: i
     if not LIVE_SEARCH or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
         return _backend_search_demo(terms, page, per_page)
 
-    filter_str = _build_ebay_filters(
-        filters.get("price_min",""),
-        filters.get("price_max",""),
-        filters.get("conditions") or []
-    )
+    filter_str = _build_ebay_filters(filters.get("price_min",""), filters.get("price_max",""), filters.get("conditions") or [])
     sort       = _map_sort(filters.get("sort", "best"))
 
     n        = max(1, len(terms))
@@ -246,17 +239,15 @@ def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: i
     return items_all[:per_page], total_estimated
 
 def _merge_sources(ebay_items: List[Dict], amz_items: List[Dict], per_page: int) -> List[Dict]:
-    """Einfache Interleave-Strategie: eBay zuerst, dann Amazon – für mehr Vielfalt."""
-    out: List[Dict] = []
+    out = []
     i = j = 0
     while len(out) < per_page and (i < len(ebay_items) or j < len(amz_items)):
         if i < len(ebay_items):
-            out.append({**ebay_items[i], "source": ebay_items[i].get("source", "ebay")})
+            out.append({**ebay_items[i], "source": "ebay"})
             i += 1
-        if len(out) >= per_page:
-            break
+        if len(out) >= per_page: break
         if j < len(amz_items):
-            item = dict(amz_items[j])
+            item = amz_items[j]
             if "source" not in item:
                 item["source"] = "amazon"
             out.append(item)
@@ -269,45 +260,37 @@ def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int
            filters.get("price_max") or "",
            filters.get("sort") or "best",
            tuple(filters.get("conditions") or []),
-           page, per_page,
-           "AMZ" if AMZ_ENABLED else "NOAMZ",
-           "LIVE" if LIVE_SEARCH else "DEMO")
-
+           page, per_page)
     cached = _cache_get(key)
     if cached:
         return cached
 
-    # 1) eBay
     items_ebay, total_estimated = _backend_search_ebay(terms, filters, page, per_page)
 
-    # 2) optional Amazon (erster Begriff, kleines Limit)
+    # Amazon optional
     items_amz: List[Dict] = []
     if LIVE_SEARCH and AMZ_ENABLED and terms:
+        first_term = terms[0]
         try:
-            items_amz = amazon_search_simple(
-                keyword=terms[0],
-                limit=min(10, per_page),
-                sort=filters.get("sort")
-            )
+            items_amz = amazon_search_simple(first_term, limit=min(10, per_page), sort=filters.get("sort"))
         except Exception as e:
             print(f"[amazon] {e}")
 
-    # 3) mischen
-    items = _merge_sources(items_ebay, items_amz, per_page) if items_amz else items_ebay
+    merged = _merge_sources(items_ebay, items_amz, per_page)
+    result = (merged if merged else items_ebay, total_estimated)
+    _cache_set(key, result)
+    return result
 
-    _cache_set(key, (items, total_estimated))
-    return items, total_estimated
-
-# -------------------------------------------------------------------
-# Stripe (optional – fällt zurück, wenn nicht konfiguriert)
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
+# Stripe (optional)
+# ------------------------------------------------------------
 STRIPE_SECRET_KEY     = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_PRO      = os.getenv("STRIPE_PRICE_PRO", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 STRIPE_OK = False
 try:
-    import stripe as _stripe  # type: ignore
+    import stripe as _stripe
     if STRIPE_SECRET_KEY:
         _stripe.api_key = STRIPE_SECRET_KEY
     STRIPE_OK = True
@@ -318,7 +301,7 @@ except Exception:
 
 @app.post("/webhook")
 def stripe_webhook():
-    wh_secret = STRIPE_WEBHOOK_SECRET
+    wh_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
     if not STRIPE_OK or not wh_secret:
         return "webhook not configured", 400
 
@@ -353,9 +336,9 @@ def stripe_webhook():
 
     return jsonify({"received": True})
 
-# -------------------------------------------------------------------
-# DB (Mini-User-Tabelle)
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
+# DB / User
+# ------------------------------------------------------------
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_FILE), detect_types=sqlite3.PARSE_DECLTYPES)
     conn.row_factory = sqlite3.Row
@@ -377,9 +360,9 @@ def init_db() -> None:
 
 init_db()
 
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
 # Template-Fallback
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
 def safe_render(template_name: str, **ctx):
     try:
         return render_template(template_name, **ctx)
@@ -402,11 +385,10 @@ def safe_render(template_name: str, **ctx):
 <p><a class="btn btn-primary" href="{home}">Zur Startseite</a></p>
 </body></html>"""
 
-# -------------------------------------------------------------------
-# Context-Processor (Limits + QS-Helper)
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
+# Context Processor
+# ------------------------------------------------------------
 def _build_query(existing: dict, **extra) -> str:
-    """Querystring mit Support für Mehrfachwerte (z. B. condition=NEW&condition=USED)."""
     merged = {**existing, **{k: v for k, v in extra.items() if v is not None}}
     pairs = []
     for k, v in merged.items():
@@ -428,9 +410,9 @@ def inject_limits_and_helpers():
         "qs": _build_query,
     }
 
-# -------------------------------------------------------------------
-# Session-Defaults
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
+# Session Defaults
+# ------------------------------------------------------------
 @app.before_request
 def _ensure_session_defaults():
     session.setdefault("free_search_count", 0)
@@ -440,9 +422,9 @@ def _ensure_session_defaults():
 def _user_search_limit() -> int:
     return PREMIUM_SEARCH_LIMIT if session.get("is_premium") else FREE_SEARCH_LIMIT
 
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
 # Auth (Demo)
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "GET":
@@ -495,9 +477,9 @@ def logout():
     flash("Logout erfolgreich.", "info")
     return redirect(url_for("public_home"))
 
-# -------------------------------------------------------------------
-# Public / Dashboard / Free-Start
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
+# Public / Dashboard
+# ------------------------------------------------------------
 @app.route("/")
 def root_redirect():
     return redirect(url_for("public_home"))
@@ -525,9 +507,9 @@ def start_free():
     session["user_email"]        = "guest"
     return redirect(url_for("search"))
 
-# -------------------------------------------------------------------
-# Suche – PRG + Pagination + Filter
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
+# Suche
+# ------------------------------------------------------------
 def _collect_params(src) -> dict:
     params = {
         "q1": (src.get("q1") or "").strip(),
@@ -538,7 +520,6 @@ def _collect_params(src) -> dict:
         "sort": (src.get("sort") or "best").strip(),
         "per_page": (src.get("per_page") or "").strip(),
     }
-    # condition kann mehrfach vorkommen
     try:
         params["condition"] = src.getlist("condition")
     except Exception:
@@ -551,10 +532,8 @@ def _params_to_terms(params: dict) -> List[str]:
 
 @app.route("/search", methods=["GET", "POST"])
 def search():
-    # POST -> Redirect mit Querystring (PRG)
     if request.method == "POST":
         params = _collect_params(request.form)
-        # Free-Limit nur beim Absenden zählen
         if not session.get("is_premium", False):
             count = int(session.get("free_search_count", 0))
             if count >= FREE_SEARCH_LIMIT:
@@ -564,7 +543,6 @@ def search():
         params["page"] = 1
         return redirect(url_for("search", **params))
 
-    # GET -> tatsächliche Suche
     params = _collect_params(request.args)
     terms  = _params_to_terms(params)
     if not terms:
@@ -626,49 +604,9 @@ def search():
         base_qs=base_qs
     )
 
-# -------------------------------------------------------------------
-# Stripe Checkout (einmalig, mit Metadaten)
-# -------------------------------------------------------------------
-@app.route("/checkout", methods=["POST"])
-def public_checkout():
-    if not STRIPE_OK or not STRIPE_SECRET_KEY or not STRIPE_PRICE_PRO:
-        flash("Stripe ist nicht konfiguriert.", "warning")
-        return redirect(url_for("public_pricing"))
-    try:
-        success_url = url_for("checkout_success", _external=True)
-        cancel_url  = url_for("checkout_cancel",  _external=True)
-
-        client_ref = str(session.get("user_id") or "")
-        user_email = session.get("user_email") or ""
-
-        session_stripe = stripe.checkout.Session.create(  # type: ignore
-            mode="subscription",
-            line_items=[{"price": STRIPE_PRICE_PRO, "quantity": 1}],
-            success_url=success_url,
-            cancel_url=cancel_url,
-            allow_promotion_codes=True,
-            client_reference_id=client_ref if client_ref else None,
-            customer_email=user_email if user_email else None,
-            metadata={"email": user_email} if user_email else None,
-        )
-        return redirect(session_stripe.url, code=303)
-    except Exception as e:
-        flash(f"Stripe-Fehler: {e}", "danger")
-        return redirect(url_for("public_pricing"))
-
-@app.route("/checkout/success")
-def checkout_success():
-    flash("Dein Premium-Zugang ist jetzt freigeschaltet.", "success")
-    return safe_render("success.html", title="Erfolg")
-
-@app.route("/checkout/cancel")
-def checkout_cancel():
-    flash("Vorgang abgebrochen.", "info")
-    return redirect(url_for("public_pricing"))
-
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
 # Debug / Health
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
 @app.route("/_debug/ebay")
 def debug_ebay():
     return jsonify({
@@ -682,7 +620,6 @@ def debug_ebay():
 
 @app.route("/debug")
 def debug_env():
-    # user_email sinnvoll auflösen
     user_email = session.get("user_email") or ""
     if not user_email and session.get("user_id"):
         conn = get_db()
@@ -705,8 +642,6 @@ def debug_env():
             "STRIPE_SECRET_KEY_set": bool(STRIPE_SECRET_KEY),
             "STRIPE_WEBHOOK_SECRET_set": bool(STRIPE_WEBHOOK_SECRET),
             "AMZ_ENABLED": AMZ_ENABLED,
-            "AMZ_ASSOC_TAG_set": bool(os.getenv("AMZ_ASSOC_TAG")),
-            "AMZ_ACCESS_KEY_set": bool(os.getenv("AMZ_ACCESS_KEY")),
         },
         "session": {
             "free_search_count": int(session.get("free_search_count", 0)),
@@ -720,9 +655,9 @@ def debug_env():
 def healthz():
     return "ok", 200
 
-# -------------------------------------------------------------------
-# Run (nur lokal)
-# -------------------------------------------------------------------
+# ------------------------------------------------------------
+# Run (lokal)
+# ------------------------------------------------------------
 if __name__ == "__main__":
     port  = int(os.getenv("PORT", "5000"))
     debug = as_bool(os.getenv("FLASK_DEBUG", "1"))

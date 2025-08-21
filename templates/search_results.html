@@ -49,8 +49,15 @@
 
           <div class="card-body">
             <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
-              <div class="fw-semibold">{{ r.title }}</div>
-
+              <div class="fw-semibold">
+              {{ r.title }}
+              {% if r.source == 'ebay' %
+               <span class="src-badge src-ebay">eBay</span>
+              {% elif r.source == 'amazon' %}
+               <span class="src-badge src-amazon">Amazon</span>
+              {% endif %}
+          </div>
+          <div class="small text-muted">Suchbegriff: „{{ r.term }}“</div>
               {% set s = (r.source or '')|lower %}
               {% if s == 'amazon' %}
                 <span class="badge text-bg-warning">Amazon</span>
@@ -58,6 +65,8 @@
                 <span class="badge text-bg-primary">eBay</span>
               {% elif s == 'demo' %}
                 <span class="badge text-bg-secondary">Demo</span>
+              {% if r.img %}
+                <img src="{{ r.img }}" alt="" class="result-img">
               {% endif %}
             </div>
 
@@ -67,6 +76,10 @@
 
             <div class="d-flex justify-content-between align-items-center">
               <div class="fw-bold">{{ r.price or "–" }}</div>
+
+            <a class="btn btn-sm btn-primary" target="_blank" href="{{ r.url }}">
+              {% if r.source == 'amazon' %}Auf Amazon öffnen{% else %}Auf eBay öffnen{% endif %}
+            </a>
 
               {% set is_amz = (r.source or '')|lower == 'amazon' %}
               {% if r.url %}
