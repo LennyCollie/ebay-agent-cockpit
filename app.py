@@ -7,11 +7,21 @@ from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from urllib.parse import urlencode
 
+
 import requests
 from flask import (
     Flask, render_template, request, redirect, url_for,
     session, flash, jsonify
 )
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(".env.local", override=True)  # lokale Werte priorisieren
+    load_dotenv()                             # optional .env als Fallback
+except Exception:
+    pass
+
+
 
 # -------------------------------------------------------------------
 # App & Basis-Konfig
@@ -224,18 +234,166 @@ def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: i
     return items_all[:per_page], total_estimated
 
 def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int):
-    key = (tuple(terms),
-           filters.get("price_min") or "",
-           filters.get("price_max") or "",
-           filters.get("sort") or "best",
-           tuple(filters.get("conditions") or []),
-           page, per_page)
+    # Wenn Amazon korrekt konfiguriert ist, mischen wir eBay + Amazon
+    use_amazon = AMZ_OK
+
+    key = (
+        tuple(terms),
+        filters.get("price_min") or "",
+        filters.get("price_max") or "",
+        filters.get("sort") or "best",
+        tuple(filters.get("conditions") or []),
+        page, per_page,
+        "amz" if use_amazon else "ebay",
+    )
+
     cached = _cache_get(key)
     if cached:
         return cached
-    items, total = _backend_search_ebay(terms, filters, page, per_page)
+
+    if use_amazon:
+        items, total = _backend_search_combined(terms, filters, page, per_page)
+    else:
+        items, total = _backend_search_ebay(terms, filters, page, per_page)
+
     _cache_set(key, (items, total))
     return items, total
+# Amazon PA-API (Affiliate-Suche)
+# -------------------------------------------------------------------
+AMZ_ENABLED  = os.getenv("AMZ_ENABLED", "0") in ("1", "true", "True", "yes", "on")
+AMZ_ACCESS   = getenv_any("AMZ_ACCESS_KEY_ID", "AMZ_ACCESS_KEY")
+AMZ_SECRET   = getenv_any("AMZ_SECRET_ACCESS_KEY", "AMZ_SECRET")
+AMZ_TAG      = getenv_any("AMZ_PARTNER_TAG", "AMZ_ASSOC_TAG", "AMZ_TRACKING_ID")
+AMZ_COUNTRY  = os.getenv("AMZ_COUNTRY", "DE")
+
+AMZ_OK = False
+amazon_client = None
+try:
+    if AMZ_ENABLED:
+        from amazon_paapi import AmazonApi
+        if AMZ_ACCESS and AMZ_SECRET and AMZ_TAG:
+            amazon_client = AmazonApi(AMZ_ACCESS, AMZ_SECRET, AMZ_TAG, AMZ_COUNTRY)
+            AMZ_OK = True
+except Exception as _e:
+    print("[amazon] init failed:", _e)
+    AMZ_OK = False
+    amazon_client = None
+
+def amazon_search_one(term: str, limit: int, page: int,
+                      price_min: str = "", price_max: str = "") -> tuple[list[dict], None | int]:
+    """
+    Liefert eine Liste deiner Standard-Items (title, price, img, url, term, src='amazon').
+    PA-API kennt keine verlässliche 'total' wie eBay -> wir geben None zurück.
+    Preisfilter (min/max) erwartet Cent als Integer, daher *100.
+    """
+    if not (AMZ_OK and term and amazon_client):
+        return [], None
+
+    try:
+        item_count = max(1, min(limit, 10))   # PA-API max 10 pro Call
+        page = max(1, min(page, 10))          # PA-API Seiten 1..10
+
+        kwargs = {
+            "keywords": term,
+            "item_count": item_count,
+            "item_page": page,
+            "search_index": "All",
+            "resources": [
+                "ItemInfo.Title",
+                "Images.Primary.Small",
+                "Offers.Listings.Price",
+                "DetailPageURL",
+            ],
+        }
+        if price_min:
+            kwargs["min_price"] = int(float(price_min) * 100)
+        if price_max:
+            kwargs["max_price"] = int(float(price_max) * 100)
+
+        res = amazon_client.search_items(**kwargs)
+
+        items: list[dict] = []
+        for p in getattr(res, "items", []) or []:
+            # Title
+            title = None
+            try:
+                title = p.item_info.title.display_value
+            except Exception:
+                pass
+
+            # URL (enthält Partner-Tag)
+            url = getattr(p, "detail_page_url", None)
+
+            # Bild
+            img = None
+            try:
+                img = p.images.primary.small.url
+            except Exception:
+                pass
+
+            # Preis
+            price_val, currency = None, None
+            try:
+                pr = p.offers.listings[0].price
+                price_val = getattr(pr, "amount", None)
+                currency  = getattr(pr, "currency", None)
+            except Exception:
+                pass
+
+            price_str = f"{price_val} {currency}" if price_val and currency else "–"
+            items.append({
+                "title": title or "—",
+                "price": price_str,
+                "img": img,
+                "url": url,
+                "term": term,
+                "src": "amazon",
+            })
+
+        return items, None
+    except Exception as e:
+        print("[amazon] search error:", e)
+        return [], None
+
+def _backend_search_amazon(terms: list[str], filters: dict, page: int, per_page: int):
+    if not AMZ_OK:
+        return [], None
+    per_term = max(1, per_page // max(1, len(terms)))
+    all_items: list[dict] = []
+    for t in terms:
+        part, _ = amazon_search_one(
+            t, per_term, page,
+            filters.get("price_min") or "",
+            filters.get("price_max") or "",
+        )
+        all_items.extend(part)
+    return all_items[:per_page], None
+
+def _backend_search_combined(terms: list[str], filters: dict, page: int, per_page: int):
+    """Mischt eBay + Amazon: eBay ist Leitquelle (total), Amazon wird interleaved."""
+    ebay_items, ebay_total = _backend_search_ebay(terms, filters, page, per_page)
+    amz_items, _ = _backend_search_amazon(terms, filters, page, per_page)
+
+    # Interleave, damit die Liste gemischt ist
+    out: list[dict] = []
+    i = j = 0
+    while len(out) < per_page and (i < len(ebay_items) or j < len(amz_items)):
+        if i < len(ebay_items):
+            ebay_items[i]["src"] = "ebay"
+            out.append(ebay_items[i]); i += 1
+        if len(out) >= per_page: break
+        if j < len(amz_items):
+            out.append(amz_items[j]); j += 1
+    return out, ebay_total
+
+@app.route("/_debug/amazon")
+def debug_amazon():
+    return jsonify({
+        "amz_enabled": AMZ_ENABLED,
+        "amz_ok": AMZ_OK,
+        "country": AMZ_COUNTRY,
+        "has_keys": bool(AMZ_ACCESS and AMZ_SECRET and AMZ_TAG),
+    })
 
 # -------------------------------------------------------------------
 # Stripe (optional – fällt zurück, wenn nicht konfiguriert)
@@ -364,8 +522,10 @@ def inject_limits_and_helpers():
         "FREE_SEARCH_LIMIT": FREE_SEARCH_LIMIT,
         "PREMIUM_SEARCH_LIMIT": PREMIUM_SEARCH_LIMIT,
         "qs": _build_query,
+        # NEU: Amazon-Daten für Templates (Buttons)
+        "AMZ_TAG": os.getenv("AMZ_ASSOC_TAG", ""),         # z.B. dein-tag-21
+        "AMZ_COUNTRY": os.getenv("AMZ_COUNTRY", "DE"),     # DE / US / GB ...
     }
-
 # -------------------------------------------------------------------
 # Session-Defaults
 # -------------------------------------------------------------------
@@ -486,51 +646,71 @@ def _collect_params(src) -> dict:
 def _params_to_terms(params: dict) -> List[str]:
     return [t for t in [params.get("q1"), params.get("q2"), params.get("q3")] if t]
 
+
 @app.route("/search", methods=["GET", "POST"])
 def search():
+    # POST -> Redirect mit Querystring (PRG), inkl. Mehrfachwerte für condition
     if request.method == "POST":
-        params = _collect_params(request.form)
+        params = {
+            "q1": (request.form.get("q1") or "").strip(),
+            "q2": (request.form.get("q2") or "").strip(),
+            "q3": (request.form.get("q3") or "").strip(),
+            "price_min": (request.form.get("price_min") or "").strip(),
+            "price_max": (request.form.get("price_max") or "").strip(),
+            "sort": (request.form.get("sort") or "best").strip(),
+            "per_page": (request.form.get("per_page") or "").strip(),
+            # WICHTIG: Mehrfachauswahl sauber übernehmen
+            "condition": request.form.getlist("condition"),
+        }
+        # Free-Limit zählen (nur beim Absenden)
         if not session.get("is_premium", False):
             count = int(session.get("free_search_count", 0))
             if count >= FREE_SEARCH_LIMIT:
                 flash(f"Kostenloses Limit ({FREE_SEARCH_LIMIT}) erreicht – bitte Upgrade buchen.", "info")
                 return redirect(url_for("public_pricing"))
             session["free_search_count"] = count + 1
+
+        # Seite zurücksetzen
         params["page"] = 1
         return redirect(url_for("search", **params))
 
-    params = _collect_params(request.args)
-    terms  = _params_to_terms(params)
+    # GET -> tatsächliche Suche
+    terms = [t for t in [
+        (request.args.get("q1") or "").strip(),
+        (request.args.get("q2") or "").strip(),
+        (request.args.get("q3") or "").strip(),
+    ] if t]
+
     if not terms:
-        return safe_render("search.html", title="Suche", body="Suche starten.")
+        return safe_render("search.html", title="Suche")
+
+    filters = {
+        "price_min": request.args.get("price_min", "").strip(),
+        "price_max": request.args.get("price_max", "").strip(),
+        "sort": request.args.get("sort", "best").strip(),
+        # WICHTIG: Mehrfachwerte lesen
+        "conditions": request.args.getlist("condition"),
+    }
 
     try:
-        page = max(int(request.args.get("page", 1)), 1)
+        page = max(1, int(request.args.get("page", 1)))
     except Exception:
         page = 1
     try:
-        per_page = int(params.get("per_page") or PER_PAGE_DEFAULT)
-        per_page = min(max(per_page, 5), 100)
+        per_page = min(100, max(5, int(request.args.get("per_page", PER_PAGE_DEFAULT))))
     except Exception:
         per_page = PER_PAGE_DEFAULT
 
-    filters = {
-        "price_min": params.get("price_min") or "",
-        "price_max": params.get("price_max") or "",
-        "sort": params.get("sort") or "best",
-        "conditions": params.get("condition") or [],
-    }
-
     items, total_estimated = _search_with_cache(terms, filters, page, per_page)
-
-    total_pages = math.ceil(total_estimated / per_page) if total_estimated else None
+    total_pages = math.ceil(total_estimated / per_page) if total_estimated is not None else None
     has_prev = page > 1
     has_next = (total_pages and page < total_pages) or (not total_pages and len(items) == per_page)
 
+    # Basis-Querystring für Paginator (enthält auch mehrfach 'condition')
     base_qs = {
-        "q1": params.get("q1", ""),
-        "q2": params.get("q2", ""),
-        "q3": params.get("q3", ""),
+        "q1": request.args.get("q1", ""),
+        "q2": request.args.get("q2", ""),
+        "q3": request.args.get("q3", ""),
         "price_min": filters["price_min"],
         "price_max": filters["price_max"],
         "sort": filters["sort"],
@@ -543,12 +723,7 @@ def search():
         title="Suchergebnisse",
         terms=terms,
         results=items,
-        filters={
-            "price_min": filters["price_min"],
-            "price_max": filters["price_max"],
-            "sort": filters["sort"],
-            "conditions": filters["conditions"],
-        },
+        filters=filters,
         pagination={
             "page": page,
             "per_page": per_page,
@@ -557,23 +732,32 @@ def search():
             "has_prev": has_prev,
             "has_next": has_next,
         },
-        base_qs=base_qs
+        base_qs=base_qs,
     )
+# Stripe Checkout (einmalig, mit Metadaten)
 
 # -------------------------------------------------------------------
-# Stripe Checkout (einmalig, mit Metadaten)
-# -------------------------------------------------------------------
-@app.route("/checkout", methods=["POST"])
-def public_checkout():
+@app.route("/checkout", methods=["GET", "POST"])
+def checkout():
+    # optional: wenn jemand per POST kommt, einfach auf Preise zurück
+    if request.method == "POST":
+        pass  # wir fallen unten in den Checkout durch
+
+    # Stripe-Konfiguration prüfen
     if not STRIPE_OK or not STRIPE_SECRET_KEY or not STRIPE_PRICE_PRO:
         flash("Stripe ist nicht konfiguriert.", "warning")
         return redirect(url_for("public_pricing"))
+
     try:
         success_url = url_for("checkout_success", _external=True)
         cancel_url  = url_for("checkout_cancel",  _external=True)
 
         client_ref = str(session.get("user_id") or "")
-        user_email = session.get("user_email") or ""
+
+        # WICHTIG: 'guest' oder ungültige Angaben nicht an Stripe schicken
+        user_email = (session.get("user_email") or "").strip()
+        if user_email.lower() == "guest" or "@" not in user_email:
+            user_email = None  # dann lässt Stripe den Käufer selbst die E-Mail eingeben
 
         session_stripe = stripe.checkout.Session.create(  # type: ignore
             mode="subscription",
@@ -586,12 +770,22 @@ def public_checkout():
             metadata={"email": user_email} if user_email else None,
         )
         return redirect(session_stripe.url, code=303)
+
     except Exception as e:
         flash(f"Stripe-Fehler: {e}", "danger")
         return redirect(url_for("public_pricing"))
 
+
+@app.route("/billing/portal")
+def billing_portal():
+    # Solange wir noch kein echtes Stripe-Portal nutzen, verhindern wir einen Fehler:
+    flash("Abo-Verwaltung ist demnächst verfügbar.", "info")
+    return redirect(url_for("public_pricing"))
+
+
 @app.route("/checkout/success")
 def checkout_success():
+    session["is_premium"] = True
     flash("Dein Premium-Zugang ist jetzt freigeschaltet.", "success")
     return safe_render("success.html", title="Erfolg")
 
@@ -599,6 +793,7 @@ def checkout_success():
 def checkout_cancel():
     flash("Vorgang abgebrochen.", "info")
     return redirect(url_for("public_pricing"))
+
 
 # -------------------------------------------------------------------
 # Debug / Health
@@ -616,7 +811,6 @@ def debug_ebay():
 
 @app.route("/debug")
 def debug_env():
-    # user_email sinnvoll auflösen
     user_email = session.get("user_email") or ""
     if not user_email and session.get("user_id"):
         conn = get_db()
@@ -638,6 +832,12 @@ def debug_env():
             "STRIPE_PRICE_PRO_set": bool(STRIPE_PRICE_PRO),
             "STRIPE_SECRET_KEY_set": bool(STRIPE_SECRET_KEY),
             "STRIPE_WEBHOOK_SECRET_set": bool(STRIPE_WEBHOOK_SECRET),
+            # neu: Amazon-Status
+            "AMZ_ENABLED": AMZ_ENABLED,
+            "AMZ_ACCESS_KEY_set": bool(AMZ_ACCESS),
+            "AMZ_SECRET_set": bool(AMZ_SECRET),
+            "AMZ_TAG_set": bool(AMZ_TAG),
+            "AMZ_COUNTRY": AMZ_COUNTRY,
         },
         "session": {
             "free_search_count": int(session.get("free_search_count", 0)),
@@ -650,6 +850,34 @@ def debug_env():
 @app.route("/healthz")
 def healthz():
     return "ok", 200
+
+@app.route("/amazon/search")
+def amazon_search():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return safe_render("search.html", title="Amazon-Suche", body="Bitte Suchbegriff angeben.")
+    if not AMZ_OK:
+        flash("Amazon ist nicht konfiguriert.", "info")
+        return redirect(url_for("public_home"))
+
+    page = 1
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except Exception:
+        pass
+
+    items, _ = amazon_search_one(q, limit=20, page=page)
+
+    return safe_render(
+        "search_results.html",
+        title=f"Amazon-Ergebnisse für „{q}“",
+        terms=[q],
+        results=items,
+        filters={"price_min":"", "price_max":"", "sort":"best", "conditions":[]},
+        pagination={"page":1, "per_page":len(items), "total_estimated":len(items),
+                    "total_pages":1, "has_prev":False, "has_next":False},
+        base_qs={"q1": q, "per_page": len(items)}
+    )
 
 # -------------------------------------------------------------------
 # Run (nur lokal)

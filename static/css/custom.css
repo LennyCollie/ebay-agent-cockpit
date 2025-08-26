@@ -1,60 +1,136 @@
-/* ---------- Pricing Card Styles ---------- */
-.pricing-card {
-  border-radius: 1rem;
-  background: var(--bs-body-bg);
-  box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.05);
+* ===== Design-Token (Farben & Typo) ===== */
+:root{
+  /* sanfte Markenfarben */
+  --brand-1: #3b82f6;           /* Blau   */
+  --brand-2: #8b5cf6;           /* Violett */
+  --ink:     #0f172a;           /* Text dunkel */
+  --ink-2:   #334155;           /* Text sekundär */
+  --bg:      #f8fafc;           /* Grundfläche */
+
+  --card-bg: #ffffff;
+  --card-br: #e5e7eb;
+  --chip-br: #c7d2fe;
+
+  --radius: .8rem;
 }
 
-.pricing-card .price {
-  font-size: 2rem;
-  font-weight: 600;
-  color: var(--bs-primary);
+/* ===== Grundlayout / Typo ===== */
+html,body{height:100%}
+body{
+  color:var(--ink);
+  background:
+    radial-gradient(900px 600px at 0% 0%, #eef2ff 0%, transparent 60%),
+    radial-gradient(900px 600px at 100% 0%, #fce7f3 0%, transparent 55%),
+    var(--bg);
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
 }
 
-.pricing-card .badge-ghost {
-  background-color: transparent;
-  border: 1px solid var(--bs-border-color);
-  color: var(--bs-secondary-color);
+/* kleinere (harmonische) Typo als Bootstrap-Default */
+h1, .display-1, .display-2, .display-3, .display-4, .display-5 { line-height:1.15 }
+.display-5, h1 { font-size: 2.15rem; }        /* vorher sehr groß */
+h2 { font-size: 1.55rem; }
+h3 { font-size: 1.25rem; }
+.lead { font-size: 1.05rem; color: var(--ink-2); }
+
+/* farbiger Textverlauf für Markenwörter */
+.brand-accent{
+  background: linear-gradient(90deg,var(--brand-1),var(--brand-2));
+  -webkit-background-clip:text; background-clip:text;
+  color:transparent;
 }
 
-.hr-soft {
-  border: 0;
-  border-top: 1px solid var(--bs-border-color);
-  opacity: 0.3;
+/* ===== Karten, Container, Abstände ===== */
+.card{ border-radius: var(--radius); border-color: var(--card-br); }
+.card.hero{ border:0; border-radius: calc(var(--radius) * 1.1); }
+.card.hero .progress{ height:.55rem; }
+
+.feature .icon{font-size:1.4rem;margin-bottom:.5rem}
+
+.flash-stack > .alert{margin-bottom:.5rem}
+
+/* ===== Navbar-Details ===== */
+.navbar .nav-link.active{
+  position: relative;
+  font-weight:600;
+}
+.navbar .nav-link.active::after{
+  content:""; position:absolute; left:.6rem; right:.6rem; bottom:.2rem;
+  height:2px; border-radius:2px;
+  background: linear-gradient(90deg,var(--brand-1),var(--brand-2));
 }
 
-/* ---------- FAQ Accordion ---------- */
-.faq .accordion-button {
-  font-weight: 500;
+/* ===== Buttons ===== */
+.btn-primary{
+  background: linear-gradient(90deg,var(--brand-1),var(--brand-2));
+  border: none;
+}
+.btn-primary:hover{ filter:brightness(.95); }
+.btn-outline-secondary{ border-color:#cbd5e1; color:#334155; }
+.btn-outline-secondary:hover{ background:#eef2ff; border-color:#c7d2fe; }
+
+/* ===== Tabellen / Ergebnisse ===== */
+.table > :not(caption) > * > *{ padding-top:.85rem; padding-bottom:.85rem; }
+.table tbody tr:nth-child(even){ background-color:#fafafa; }
+.table thead th{ font-weight:600; color:#1f2937; }
+
+/* ===== Chips-Checkboxen (Suche) =====
+   Nutzt das vorhandene Markup: input + label in .form-check */
+.form-check{ display:inline-flex; align-items:center; margin-right:.6rem; margin-bottom:.6rem; }
+.form-check-input{
+  appearance:none; -webkit-appearance:none;
+  width:0; height:0; margin:0; /* wir „verstecken“ die Box */
+}
+.form-check-label{
+  padding:.45rem .7rem;
+  border:1px solid var(--chip-br);
+  border-radius: 999px;
+  background: #f8faff;
+  color:#1f2937; font-weight:500; cursor:pointer;
+}
+.form-check-input:checked + .form-check-label{
+  color:white;
+  border-color:transparent;
+  background: linear-gradient(90deg,var(--brand-1),var(--brand-2));
+  box-shadow: 0 0 0 .15rem rgba(59,130,246,.15);
 }
 
-.faq .accordion-button:not(.collapsed) {
-  background-color: var(--bs-primary-bg-subtle);
-  color: var(--bs-primary);
-  box-shadow: none;
+/* Formular-Karten hübscher */
+.form-card{
+  border:0;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #ffffff 0%, #ffffffee 60%, #ffffffcc 100%);
+  box-shadow: 0 .25rem 1rem rgba(2,6,23,.05);
 }
 
-.faq .accordion-body {
-  font-size: 0.95rem;
-  line-height: 1.5;
+/* Sektionstitel */
+.section-title{
+  font-size:1.1rem; font-weight:700; letter-spacing:.2px; color:#0b1324;
 }
 
-/* ---------- Section Spacing ---------- */
-.section {
-  padding-top: 2rem;
-  padding-bottom: 2rem;
+/* ===== Hero-Bereich Suche ===== */
+.search-hero{
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, #eef2ff 0%, #fce7f3 100%);
+  border:1px solid #e9eaf6;
+  padding:1rem 1.25rem;
+}
+.search-hero .badge{ background:#fff; border:1px solid #e5e7eb; }
+
+/* ===== Pagination ===== */
+.btn-group .btn[disabled]{
+  opacity:.45;
 }
 
-.kicker {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--bs-secondary);
+/* ===== Sonstiges ===== */
+.stats .stat-dot{
+  width:.6rem;height:.6rem;border-radius:50%;background:#e2e8f0;display:inline-block
 }
-
-/* ===== UX: Keine "Eieruhr" über dem Stats-Kärtchen ===== */
-.stats-card,
-.stats-card * {
-  cursor: default !important;
+.btn-price {
+  background: linear-gradient(90deg, #ff7a59, #ffb347);
+  color: #fff !important;
+  border: none;
+  box-shadow: 0 .3rem .9rem rgba(255,122,89,.3);
 }
+.btn-price:hover { filter: brightness(.95); }
+.btn-price:active { transform: translateY(1px); }

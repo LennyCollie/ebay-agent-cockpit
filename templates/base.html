@@ -1,87 +1,83 @@
+code
+Html
 <!doctype html>
 <html lang="de">
-  <head>
+<head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}ebay-agent-cockpit{% endblock %}</title>
-
-    <!-- Bootstrap CSS -->
+    <title>{{ title or 'Super-Agenten Cockpit' }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+    :root {
+        --bs-primary: #0d6efd; /* Ein schönes Blau als Hauptfarbe */
+        --bs-dark: #212529;    /* Ein dunkles Grau für Kontraste */
+        --bs-light: #f8f9fa;   /* Ein sehr helles Grau für Hintergründe */
+    }
+    body { 
+        background-color: var(--bs-light); 
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .navbar { 
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -2px rgba(0,0,0,.1);
+    }
+    .card {
+        border: none;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -2px rgba(0,0,0,.1);
+    }
+    .btn-primary {
+        background-color: var(--bs-primary);
+        border: none;
+    }
+    .feature-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 4rem;
+        height: 4rem;
+        font-size: 2rem;
+        color: #fff;
+        background-color: var(--bs-primary);
+        border-radius: .75rem;
+    }
+</style>
+</head>
 
-    <!-- Dein CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}?v=20250818">
+{% if AMZ_TAG %}
+  <p class="text-muted small mt-3 mb-0">
+    Hinweis: Als Amazon-Partner verdienen wir an qualifizierten Käufen.
+  </p>
+{% endif %}
 
-
-    {% block head_extra %}{% endblock %}
-  </head>
-  <body class="bg-body-tertiary">
-  <body class="bg-body-tertiary" style="font-family:'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;">
-
-    <header class="border-bottom bg-white sticky-top">
-      <nav class="navbar navbar-expand-md container py-2">
-        <a class="navbar-brand fw-bold" href="{{ url_for('public_home') }}">ebay-agent-cockpit</a>
-
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain"
-                aria-controls="navMain" aria-expanded="false" aria-label="Toggle navigation">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-
-        <div class="collapse navbar-collapse" id="navMain">
-          <ul class="navbar-nav ms-auto align-items-center gap-2">
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('public_home') }}">Start</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('public_pricing') }}">Preise</a></li>
-
-            {% if session.get('user_id') %}
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">Logout</a></li>
-            {% else %}
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">Login</a></li>
-              <li class="nav-item"><a class="btn btn-primary btn-sm" href="{{ url_for('register') }}">Jetzt registrieren</a></li>
-            {% endif %}
-
-            <li class="nav-item">
-              <button id="themeToggle" class="btn btn-outline-secondary btn-sm" type="button" aria-label="Theme wechseln">
-                🌞/🌙
-              </button>
-            </li>
-          </ul>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('public_home') }}">🚀 Super-Agent</a>
+            <div class="d-flex">
+                {% if session.get('user_id') %}
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-primary me-2">Dashboard</a>
+                    <a href="{{ url_for('logout') }}" class="btn btn-secondary">Logout</a>
+                {% else %}
+                    <a href="{{ url_for('login') }}" class="btn btn-outline-light">Login / Registrieren</a>
+                {% endif %}
+            </div>
         </div>
-      </nav>
-    </header>
+    </nav>
 
-    <main class="container my-4">
-      {% include "_flash.html" ignore missing %}
-      {% block content %}{% endblock %}
+    <main class="container py-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
     </main>
-
-    <footer class="border-top py-4">
-      <div class="container text-secondary small">© 2025 ebay-agent-cockpit</div>
-    </footer>
-
-    <!-- Bootstrap JS (Bundle inkl. Popper) -->
+    
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-
-    <!-- Theme-Toggle -->
-    <script>
-      (function(){
-        const k='bs-theme';
-        const set=t=>document.documentElement.setAttribute('data-bs-theme',t);
-        const get=()=>localStorage.getItem(k) || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
-        set(get());
-        window.addEventListener('DOMContentLoaded', ()=>{
-          const btn=document.getElementById('themeToggle');
-          if(!btn) return;
-          btn.addEventListener('click', ()=>{
-            const next=(get()==='dark'?'light':'dark');
-            localStorage.setItem(k,next); set(next);
-          });
-        });
-      })();
-    </script>
-
-    {% block body_extra %}{% endblock %}
-  </body>
+</body>
 </html>

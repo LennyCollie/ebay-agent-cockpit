@@ -1,88 +1,57 @@
 {% extends "base.html" %}
-{% block title %}Preise – ebay-agent-cockpit{% endblock %}
-
 {% block content %}
-<section class="section">
-  <div class="mb-3">
-    <span class="kicker">Preise</span>
-    <h1 class="display-6 fw-semibold mb-2">Ebay Verkaufsagent <span class="text-secondary">Premium</span></h1>
-    <p class="text-secondary mb-0">Alles drin, was du fürs tägliche Arbeiten brauchst.</p>
+<div class="container py-4">
+
+  <div class="text-center mb-5">
+    <h1 class="display-6 fw-bold">Werde zum Power-User</h1>
+    <p class="text-muted mb-0">
+      Schalte alle Features frei und finde deine Wunschartikel schneller.
+    </p>
   </div>
 
-  <div class="row g-4">
-    <div class="col-12 col-lg-8">
-      <div class="card pricing-card border-0">
-        <div class="card-body p-4 p-lg-5">
-          <div class="d-flex align-items-center justify-content-between gap-3 mb-4">
-            <div class="d-flex align-items-center gap-2">
-              <span class="badge text-bg-primary">Beliebt</span>
-              <span class="badge badge-ghost">Monatlich</span>
-            </div>
-            <div class="text-end">
-              <div class="price">9,99 € <span class="period fs-6">/ Monat</span></div>
-            </div>
-          </div>
+  <div class="row g-4 justify-content-center">
+    <!-- Free -->
+    <div class="col-12 col-md-5">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">Free</h5>
+          <ul class="list-unstyled small mb-4">
+            <li>✅ 3 Suchläufe</li>
+            <li>✅ Basisfunktionen</li>
+          </ul>
+          <a href="{{ url_for('start_free') }}" class="btn btn-outline-secondary">
+            Kostenlos starten
+          </a>
+        </div>
+      </div>
+    </div>
 
-          <ul class="list-unstyled vstack gap-2 mb-4 fs-5">
-            <li>💠 Sync-Jobs vorbereitet</li>
-            <li>📊 Dashboard &amp; Suche</li>
-            <li>🔒 Login, Sessions, Best Practices</li>
-            <li>🚀 Render-Deploy inklusive</li>
-            <li>💳 Rechnung via Stripe</li>
+    <!-- Premium -->
+    <div class="col-12 col-md-5">
+      <div class="card h-100 border-primary shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title text-primary">Premium</h5>
+          <div class="h3 mb-3">9,99 € <small class="text-muted fs-6">/ Monat</small></div>
+          <ul class="list-unstyled small mb-4">
+            <li>🚀 Unlimitierte Suchagenten</li>
+            <li>⚡ Schnellere Intervalle</li>
+            <li>🎯 Erweiterte Filter</li>
+            <li>📧 E-Mail & (bald) Push-Benachrichtigungen</li>
           </ul>
 
-          <div class="d-flex flex-wrap gap-2">
-            <form action="{{ url_for('public_checkout') }}" method="post" class="d-inline">
-              <input type="hidden" name="email" value="{{ session.get('user_email','') }}">
-              <button type="submit" class="btn btn-primary btn-lg px-4">
-                Abo starten
-              </button>
-            </form>
-            <a href="{{ url_for('public_home') }}" class="btn btn-outline-secondary btn-lg px-4">Zur Startseite</a>
-            <a href="{{ url_for('start_free') }}" class="btn btn-primary btn-lg">
-              Kostenlos starten
-            </a>
-          </div>
+          <!-- Abo starten via GET (deine /checkout-Route kann GET) -->
+          <a href="{{ url_for('checkout') }}" class="btn btn-success me-2">
+            Abo starten
+          </a>
 
-          <hr class="hr-soft my-4">
-
-          <div class="d-flex flex-wrap align-items-center gap-3 small text-secondary">
-            <span>✅ Jederzeit kündbar</span>
-            <span>🛡️ Gesicherter Checkout via Stripe</span>
-            <span>⏱️ Aktivierung in Sekunden</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- FAQ rechts -->
-    <div class="col-12 col-lg-4">
-      <div class="card border-0">
-        <div class="card-body p-4">
-          <h2 class="h6 mb-3">Häufige Fragen</h2>
-          <div class="accordion faq" id="faq">
-            <div class="accordion-item">
-              <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#q1">Kann ich kostenlos testen?</button></h2>
-              <div id="q1" class="accordion-collapse collapse" data-bs-parent="#faq">
-                <div class="accordion-body">Ja, du registrierst dich kostenlos und kannst das Cockpit direkt ausprobieren.</div>
-              </div>
-            </div>
-            <div class="accordion-item">
-              <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#q2">Wie funktioniert die Bezahlung?</button></h2>
-              <div id="q2" class="accordion-collapse collapse" data-bs-parent="#faq">
-                <div class="accordion-body">Über Stripe-Abo. Der Checkout ist integriert, Rechnungen kommen automatisch von Stripe.</div>
-              </div>
-            </div>
-            <div class="accordion-item">
-              <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#q3">Gibt es eine Mindestlaufzeit?</button></h2>
-              <div id="q3" class="accordion-collapse collapse" data-bs-parent="#faq">
-                <div class="accordion-body">Nein, du kannst jederzeit kündigen.</div>
-              </div>
-            </div>
-          </div>
+          <!-- Platzhalter – wird in der App.py abgefangen -->
+          <a href="{{ url_for('billing_portal') }}" class="btn btn-outline-secondary">
+            Abo verwalten
+          </a>
         </div>
       </div>
     </div>
   </div>
-</section>
+
+</div>
 {% endblock %}
