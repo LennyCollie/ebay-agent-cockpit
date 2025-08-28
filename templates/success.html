@@ -9,3 +9,9 @@ Html
     <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Zum Dashboard</a>
 </div>
 {% endblock %}
+
+<script>
+  (function(){
+    if (window.plausible) plausible('checkout_success', {props:{plan:'pro'}});
+  })();
+</script>

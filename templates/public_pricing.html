@@ -55,3 +55,26 @@
 
 </div>
 {% endblock %}
+
+<form action="{{ url_for('checkout') }}" method="post" class="d-inline">
+  <button id="btnCheckout" type="submit" class="btn btn-success btn-lg">
+    🚀 Abo starten
+  </button>
+</form>
+
+<script>
+  (function(){
+    if (!window.plausible) return;
+
+    var cta = document.getElementById('btnCheckout');
+    if (cta) {
+      cta.addEventListener('click', function(){
+        plausible('checkout_opened', {props:{plan: 'pro'}});
+      });
+    }
+
+    {% if ev_free_limit_hit %}
+      plausible('free_limit_hit');
+    {% endif %}
+  })();
+</script>

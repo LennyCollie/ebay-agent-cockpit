@@ -1,33 +1,42 @@
 import os
+import json
 import time
 import math
 import base64
 import sqlite3
+import smtplib
+import ssl
+import hashlib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from urllib.parse import urlencode
 
-
 import requests
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, flash, jsonify
+    session, flash, jsonify, abort, current_app, Blueprint
 )
 
+# -------------------------------------------------------------------
+# .env laden
+# -------------------------------------------------------------------
 try:
     from dotenv import load_dotenv
-    load_dotenv(".env.local", override=True)  # lokale Werte priorisieren
-    load_dotenv()                             # optional .env als Fallback
+    load_dotenv(".env.local", override=True)
+    load_dotenv()
 except Exception:
     pass
-
-
 
 # -------------------------------------------------------------------
 # App & Basis-Konfig
 # -------------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
+
+# Plausible (für base.html)
+PLAUSIBLE_DOMAIN = os.getenv("PLAUSIBLE_DOMAIN", "")
 
 def as_bool(val: Optional[str]) -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
@@ -44,6 +53,23 @@ FREE_SEARCH_LIMIT     = int(os.getenv("FREE_SEARCH_LIMIT", "3"))
 PREMIUM_SEARCH_LIMIT  = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
 PER_PAGE_DEFAULT      = int(os.getenv("PER_PAGE_DEFAULT", "20"))
 SEARCH_CACHE_TTL      = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
+
+# E-Mail / Notify
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "Agent <noreply@example.com>")
+SMTP_USE_TLS = as_bool(os.getenv("SMTP_USE_TLS", "1"))
+SMTP_USE_SSL = as_bool(os.getenv("SMTP_USE_SSL", "0"))
+NOTIFY_COOLDOWN_MIN = int(os.getenv("NOTIFY_COOLDOWN_MINUTES", "120"))
+NOTIFY_MAX_ITEMS_PER_MAIL = int(os.getenv("NOTIFY_MAX_ITEMS_PER_MAIL", "10"))
+
+# NEU: Token für den privaten HTTP-Cron-Trigger
+AGENT_TRIGGER_TOKEN = os.getenv("AGENT_TRIGGER_TOKEN", "")
+
+# ALT (deprecated): Query-Token für /cron/run-alerts
+CRON_TOKEN = os.getenv("CRON_TOKEN", "")
 
 # DB (SQLite Pfad auch für Render kompatibel)
 DB_URL = os.getenv("DB_PATH", "sqlite:///instance/db.sqlite3")
@@ -94,7 +120,7 @@ def _append_affiliate(url: Optional[str]) -> Optional[str]:
 
 # HTTP Session + Token Cache
 _http = requests.Session()
-_EBAY_TOKEN: Dict[str, float | str | None] = {"access_token": None, "expires_at": 0.0}
+_EBAY_TOKEN: Dict[str, object] = {"access_token": None, "expires_at": 0.0}
 
 def ebay_get_token() -> Optional[str]:
     tok = _EBAY_TOKEN.get("access_token")
@@ -168,7 +194,9 @@ def ebay_search_one(term: str, limit: int, offset: int,
             price = (it.get("price") or {}).get("value")
             cur   = (it.get("price") or {}).get("currency")
             price_str = f"{price} {cur}" if price and cur else "–"
-            items.append({"title": title, "price": price_str, "url": web, "img": img, "term": term})
+            # stabile ID (für De-Duping)
+            iid = it.get("itemId") or it.get("legacyItemId") or it.get("epid") or (web or "")[:200]
+            items.append({"id": iid, "title": title, "price": price_str, "url": web, "img": img, "term": term, "src": "ebay"})
         return items, (int(total) if isinstance(total, int) else None)
     except Exception as e:
         print(f"[ebay_search_one] {e}")
@@ -183,11 +211,13 @@ def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[Li
     for i in range(start, stop):
         t = terms[i % max(1, len(terms))] if terms else f"Artikel {i+1}"
         items.append({
+            "id": f"demo-{i+1}",
             "title": f"Demo-Ergebnis für „{t}“ #{i+1}",
             "price": "9,99 €",
             "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
             "img": "https://via.placeholder.com/64x48?text=%20",
             "term": t,
+            "src": "demo",
         })
     return items, total
 
@@ -233,34 +263,10 @@ def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: i
     total_estimated = sum(totals) if totals else None
     return items_all[:per_page], total_estimated
 
-def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int):
-    # Wenn Amazon korrekt konfiguriert ist, mischen wir eBay + Amazon
-    use_amazon = AMZ_OK
-
-    key = (
-        tuple(terms),
-        filters.get("price_min") or "",
-        filters.get("price_max") or "",
-        filters.get("sort") or "best",
-        tuple(filters.get("conditions") or []),
-        page, per_page,
-        "amz" if use_amazon else "ebay",
-    )
-
-    cached = _cache_get(key)
-    if cached:
-        return cached
-
-    if use_amazon:
-        items, total = _backend_search_combined(terms, filters, page, per_page)
-    else:
-        items, total = _backend_search_ebay(terms, filters, page, per_page)
-
-    _cache_set(key, (items, total))
-    return items, total
-# Amazon PA-API (Affiliate-Suche)
 # -------------------------------------------------------------------
-AMZ_ENABLED  = os.getenv("AMZ_ENABLED", "0") in ("1", "true", "True", "yes", "on")
+# Amazon PA-API (optional + fail-safe)
+# -------------------------------------------------------------------
+AMZ_ENABLED  = os.getenv("AMZ_ENABLED", "0") in {"1", "true", "True", "yes", "on"}
 AMZ_ACCESS   = getenv_any("AMZ_ACCESS_KEY_ID", "AMZ_ACCESS_KEY")
 AMZ_SECRET   = getenv_any("AMZ_SECRET_ACCESS_KEY", "AMZ_SECRET")
 AMZ_TAG      = getenv_any("AMZ_PARTNER_TAG", "AMZ_ASSOC_TAG", "AMZ_TRACKING_ID")
@@ -280,19 +286,12 @@ except Exception as _e:
     amazon_client = None
 
 def amazon_search_one(term: str, limit: int, page: int,
-                      price_min: str = "", price_max: str = "") -> tuple[list[dict], None | int]:
-    """
-    Liefert eine Liste deiner Standard-Items (title, price, img, url, term, src='amazon').
-    PA-API kennt keine verlässliche 'total' wie eBay -> wir geben None zurück.
-    Preisfilter (min/max) erwartet Cent als Integer, daher *100.
-    """
+                      price_min: str = "", price_max: str = "") -> Tuple[List[Dict], Optional[int]]:
     if not (AMZ_OK and term and amazon_client):
         return [], None
-
     try:
-        item_count = max(1, min(limit, 10))   # PA-API max 10 pro Call
-        page = max(1, min(page, 10))          # PA-API Seiten 1..10
-
+        item_count = max(1, min(limit, 10))
+        page = max(1, min(page, 10))
         kwargs = {
             "keywords": term,
             "item_count": item_count,
@@ -305,33 +304,23 @@ def amazon_search_one(term: str, limit: int, page: int,
                 "DetailPageURL",
             ],
         }
-        if price_min:
-            kwargs["min_price"] = int(float(price_min) * 100)
-        if price_max:
-            kwargs["max_price"] = int(float(price_max) * 100)
+        if price_min: kwargs["min_price"] = int(float(price_min) * 100)
+        if price_max: kwargs["max_price"] = int(float(price_max) * 100)
 
         res = amazon_client.search_items(**kwargs)
 
-        items: list[dict] = []
+        items: List[Dict] = []
         for p in getattr(res, "items", []) or []:
-            # Title
-            title = None
             try:
                 title = p.item_info.title.display_value
             except Exception:
-                pass
-
-            # URL (enthält Partner-Tag)
+                title = "—"
             url = getattr(p, "detail_page_url", None)
-
-            # Bild
             img = None
             try:
                 img = p.images.primary.small.url
             except Exception:
                 pass
-
-            # Preis
             price_val, currency = None, None
             try:
                 pr = p.offers.listings[0].price
@@ -339,27 +328,19 @@ def amazon_search_one(term: str, limit: int, page: int,
                 currency  = getattr(pr, "currency", None)
             except Exception:
                 pass
-
             price_str = f"{price_val} {currency}" if price_val and currency else "–"
-            items.append({
-                "title": title or "—",
-                "price": price_str,
-                "img": img,
-                "url": url,
-                "term": term,
-                "src": "amazon",
-            })
-
+            asin = getattr(p, "asin", url or title) or f"{term}-{page}-{len(items)+1}"
+            items.append({"id": asin, "title": title, "price": price_str, "img": img, "url": url, "term": term, "src": "amazon"})
         return items, None
     except Exception as e:
         print("[amazon] search error:", e)
         return [], None
 
-def _backend_search_amazon(terms: list[str], filters: dict, page: int, per_page: int):
+def _backend_search_amazon(terms: List[str], filters: dict, page: int, per_page: int):
     if not AMZ_OK:
         return [], None
     per_term = max(1, per_page // max(1, len(terms)))
-    all_items: list[dict] = []
+    all_items: List[Dict] = []
     for t in terms:
         part, _ = amazon_search_one(
             t, per_term, page,
@@ -369,13 +350,11 @@ def _backend_search_amazon(terms: list[str], filters: dict, page: int, per_page:
         all_items.extend(part)
     return all_items[:per_page], None
 
-def _backend_search_combined(terms: list[str], filters: dict, page: int, per_page: int):
-    """Mischt eBay + Amazon: eBay ist Leitquelle (total), Amazon wird interleaved."""
+def _backend_search_combined(terms: List[str], filters: dict, page: int, per_page: int):
+    """eBay ist Leitquelle (liefert total), Amazon wird interleaved."""
     ebay_items, ebay_total = _backend_search_ebay(terms, filters, page, per_page)
     amz_items, _ = _backend_search_amazon(terms, filters, page, per_page)
-
-    # Interleave, damit die Liste gemischt ist
-    out: list[dict] = []
+    out: List[Dict] = []
     i = j = 0
     while len(out) < per_page and (i < len(ebay_items) or j < len(amz_items)):
         if i < len(ebay_items):
@@ -386,72 +365,160 @@ def _backend_search_combined(terms: list[str], filters: dict, page: int, per_pag
             out.append(amz_items[j]); j += 1
     return out, ebay_total
 
-@app.route("/_debug/amazon")
-def debug_amazon():
-    return jsonify({
-        "amz_enabled": AMZ_ENABLED,
-        "amz_ok": AMZ_OK,
-        "country": AMZ_COUNTRY,
-        "has_keys": bool(AMZ_ACCESS and AMZ_SECRET and AMZ_TAG),
-    })
+# -------------------------------------------------------------------
+# Suche + Cache Wrapper
+# -------------------------------------------------------------------
+def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int):
+    use_amazon = AMZ_OK
+    key = (
+        tuple(terms),
+        filters.get("price_min") or "",
+        filters.get("price_max") or "",
+        filters.get("sort") or "best",
+        tuple(filters.get("conditions") or []),
+        page, per_page,
+        "amz" if use_amazon else "ebay",
+    )
+    cached = _cache_get(key)
+    if cached:
+        return cached
+    if use_amazon:
+        items, total = _backend_search_combined(terms, filters, page, per_page)
+    else:
+        items, total = _backend_search_ebay(terms, filters, page, per_page)
+    _cache_set(key, (items, total))
+    return items, total
 
 # -------------------------------------------------------------------
-# Stripe (optional – fällt zurück, wenn nicht konfiguriert)
+# E-Mail: Versand + De-Duping
 # -------------------------------------------------------------------
-STRIPE_SECRET_KEY     = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_PRICE_PRO      = os.getenv("STRIPE_PRICE_PRO", "")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-
-STRIPE_OK = False
-try:
-    import stripe as _stripe
-    if STRIPE_SECRET_KEY:
-        _stripe.api_key = STRIPE_SECRET_KEY
-    STRIPE_OK = True
-    stripe = _stripe
-except Exception:
-    STRIPE_OK = False
-    stripe = None
-
-@app.post("/webhook")
-def stripe_webhook():
-    wh_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-    if not STRIPE_OK or not wh_secret:
-        return "webhook not configured", 400
-
-    payload = request.data
-    sig_header = request.headers.get("Stripe-Signature", "")
-
+def _send_email(to_email: str, subject: str, html_body: str) -> bool:
+    if not (SMTP_HOST and SMTP_FROM and to_email):
+        print("[email] SMTP configuration incomplete")
+        return False
     try:
-        event = stripe.Webhook.construct_event(payload, sig_header, wh_secret)  # type: ignore
-    except ValueError:
-        return "invalid payload", 400
-    except stripe.error.SignatureVerificationError:  # type: ignore
-        return "invalid signature", 400
+        msg = MIMEMultipart("alternative")
+        msg["From"] = SMTP_FROM
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-    etype = event.get("type")
-    data  = event.get("data", {}).get("object", {})
+        if SMTP_USE_SSL:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=20) as s:
+                if SMTP_USER: s.login(SMTP_USER, SMTP_PASS)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+                if SMTP_USE_TLS:
+                    s.starttls()
+                if SMTP_USER: s.login(SMTP_USER, SMTP_PASS)
+                s.send_message(msg)
+        print(f"[mail] sent via {SMTP_HOST}:{SMTP_PORT} tls={SMTP_USE_TLS} ssl={SMTP_USE_SSL}")
+        return True
+    except Exception as e:
+        print("[email] send failed:", e)
+        return False
 
-    if etype in ("checkout.session.completed", "customer.subscription.created"):
-        user_id = data.get("client_reference_id")
-        email   = (
-            (data.get("customer_details") or {}).get("email")
-            or data.get("customer_email")
-            or (data.get("metadata") or {}).get("email")
-        )
-        conn = get_db()
-        cur  = conn.cursor()
-        if user_id:
-            cur.execute("UPDATE users SET is_premium=1 WHERE id=?", (user_id,))
-        elif email:
-            cur.execute("UPDATE users SET is_premium=1 WHERE lower(email)=lower(?)", (email,))
-        conn.commit()
-        conn.close()
+def _make_search_hash(terms: List[str], filters: dict) -> str:
+    payload = {
+        "terms": [t.strip() for t in terms if t.strip()],
+        "filters": {
+            "price_min": filters.get("price_min") or "",
+            "price_max": filters.get("price_max") or "",
+            "sort": filters.get("sort") or "best",
+            "conditions": sorted(filters.get("conditions") or []),
+        },
+    }
+    s = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
-    return jsonify({"received": True})
+def _render_items_html(title: str, items: List[Dict]) -> str:
+    rows = []
+    for it in items[:NOTIFY_MAX_ITEMS_PER_MAIL]:
+        img = it.get("img") or "https://via.placeholder.com/96x72?text=%20"
+        url = it.get("url") or "#"
+        price = it.get("price") or "–"
+        src = it.get("src") or ""
+        badge = f'<span style="background:#eef;padding:2px 6px;border-radius:4px;font-size:12px;margin-left:8px">{src}</span>' if src else ""
+        rows.append(f"""
+        <tr>
+            <td style="padding:8px 12px"><img src="{img}" alt="" width="96" style="border:1px solid #ddd;border-radius:4px"></td>
+            <td style="padding:8px 12px">
+              <div style="font-weight:600;margin-bottom:4px"><a href="{url}" target="_blank" style="text-decoration:none;color:#0d6efd">{it.get('title') or '—'}</a>{badge}</div>
+              <div style="color:#333">{price}</div>
+            </td>
+        </tr>
+        """)
+    more = ""
+    if len(items) > NOTIFY_MAX_ITEMS_PER_MAIL:
+        more = f"<p style='margin-top:8px'>+ {len(items) - NOTIFY_MAX_ITEMS_PER_MAIL} weitere Treffer …</p>"
+    return f"""
+    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+      <h2 style="margin:0 0 12px">{title}</h2>
+      <table cellspacing="0" cellpadding="0" border="0">{''.join(rows)}</table>
+      {more}
+      <p style="margin-top:16px;color:#666;font-size:12px">Du erhältst diese Mail, weil du für diese Suche einen Alarm aktiviert hast.</p>
+    </div>
+    """
+
+def _mark_and_filter_new(user_email: str, search_hash: str, src: str, items: List[Dict]) -> List[Dict]:
+    """Nur Items zurückgeben, die für diese Suche/Person/Src noch nicht (oder nach Cooldown) gemailt wurden."""
+    if not items:
+        return []
+    now = int(time.time())
+    conn = get_db()
+    cur = conn.cursor()
+    new_items: List[Dict] = []
+    for it in items:
+        iid = str(it.get("id") or it.get("url") or it.get("title"))[:255]
+        cur.execute("""
+            SELECT last_sent FROM alert_seen
+            WHERE user_email=? AND search_hash=? AND src=? AND item_id=?
+        """, (user_email, search_hash, src, iid))
+        row = cur.fetchone()
+        if not row:
+            new_items.append(it)
+            cur.execute("""
+                INSERT INTO alert_seen (user_email, search_hash, src, item_id, first_seen, last_sent)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_email, search_hash, src, iid, now, 0))
+        else:
+            last_sent = int(row["last_sent"])
+            if last_sent == 0:
+                new_items.append(it)
+            else:
+                if now - last_sent >= NOTIFY_COOLDOWN_MIN * 60:
+                    new_items.append(it)
+    conn.commit()
+    conn.close()
+    return new_items
+
+def _group_by_src(items: List[Dict]) -> Dict[str, List[Dict]]:
+    groups: Dict[str, List[Dict]] = {}
+    for it in items:
+        src = (it.get("src") or "ebay").lower()
+        groups.setdefault(src, []).append(it)
+    return groups
+
+def _mark_sent(user_email: str, search_hash: str, src: str, items: List[Dict]) -> None:
+    now = int(time.time())
+    if not items:
+        return
+    conn = get_db()
+    cur = conn.cursor()
+    for it in items:
+        iid = str(it.get("id") or it.get("url") or it.get("title"))[:255]
+        cur.execute("""
+            UPDATE alert_seen
+               SET last_sent=?
+             WHERE user_email=? AND search_hash=? AND src=? AND item_id=?
+        """, (now, user_email, search_hash, src, iid))
+    conn.commit()
+    conn.close()
 
 # -------------------------------------------------------------------
-# DB (Mini-User-Tabelle)
+# DB (Users + Alerts/Seen)
 # -------------------------------------------------------------------
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_FILE), detect_types=sqlite3.PARSE_DECLTYPES)
@@ -461,6 +528,7 @@ def get_db() -> sqlite3.Connection:
 def init_db() -> None:
     conn = get_db()
     cur = conn.cursor()
+    # users
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -469,6 +537,31 @@ def init_db() -> None:
             is_premium INTEGER NOT NULL DEFAULT 0
         )
     """)
+    # items gesehen/versendet
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS alert_seen (
+            user_email   TEXT    NOT NULL,
+            search_hash  TEXT    NOT NULL,
+            src          TEXT    NOT NULL,
+            item_id      TEXT    NOT NULL,
+            first_seen   INTEGER NOT NULL,
+            last_sent    INTEGER NOT NULL,
+            PRIMARY KEY (user_email, search_hash, src, item_id)
+        )
+    """)
+    # gespeicherte Alerts (für Cron)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS search_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email   TEXT NOT NULL,
+            terms_json   TEXT NOT NULL,
+            filters_json TEXT NOT NULL,
+            per_page     INTEGER NOT NULL DEFAULT 20,
+            is_active    INTEGER NOT NULL DEFAULT 1,
+            last_run_ts  INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_active ON search_alerts(is_active)")
     conn.commit()
     conn.close()
 
@@ -500,7 +593,7 @@ def safe_render(template_name: str, **ctx):
 </body></html>"""
 
 # -------------------------------------------------------------------
-# Context-Processor (Limits + QS-Helper)
+# Context-Processor
 # -------------------------------------------------------------------
 def _build_query(existing: dict, **extra) -> str:
     merged = {**existing, **{k: v for k, v in extra.items() if v is not None}}
@@ -517,23 +610,30 @@ def _build_query(existing: dict, **extra) -> str:
     return urlencode(pairs)
 
 @app.context_processor
-def inject_limits_and_helpers():
+def inject_globals():
     return {
         "FREE_SEARCH_LIMIT": FREE_SEARCH_LIMIT,
         "PREMIUM_SEARCH_LIMIT": PREMIUM_SEARCH_LIMIT,
         "qs": _build_query,
-        # NEU: Amazon-Daten für Templates (Buttons)
-        "AMZ_TAG": os.getenv("AMZ_ASSOC_TAG", ""),         # z.B. dein-tag-21
-        "AMZ_COUNTRY": os.getenv("AMZ_COUNTRY", "DE"),     # DE / US / GB ...
+        "plausible_domain": PLAUSIBLE_DOMAIN,
+        "AMZ_TAG": os.getenv("AMZ_ASSOC_TAG", ""),
+        "AMZ_COUNTRY": os.getenv("AMZ_COUNTRY", "DE"),
     }
+
 # -------------------------------------------------------------------
-# Session-Defaults
+# Session-Defaults + UTM
 # -------------------------------------------------------------------
 @app.before_request
 def _ensure_session_defaults():
     session.setdefault("free_search_count", 0)
     session.setdefault("is_premium", False)
     session.setdefault("user_email", "guest")
+    # UTM nur einmalig erfassen
+    if not session.get("utm"):
+        utm_keys = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]
+        utm = {k: request.args.get(k) for k in utm_keys if request.args.get(k)}
+        if utm:
+            session["utm"] = utm
 
 def _user_search_limit() -> int:
     return PREMIUM_SEARCH_LIMIT if session.get("is_premium") else FREE_SEARCH_LIMIT
@@ -606,7 +706,9 @@ def public_home():
 
 @app.route("/pricing")
 def public_pricing():
-    return safe_render("public_pricing.html", title="Preise – ebay-agent-cockpit")
+    ev_free_limit_hit = bool(session.pop("ev_free_limit_hit", False))
+    return safe_render("public_pricing.html", title="Preise – ebay-agent-cockpit",
+                       ev_free_limit_hit=ev_free_limit_hit)
 
 @app.route("/dashboard")
 def dashboard():
@@ -626,30 +728,9 @@ def start_free():
 # -------------------------------------------------------------------
 # Suche – PRG + Pagination + Filter
 # -------------------------------------------------------------------
-def _collect_params(src) -> dict:
-    params = {
-        "q1": (src.get("q1") or "").strip(),
-        "q2": (src.get("q2") or "").strip(),
-        "q3": (src.get("q3") or "").strip(),
-        "price_min": (src.get("price_min") or "").strip(),
-        "price_max": (src.get("price_max") or "").strip(),
-        "sort": (src.get("sort") or "best").strip(),
-        "per_page": (src.get("per_page") or "").strip(),
-    }
-    try:
-        params["condition"] = src.getlist("condition")
-    except Exception:
-        raw = (src.get("condition") or "").strip()
-        params["condition"] = [s for s in raw.split(",") if s]
-    return params
-
-def _params_to_terms(params: dict) -> List[str]:
-    return [t for t in [params.get("q1"), params.get("q2"), params.get("q3")] if t]
-
-
 @app.route("/search", methods=["GET", "POST"])
 def search():
-    # POST -> Redirect mit Querystring (PRG), inkl. Mehrfachwerte für condition
+    # POST -> Redirect mit Querystring (PRG)
     if request.method == "POST":
         params = {
             "q1": (request.form.get("q1") or "").strip(),
@@ -659,18 +740,17 @@ def search():
             "price_max": (request.form.get("price_max") or "").strip(),
             "sort": (request.form.get("sort") or "best").strip(),
             "per_page": (request.form.get("per_page") or "").strip(),
-            # WICHTIG: Mehrfachauswahl sauber übernehmen
             "condition": request.form.getlist("condition"),
         }
         # Free-Limit zählen (nur beim Absenden)
         if not session.get("is_premium", False):
             count = int(session.get("free_search_count", 0))
             if count >= FREE_SEARCH_LIMIT:
+                session["ev_free_limit_hit"] = True
                 flash(f"Kostenloses Limit ({FREE_SEARCH_LIMIT}) erreicht – bitte Upgrade buchen.", "info")
                 return redirect(url_for("public_pricing"))
             session["free_search_count"] = count + 1
 
-        # Seite zurücksetzen
         params["page"] = 1
         return redirect(url_for("search", **params))
 
@@ -688,7 +768,6 @@ def search():
         "price_min": request.args.get("price_min", "").strip(),
         "price_max": request.args.get("price_max", "").strip(),
         "sort": request.args.get("sort", "best").strip(),
-        # WICHTIG: Mehrfachwerte lesen
         "conditions": request.args.getlist("condition"),
     }
 
@@ -706,7 +785,6 @@ def search():
     has_prev = page > 1
     has_next = (total_pages and page < total_pages) or (not total_pages and len(items) == per_page)
 
-    # Basis-Querystring für Paginator (enthält auch mehrfach 'condition')
     base_qs = {
         "q1": request.args.get("q1", ""),
         "q2": request.args.get("q2", ""),
@@ -734,16 +812,220 @@ def search():
         },
         base_qs=base_qs,
     )
-# Stripe Checkout (einmalig, mit Metadaten)
 
 # -------------------------------------------------------------------
+# Alerts: Subscribe / Send-now / Cron (HTTP-Trigger-Variante siehe unten)
+# -------------------------------------------------------------------
+@app.post("/alerts/subscribe")
+def alerts_subscribe():
+    """Speichert die aktuelle Suche als Alert (für Cron)."""
+    user_email = session.get("user_email") or ""
+    if not user_email or user_email.lower() == "guest" or "@" not in user_email:
+        flash("Bitte einloggen, um Alarme zu speichern.", "warning")
+        return redirect(url_for("login"))
+
+    terms = [t for t in [
+        (request.form.get("q1") or "").strip(),
+        (request.form.get("q2") or "").strip(),
+        (request.form.get("q3") or "").strip(),
+    ] if t]
+    if not terms:
+        flash("Keine Suchbegriffe übergeben.", "warning")
+        return redirect(url_for("search"))
+
+    filters = {
+        "price_min": (request.form.get("price_min") or "").strip(),
+        "price_max": (request.form.get("price_max") or "").strip(),
+        "sort": (request.form.get("sort") or "best").strip(),
+        "conditions": request.form.getlist("condition"),
+    }
+    per_page = 30
+    try:
+        per_page = min(100, max(5, int(request.form.get("per_page", "30"))))
+    except Exception:
+        pass
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO search_alerts (user_email, terms_json, filters_json, per_page, is_active, last_run_ts)
+        VALUES (?, ?, ?, ?, 1, 0)
+    """, (user_email, json.dumps(terms, ensure_ascii=False), json.dumps(filters, ensure_ascii=False), per_page))
+    conn.commit()
+    conn.close()
+
+    flash("Alarm gespeichert. Du erhältst eine E-Mail, wenn neue Treffer gefunden werden.", "success")
+    return redirect(url_for("search", **{**request.form}))
+
+@app.post("/alerts/send-now")
+def alerts_send_now():
+    """Manuell: Suche aus Formular ausführen und E-Mail an (eingeloggt) senden – mit De-Duping."""
+    user_email = session.get("user_email") or request.form.get("email") or ""
+    if not user_email or user_email.lower() == "guest" or "@" not in user_email:
+        flash("Gültige E-Mail erforderlich (einloggen oder E-Mail angeben).", "warning")
+        return redirect(url_for("search"))
+
+    terms = [t for t in [
+        (request.form.get("q1") or "").strip(),
+        (request.form.get("q2") or "").strip(),
+        (request.form.get("q3") or "").strip(),
+    ] if t]
+    if not terms:
+        flash("Keine Suchbegriffe übergeben.", "warning")
+        return redirect(url_for("search"))
+
+    filters = {
+        "price_min": (request.form.get("price_min") or "").strip(),
+        "price_max": (request.form.get("price_max") or "").strip(),
+        "sort": (request.form.get("sort") or "best").strip(),
+        "conditions": request.form.getlist("condition"),
+    }
+
+    per_page = 30
+    try:
+        per_page = min(100, max(5, int(request.form.get("per_page", "30"))))
+    except Exception:
+        pass
+
+    items, _ = _search_with_cache(terms, filters, page=1, per_page=per_page)
+    search_hash = _make_search_hash(terms, filters)
+
+    # De-Duping gruppenweise pro src
+    groups = _group_by_src(items)
+    new_all: List[Dict] = []
+    for src, group in groups.items():
+        new_items = _mark_and_filter_new(user_email, search_hash, src, group)
+        new_all.extend(new_items)
+
+    if not new_all:
+        flash("Keine neuen Treffer (alles schon gemailt oder noch im Cooldown).", "info")
+        return redirect(url_for("search", **{**request.form}))
+
+    subject = f"Neue Treffer für „{', '.join(terms)}“ – {len(new_all)} neu"
+    html = _render_items_html(subject, new_all)
+    ok = _send_email(user_email, subject, html)
+    if ok:
+        for src, group in groups.items():
+            # markiere nur die, die wir tatsächlich geschickt haben
+            sent_subset = [it for it in new_all if (it.get("src") or "ebay").lower() == src]
+            _mark_sent(user_email, search_hash, src, sent_subset)
+        flash(f"E-Mail versendet an {user_email} mit {len(new_all)} neuen Treffern.", "success")
+    else:
+        flash("E-Mail-Versand fehlgeschlagen (SMTP prüfen).", "danger")
+
+    return redirect(url_for("search", **{**request.form}))
+
+# ALT/Kompatibilität (deprecated): Query-basiertes Cron-Endpoint
+@app.get("/cron/run-alerts")
+def cron_run_alerts():
+    """ALT (deprecated). Bitte künftig den HTTP-Trigger /internal/run-agent (POST + Bearer) verwenden."""
+    token = request.args.get("token", "")
+    if not CRON_TOKEN or token != CRON_TOKEN:
+        return abort(403)
+
+    now = int(time.time())
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, user_email, terms_json, filters_json, per_page FROM search_alerts WHERE is_active=1")
+    alerts = cur.fetchall()
+    conn.close()
+
+    total_checked = 0
+    total_sent = 0
+    for a in alerts:
+        total_checked += 1
+        user_email = a["user_email"]
+        try:
+            terms = json.loads(a["terms_json"] or "[]")
+            filters = json.loads(a["filters_json"] or "{}")
+            per_page = int(a["per_page"] or 30)
+        except Exception:
+            continue
+
+        items, _ = _search_with_cache(terms, filters, page=1, per_page=per_page)
+        search_hash = _make_search_hash(terms, filters)
+
+        groups = _group_by_src(items)
+        new_all: List[Dict] = []
+        for src, group in groups.items():
+            new_items = _mark_and_filter_new(user_email, search_hash, src, group)
+            new_all.extend(new_items)
+
+        if new_all and user_email and "@" in user_email:
+            subject = f"Neue Treffer für „{', '.join(terms)}“ – {len(new_all)} neu"
+            html = _render_items_html(subject, new_all)
+            if _send_email(user_email, subject, html):
+                for src, _group in groups.items():
+                    sent_subset = [it for it in new_all if (it.get("src") or "ebay").lower() == src]
+                    _mark_sent(user_email, search_hash, src, sent_subset)
+                total_sent += 1
+
+        # last_run_ts aktualisieren
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE search_alerts SET last_run_ts=? WHERE id=?", (now, int(a["id"])))
+        conn.commit()
+        conn.close()
+
+    return jsonify({"ok": True, "alerts_checked": total_checked, "alerts_emailed": total_sent})
+
+# -------------------------------------------------------------------
+# Stripe (optional – fällt zurück, wenn nicht konfiguriert)
+# -------------------------------------------------------------------
+STRIPE_SECRET_KEY     = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_PRICE_PRO      = os.getenv("STRIPE_PRICE_PRO", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+STRIPE_OK = False
+try:
+    import stripe as _stripe
+    if STRIPE_SECRET_KEY:
+        _stripe.api_key = STRIPE_SECRET_KEY
+    STRIPE_OK = True
+    stripe = _stripe
+except Exception:
+    STRIPE_OK = False
+    stripe = None
+
+@app.post("/webhook")
+def stripe_webhook():
+    wh_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    if not STRIPE_OK or not wh_secret:
+        return "webhook not configured", 400
+
+    payload = request.data
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, wh_secret)  # type: ignore
+    except ValueError:
+        return "invalid payload", 400
+    except stripe.error.SignatureVerificationError:  # type: ignore
+        return "invalid signature", 400
+
+    etype = event.get("type")
+    data  = event.get("data", {}).get("object", {})
+
+    if etype in ("checkout.session.completed", "customer.subscription.created"):
+        user_id = data.get("client_reference_id")
+        email   = (
+            (data.get("customer_details") or {}).get("email")
+            or data.get("customer_email")
+            or (data.get("metadata") or {}).get("email")
+        )
+        conn = get_db()
+        cur  = conn.cursor()
+        if user_id:
+            cur.execute("UPDATE users SET is_premium=1 WHERE id=?", (user_id,))
+        elif email:
+            cur.execute("UPDATE users SET is_premium=1 WHERE lower(email)=lower(?)", (email,))
+        conn.commit()
+        conn.close()
+
+    return jsonify({"received": True})
+
 @app.route("/checkout", methods=["GET", "POST"])
 def checkout():
-    # optional: wenn jemand per POST kommt, einfach auf Preise zurück
-    if request.method == "POST":
-        pass  # wir fallen unten in den Checkout durch
-
-    # Stripe-Konfiguration prüfen
     if not STRIPE_OK or not STRIPE_SECRET_KEY or not STRIPE_PRICE_PRO:
         flash("Stripe ist nicht konfiguriert.", "warning")
         return redirect(url_for("public_pricing"))
@@ -753,11 +1035,9 @@ def checkout():
         cancel_url  = url_for("checkout_cancel",  _external=True)
 
         client_ref = str(session.get("user_id") or "")
-
-        # WICHTIG: 'guest' oder ungültige Angaben nicht an Stripe schicken
         user_email = (session.get("user_email") or "").strip()
         if user_email.lower() == "guest" or "@" not in user_email:
-            user_email = None  # dann lässt Stripe den Käufer selbst die E-Mail eingeben
+            user_email = None
 
         session_stripe = stripe.checkout.Session.create(  # type: ignore
             mode="subscription",
@@ -775,13 +1055,10 @@ def checkout():
         flash(f"Stripe-Fehler: {e}", "danger")
         return redirect(url_for("public_pricing"))
 
-
 @app.route("/billing/portal")
 def billing_portal():
-    # Solange wir noch kein echtes Stripe-Portal nutzen, verhindern wir einen Fehler:
     flash("Abo-Verwaltung ist demnächst verfügbar.", "info")
     return redirect(url_for("public_pricing"))
-
 
 @app.route("/checkout/success")
 def checkout_success():
@@ -793,7 +1070,6 @@ def checkout_success():
 def checkout_cancel():
     flash("Vorgang abgebrochen.", "info")
     return redirect(url_for("public_pricing"))
-
 
 # -------------------------------------------------------------------
 # Debug / Health
@@ -807,6 +1083,15 @@ def debug_ebay():
         "token_cached": bool(_EBAY_TOKEN["access_token"]),
         "token_valid_for_s": max(0, int(float(_EBAY_TOKEN.get("expires_at", 0)) - time.time())),
         "live_search": LIVE_SEARCH,
+    })
+
+@app.route("/_debug/amazon")
+def debug_amazon():
+    return jsonify({
+        "amz_enabled": AMZ_ENABLED,
+        "amz_ok": AMZ_OK,
+        "country": AMZ_COUNTRY,
+        "has_keys": bool(AMZ_ACCESS and AMZ_SECRET and AMZ_TAG),
     })
 
 @app.route("/debug")
@@ -832,17 +1117,18 @@ def debug_env():
             "STRIPE_PRICE_PRO_set": bool(STRIPE_PRICE_PRO),
             "STRIPE_SECRET_KEY_set": bool(STRIPE_SECRET_KEY),
             "STRIPE_WEBHOOK_SECRET_set": bool(STRIPE_WEBHOOK_SECRET),
-            # neu: Amazon-Status
             "AMZ_ENABLED": AMZ_ENABLED,
             "AMZ_ACCESS_KEY_set": bool(AMZ_ACCESS),
             "AMZ_SECRET_set": bool(AMZ_SECRET),
             "AMZ_TAG_set": bool(AMZ_TAG),
             "AMZ_COUNTRY": AMZ_COUNTRY,
+            "PLAUSIBLE_DOMAIN": PLAUSIBLE_DOMAIN,
         },
         "session": {
             "free_search_count": int(session.get("free_search_count", 0)),
             "is_premium": bool(session.get("is_premium", False)),
             "user_email": user_email,
+            "utm": session.get("utm") or {},
         },
     }
     return jsonify(data)
@@ -851,6 +1137,7 @@ def debug_env():
 def healthz():
     return "ok", 200
 
+# (Optional) Amazon Direkt-Suche
 @app.route("/amazon/search")
 def amazon_search():
     q = (request.args.get("q") or "").strip()
@@ -878,6 +1165,56 @@ def amazon_search():
                     "total_pages":1, "has_prev":False, "has_next":False},
         base_qs={"q1": q, "per_page": len(items)}
     )
+
+# -------------------------------------------------------------------
+# PRIVATER Cron-Trigger (neu, empfohlen): /internal/run-agent  (POST + Bearer)
+# -------------------------------------------------------------------
+# Lock laden (mit sicherem Fallback, falls lock.py fehlt)
+try:
+    from lock import agent_lock  # Datei-Lock über Prozesse/Worker
+except Exception:
+    from contextlib import contextmanager
+    from threading import Lock as _TLock
+    _fallback_lock = _TLock()
+    @contextmanager
+    def agent_lock(timeout: int = 110):
+        ok = _fallback_lock.acquire(timeout=timeout if timeout else None)
+        try:
+            yield
+        finally:
+            if ok:
+                _fallback_lock.release()
+
+internal_bp = Blueprint("internal", __name__)
+
+@internal_bp.route("/internal/run-agent", methods=["POST"])
+def internal_run_agent():
+    # 1) Auth via Bearer-Token
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not AGENT_TRIGGER_TOKEN or token != AGENT_TRIGGER_TOKEN:
+        abort(401)
+
+    # 2) Prozess-/Worker-übergreifender Lock
+    with agent_lock():
+        # 3) Agent-Lauf starten
+        try:
+            from agent import run_agent_once
+        except Exception as e:
+            print(f"[internal] cannot import agent.run_agent_once: {e}")
+            return jsonify({"status": "error", "error": "agent_import_failed"}), 500
+
+        # Falls der Agent Flask-Extensions braucht, Kontext bereitstellen:
+        with current_app.app_context():
+            try:
+                run_agent_once()
+            except Exception as e:
+                print(f"[internal] agent run failed: {e}")
+                return jsonify({"status": "error", "error": "agent_run_failed"}), 500
+
+    return jsonify({"status": "ok"}), 200
+
+# Registrierung des internen Blueprints (jetzt, wo er existiert)
+app.register_blueprint(internal_bp)
 
 # -------------------------------------------------------------------
 # Run (nur lokal)

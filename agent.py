@@ -1,10 +1,20 @@
-# agent.py  —  Cron-Worker für E-Mail-Benachrichtigungen
-import os, time, sqlite3, smtplib, requests
-from email.message import EmailMessage
-from html import escape
-from typing import List, Dict, Optional, Tuple
+# agent.py — Cron/HTTP-Worker für E-Mail-Benachrichtigungen (kompatibel zur app.py)
+# - Liest Alerts aus search_alerts (is_active=1)
+# - De-Dup über alert_seen(user_email, search_hash, src, item_id, first_seen, last_sent)
+# - SMTP-Patch: unterstützt SMTP_* und EMAIL_*
+# - Aufruf: run_agent_once() (von /internal/run-agent) oder lokal via __main__
 
-# ---------- Helpers ----------
+from __future__ import annotations
+import os, time, json, sqlite3, smtplib, ssl, hashlib
+from typing import List, Dict, Optional, Iterable, Tuple
+from email.message import EmailMessage
+
+import requests
+
+# -----------------------
+# Helpers & ENV
+# -----------------------
+
 def as_bool(v: Optional[str], default=False) -> bool:
     if v is None:
         return default
@@ -23,10 +33,10 @@ def sqlite_file_from_url(url: str) -> str:
         return url.replace("sqlite:///", "", 1)
     return url
 
-# ---------- Config aus ENV ----------
 DB_URL   = os.getenv("DB_PATH", "sqlite:///instance/db.sqlite3")
 DB_FILE  = sqlite_file_from_url(DB_URL)
 
+# eBay API
 EBAY_CLIENT_ID     = getenv_any("EBAY_CLIENT_ID", "EBAY_APP_ID")
 EBAY_CLIENT_SECRET = getenv_any("EBAY_CLIENT_SECRET", "EBAY_CERT_ID")
 EBAY_SCOPES        = os.getenv("EBAY_SCOPES", "https://api.ebay.com/oauth/api_scope")
@@ -41,79 +51,191 @@ MARKETPLACE_BY_GLOBAL = {
 }
 EBAY_MARKETPLACE_ID, EBAY_CURRENCY = MARKETPLACE_BY_GLOBAL.get(EBAY_GLOBAL_ID, ("EBAY_DE","EUR"))
 
-# SMTP / Mail
-SMTP_HOST = os.getenv("EMAIL_SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("EMAIL_SMTP_PORT", "587"))
-SMTP_USER = os.getenv("EMAIL_USER", "")
-SMTP_PASS = os.getenv("EMAIL_PASSWORD", "")
-EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER or "alerts@localhost")
-DEFAULT_TO = os.getenv("ALERT_DEFAULT_TO", "")
+# SMTP-Patch: primär SMTP_*, Fallback EMAIL_*
+def get_smtp_settings() -> Dict[str, object]:
+    host = os.getenv("SMTP_HOST") or os.getenv("EMAIL_SMTP_HOST", "smtp.gmail.com")
+    port = int(os.getenv("SMTP_PORT") or os.getenv("EMAIL_SMTP_PORT") or "587")
+    user = os.getenv("SMTP_USER") or os.getenv("EMAIL_USER", "")
+    pwd  = os.getenv("SMTP_PASS") or os.getenv("EMAIL_PASSWORD", "")
+    from_addr = os.getenv("SMTP_FROM") or os.getenv("EMAIL_FROM") or (user or "alerts@localhost")
+    use_tls = as_bool(os.getenv("SMTP_USE_TLS", "1"))
+    use_ssl = as_bool(os.getenv("SMTP_USE_SSL", "0"))
+    return {
+        "host": host, "port": port, "user": user, "password": pwd,
+        "from": from_addr, "use_tls": use_tls, "use_ssl": use_ssl,
+    }
 
-# Lauf-Parameter
-MAX_ITEMS_PER_ALERT = int(os.getenv("ALERT_MAX_ITEMS", "12"))
+NOTIFY_MAX_ITEMS_PER_MAIL = int(os.getenv("ALERT_MAX_ITEMS", "12"))
 DEBUG_LOG = as_bool(os.getenv("ALERT_DEBUG", "0"))
 
-# eBay Token Cache
-_EBAY_TOKEN = {"access_token": None, "expires_at": 0.0}
+# -----------------------
+# DB
+# -----------------------
 
-# ---------- DB ----------
 def get_db() -> sqlite3.Connection:
-    if os.path.dirname(DB_FILE):
-        os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+    dirname = os.path.dirname(DB_FILE)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
 
-def init_db():
+def table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,))
+    return bool(cur.fetchone())
+
+def init_db_if_needed() -> None:
+    # Nur anlegen, falls Tabellen fehlen. (Kompatibel zur app.py)
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT NOT NULL,
-            q1 TEXT,
-            q2 TEXT,
-            q3 TEXT,
-            price_min TEXT,
-            price_max TEXT,
-            sort TEXT,              -- best | price_asc | price_desc | newly
-            conditions TEXT,        -- Komma: NEW,USED,OPEN_BOX,...
-            per_page INTEGER DEFAULT 30,
-            enabled INTEGER NOT NULL DEFAULT 1,
-            last_run TIMESTAMP
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS alert_seen (
-            alert_id INTEGER NOT NULL,
-            item_id  TEXT NOT NULL,
-            PRIMARY KEY (alert_id, item_id)
-        )
-    """)
+    cur  = conn.cursor()
+    # search_alerts (wie in app.py)
+    if not table_exists(conn, "search_alerts"):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS search_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_email   TEXT NOT NULL,
+                terms_json   TEXT NOT NULL,
+                filters_json TEXT NOT NULL,
+                per_page     INTEGER NOT NULL DEFAULT 20,
+                is_active    INTEGER NOT NULL DEFAULT 1,
+                last_run_ts  INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_active ON search_alerts(is_active)")
+    # alert_seen (Schema aus app.py)
+    if not table_exists(conn, "alert_seen"):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS alert_seen (
+                user_email   TEXT    NOT NULL,
+                search_hash  TEXT    NOT NULL,
+                src          TEXT    NOT NULL,
+                item_id      TEXT    NOT NULL,
+                first_seen   INTEGER NOT NULL,
+                last_sent    INTEGER NOT NULL,
+                PRIMARY KEY (user_email, search_hash, src, item_id)
+            )
+        """)
     conn.commit()
     conn.close()
 
-# ---------- Mail ----------
-def send_email(to_addr: str, subject: str, html_body: str):
-    if not SMTP_USER or not SMTP_PASS:
-        print("[mail] SMTP credentials missing -> skip")
-        return
-    msg = EmailMessage()
-    msg["From"] = EMAIL_FROM
-    msg["To"] = to_addr
-    msg["Subject"] = subject
-    msg.set_content("HTML only", subtype="plain")
-    msg.add_alternative(html_body, subtype="html")
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
-        s.starttls()
-        s.login(SMTP_USER, SMTP_PASS)
-        s.send_message(msg)
+# -----------------------
+# SMTP
+# -----------------------
 
-# ---------- eBay API ----------
+def send_mail(
+    smtp: Dict[str, object],
+    to_addrs: Iterable[str],
+    subject: str,
+    body_html: str,
+) -> bool:
+    host = smtp.get("host"); port = int(smtp.get("port") or 0)
+    user = smtp.get("user"); pwd  = smtp.get("password")
+    from_addr = smtp.get("from")
+    use_tls = bool(smtp.get("use_tls")); use_ssl = bool(smtp.get("use_ssl"))
+
+    if not host or not port or not from_addr or not to_addrs:
+        print("[mail] SMTP config incomplete -> skip")
+        return False
+    if user and not pwd:
+        print("[mail] SMTP password missing -> skip")
+        return False
+
+    msg = EmailMessage()
+    msg["From"] = str(from_addr)
+    msg["To"] = ", ".join([t for t in to_addrs if t])
+    msg["Subject"] = subject
+    msg.set_content("HTML only")
+    msg.add_alternative(body_html, subtype="html")
+
+    try:
+        if use_ssl:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(host, port, context=context, timeout=60) as s:
+                if user: s.login(user, pwd)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=60) as s:
+                if use_tls:
+                    s.starttls(context=ssl.create_default_context())
+                if user: s.login(user, pwd)
+                s.send_message(msg)
+        print(f"[mail] sent via {host}:{port} tls={use_tls} ssl={use_ssl}")
+        return True
+    except Exception as e:
+        print(f"[mail] ERROR: {e}")
+        return False
+
+# -----------------------
+# De-Dup kompatibel zur app.py
+# -----------------------
+
+def make_search_hash(terms: List[str], filters: Dict[str, object]) -> str:
+    payload = {
+        "terms": [t.strip() for t in terms if str(t).strip()],
+        "filters": {
+            "price_min": (filters.get("price_min") or ""),
+            "price_max": (filters.get("price_max") or ""),
+            "sort": (filters.get("sort") or "best"),
+            "conditions": sorted(filters.get("conditions") or []),
+        },
+    }
+    s = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()
+
+def mark_and_filter_new(user_email: str, search_hash: str, src: str, items: List[Dict]) -> List[Dict]:
+    if not items:
+        return []
+    now = int(time.time())
+    conn = get_db()
+    cur  = conn.cursor()
+    new_items: List[Dict] = []
+    for it in items:
+        iid = str(it.get("id") or it.get("url") or it.get("title"))[:255]
+        cur.execute("""
+            SELECT last_sent FROM alert_seen
+            WHERE user_email=? AND search_hash=? AND src=? AND item_id=?
+        """, (user_email, search_hash, src, iid))
+        row = cur.fetchone()
+        if not row:
+            new_items.append(it)
+            cur.execute("""
+                INSERT INTO alert_seen (user_email, search_hash, src, item_id, first_seen, last_sent)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_email, search_hash, src, iid, now, 0))
+        else:
+            # Cooldown-Logik optional: hier senden wir nochmal, wenn last_sent==0
+            if int(row["last_sent"] or 0) == 0:
+                new_items.append(it)
+    conn.commit()
+    conn.close()
+    return new_items
+
+def mark_sent(user_email: str, search_hash: str, src: str, items: List[Dict]) -> None:
+    if not items:
+        return
+    now = int(time.time())
+    conn = get_db()
+    cur  = conn.cursor()
+    for it in items:
+        iid = str(it.get("id") or it.get("url") or it.get("title"))[:255]
+        cur.execute("""
+            UPDATE alert_seen SET last_sent=? 
+            WHERE user_email=? AND search_hash=? AND src=? AND item_id=?
+        """, (now, user_email, search_hash, src, iid))
+    conn.commit()
+    conn.close()
+
+# -----------------------
+# eBay API
+# -----------------------
+
+_http = requests.Session()
+_EBAY_TOKEN: Dict[str, object] = {"access_token": None, "expires_at": 0.0}
+
 def ebay_get_token() -> Optional[str]:
     now = time.time()
-    if _EBAY_TOKEN["access_token"] and now < _EBAY_TOKEN["expires_at"]:
-        return _EBAY_TOKEN["access_token"]
+    if _EBAY_TOKEN["access_token"] and now < float(_EBAY_TOKEN["expires_at"] or 0):
+        return str(_EBAY_TOKEN["access_token"])
     if not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
         print("[ebay] Missing client id/secret")
         return None
@@ -121,25 +243,25 @@ def ebay_get_token() -> Optional[str]:
     auth = requests.auth.HTTPBasicAuth(EBAY_CLIENT_ID, EBAY_CLIENT_SECRET)
     data = {"grant_type": "client_credentials", "scope": EBAY_SCOPES}
     try:
-        r = requests.post(url, auth=auth, data=data, timeout=20)
+        r = _http.post(url, auth=auth, data=data, timeout=20)
         r.raise_for_status()
-        j = r.json()
+        j = r.json() or {}
         _EBAY_TOKEN["access_token"] = j.get("access_token")
         _EBAY_TOKEN["expires_at"]  = time.time() + int(j.get("expires_in", 7200)) - 60
-        return _EBAY_TOKEN["access_token"]
+        return str(_EBAY_TOKEN["access_token"])
     except Exception as e:
         print(f"[ebay_token] {e}")
         return None
 
 def _build_ebay_filter(price_min: str, price_max: str, conditions: List[str]) -> Optional[str]:
-    parts = []
+    parts: List[str] = []
     pmn = (price_min or "").strip()
     pmx = (price_max or "").strip()
     if pmn or pmx:
         parts.append(f"price:[{pmn}..{pmx}]")
         if EBAY_CURRENCY:
             parts.append(f"priceCurrency:{EBAY_CURRENCY}")
-    conds = [c.strip().upper() for c in conditions if c.strip()]
+    conds = [c.strip().upper() for c in (conditions or []) if c.strip()]
     if conds:
         parts.append("conditions:{" + ",".join(conds) + "}")
     return ",".join(parts) if parts else None
@@ -148,12 +270,9 @@ def _map_sort(s: str) -> Optional[str]:
     s = (s or "").strip()
     if not s or s == "best":
         return None
-    if s == "price_asc":
-        return "price"
-    if s == "price_desc":
-        return "-price"
-    if s == "newly":
-        return "newlyListed"
+    if s == "price_asc":  return "price"
+    if s == "price_desc": return "-price"
+    if s == "newly":      return "newlyListed"
     return None
 
 def ebay_search(term: str, limit: int, offset: int,
@@ -165,141 +284,194 @@ def ebay_search(term: str, limit: int, offset: int,
     url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
     params = {"q": term, "limit": max(1, min(limit, 50)), "offset": max(0, offset)}
     filt = _build_ebay_filter(price_min, price_max, conditions)
-    if filt:
-        params["filter"] = filt
+    if filt: params["filter"] = filt
     srt = _map_sort(sort_ui)
-    if srt:
-        params["sort"] = srt
+    if srt:  params["sort"] = srt
     headers = {
         "Authorization": f"Bearer {tok}",
         "X-EBAY-C-MARKETPLACE-ID": EBAY_MARKETPLACE_ID
     }
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=20)
+        r = _http.get(url, headers=headers, params=params, timeout=20)
         r.raise_for_status()
         j = r.json() or {}
-        items = []
+        items: List[Dict] = []
         for it in j.get("itemSummaries", []) or []:
             items.append({
-                "id": it.get("itemId") or it.get("itemGroupId") or it.get("itemWebUrl"),
+                "id": it.get("itemId") or it.get("legacyItemId") or it.get("itemWebUrl"),
                 "title": it.get("title") or "—",
                 "url": it.get("itemWebUrl"),
                 "img": (it.get("image") or {}).get("imageUrl"),
                 "price": (it.get("price") or {}).get("value"),
                 "cur": (it.get("price") or {}).get("currency"),
+                "src": "ebay",
             })
         return items
     except Exception as e:
         print(f"[ebay_search] {e}")
         return []
 
-# ---------- Alerts ----------
-def ensure_default_alert_if_empty():
-    """Legt optional einen Beispiel-Alert an (nur einmal),
-       wenn ALERT_DEFAULT_TO gesetzt ist und noch keine Alerts existieren."""
-    to = DEFAULT_TO or os.getenv("OWNER_EMAIL", "")
-    if not to:
-        return
-    conn = get_db()
-    cur  = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM alerts")
-    count = cur.fetchone()[0]
-    if count == 0:
-        cur.execute("""INSERT INTO alerts (user_email,q1,q2,q3,price_min,price_max,sort,conditions,per_page,enabled)
-                       VALUES (?,?,?,?,?,?,?,?,?,1)""",
-                    (to, "iphone", "Tonband", "iphone 11", "", "", "best", "NEW,USED", 30))
-        conn.commit()
-        print(f"[alerts] default alert created for {to}")
-    conn.close()
+# -----------------------
+# Alerts laden (aus search_alerts)
+# -----------------------
 
-def load_alerts() -> List[sqlite3.Row]:
+def load_alerts() -> List[Dict]:
+    """
+    Lädt aktive Alerts aus search_alerts und mapt sie auf ein einheitliches Dict.
+    Rückgabe pro Alert:
+      {
+        'id': int,
+        'user_email': str,
+        'terms': List[str],
+        'filters': {'price_min','price_max','sort','conditions':List[str]},
+        'per_page': int
+      }
+    """
     conn = get_db()
-    rows = conn.execute("SELECT * FROM alerts WHERE enabled=1").fetchall()
+    rows = conn.execute(
+        "SELECT id, user_email, terms_json, filters_json, per_page FROM search_alerts WHERE is_active=1"
+    ).fetchall()
     conn.close()
-    return rows
+    out: List[Dict] = []
+    for r in rows:
+        try:
+            terms = json.loads(r["terms_json"] or "[]") or []
+        except Exception:
+            terms = []
+        try:
+            filters = json.loads(r["filters_json"] or "{}") or {}
+        except Exception:
+            filters = {}
+        # Normalisieren
+        filters_norm = {
+            "price_min": (filters.get("price_min") or "").strip(),
+            "price_max": (filters.get("price_max") or "").strip(),
+            "sort": (filters.get("sort") or "best").strip(),
+            "conditions": [c.strip().upper() for c in (filters.get("conditions") or []) if c and str(c).strip()],
+        }
+        out.append({
+            "id": int(r["id"]),
+            "user_email": r["user_email"],
+            "terms": [t for t in terms if str(t).strip()],
+            "filters": filters_norm,
+            "per_page": int(r["per_page"] or 30),
+        })
+    return out
 
-def save_seen(alert_id: int, item_ids: List[str]):
-    if not item_ids:
-        return
-    conn = get_db()
-    cur = conn.cursor()
-    cur.executemany("INSERT OR IGNORE INTO alert_seen (alert_id,item_id) VALUES (?,?)",
-                    [(alert_id, i) for i in item_ids if i])
-    conn.commit()
-    conn.close()
-
-def unseen_only(alert_id: int, items: List[Dict]) -> List[Dict]:
-    if not items:
-        return []
-    ids = [i["id"] for i in items if i.get("id")]
-    if not ids:
-        return items
-    conn = get_db()
-    cur  = conn.cursor()
-    q    = ",".join("?" for _ in ids)
-    rows = cur.execute(f"SELECT item_id FROM alert_seen WHERE alert_id=? AND item_id IN ({q})",
-                       [alert_id, *ids]).fetchall()
-    seen = {r["item_id"] for r in rows}
-    conn.close()
-    return [i for i in items if i.get("id") not in seen]
+# -----------------------
+# E-Mail-Rendering (simpel, HTML)
+# -----------------------
 
 def render_email_html(title: str, items: List[Dict]) -> str:
-    parts = [f"<h3 style='margin:0 0 12px'>{escape(title)}</h3>"]
-    parts.append("<table style='width:100%;border-collapse:collapse'>")
-    for it in items:
-        price = f"{it['price']} {it['cur']}" if it.get("price") and it.get("cur") else "–"
-        img = it.get("img") or "https://via.placeholder.com/64x48?text=%20"
-        parts.append(
+    rows = []
+    for it in items[:NOTIFY_MAX_ITEMS_PER_MAIL]:
+        price = f"{it.get('price')} {it.get('cur')}" if it.get("price") and it.get("cur") else "–"
+        img = it.get("img") or "https://via.placeholder.com/96x72?text=%20"
+        url = it.get("url") or "#"
+        title_txt = it.get("title") or "—"
+        rows.append(
             "<tr style='border-bottom:1px solid #eee'>"
-            f"<td style='padding:8px;width:72px'><img src='{img}' width='64' height='48' style='border-radius:4px;object-fit:cover'></td>"
-            f"<td style='padding:8px'><a href='{it.get('url')}'>{escape(it.get('title') or '—')}</a><br>"
-            f"<span style='color:#666;font-size:12px'>{escape(price)}</span></td>"
+            f"<td style='padding:8px;width:96px'><img src='{img}' width='96' height='72' style='border-radius:4px;object-fit:cover'></td>"
+            f"<td style='padding:8px'><a href='{url}' target='_blank'>{title_txt}</a><br>"
+            f"<span style='color:#666;font-size:12px'>{price}</span></td>"
             "</tr>"
         )
-    parts.append("</table>")
-    return "<div style='font-family:system-ui,Segoe UI,Arial,sans-serif'>" + "".join(parts) + "</div>"
+    more = ""
+    if len(items) > NOTIFY_MAX_ITEMS_PER_MAIL:
+        more = f"<p style='margin-top:8px'>+ {len(items)-NOTIFY_MAX_ITEMS_PER_MAIL} weitere Treffer …</p>"
+    return (
+        "<div style='font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif'>"
+        f"<h3 style='margin:0 0 12px'>{title}</h3>"
+        "<table style='width:100%;border-collapse:collapse'>"
+        + "".join(rows) +
+        "</table>"
+        f"{more}"
+        "<p style='margin-top:16px;color:#666;font-size:12px'>Du erhältst diese Mail, weil du für diese Suche einen Alarm aktiviert hast.</p>"
+        "</div>"
+    )
 
-def run_once():
-    init_db()
-    ensure_default_alert_if_empty()
+# -----------------------
+# Orchestrator
+# -----------------------
+
+def run_agent_once() -> None:
+    """
+    Ein Lauf:
+      - Alerts laden (search_alerts)
+      - je Alert: eBay suchen
+      - De-Dup (alert_seen)
+      - E-Mail senden
+      - Versandte Items markieren
+    """
+    print(f"[agent] start run")
+    init_db_if_needed()
+    smtp = get_smtp_settings()
+
     alerts = load_alerts()
     if DEBUG_LOG:
-        print(f"[alerts] {len(alerts)} active alerts")
+        print(f"[agent] {len(alerts)} aktive Alerts")
+
+    total_checked = 0
+    total_mailed  = 0
+
     for a in alerts:
-        terms = [t for t in [a["q1"], a["q2"], a["q3"]] if t]
+        total_checked += 1
+        terms   = a["terms"]
+        filters = a["filters"]
+        per_page = int(a["per_page"] or 30)
         if not terms:
             continue
-        conds = [c.strip().upper() for c in (a["conditions"] or "").split(",") if c.strip()]
-        per_page = int(a["per_page"] or 30)
-        per_term = max(1, min(10, per_page // max(1,len(terms))))
+
+        # Suche – einfach gleichmäßig über Begriffe verteilen
+        per_term = max(1, per_page // max(1, len(terms)))
         items_all: List[Dict] = []
         for t in terms:
             items = ebay_search(
                 term=t,
                 limit=per_term,
                 offset=0,
-                price_min=a["price_min"] or "",
-                price_max=a["price_max"] or "",
-                conditions=conds,
-                sort_ui=a["sort"] or "best"
+                price_min=filters.get("price_min",""),
+                price_max=filters.get("price_max",""),
+                conditions=filters.get("conditions") or [],
+                sort_ui=filters.get("sort","best"),
             )
             items_all.extend(items)
 
-        new_items = unseen_only(a["id"], items_all)
-        if DEBUG_LOG:
-            print(f"[alerts] alert #{a['id']} -> {len(new_items)} new")
-        if not new_items:
+        # De-Dup
+        search_hash = make_search_hash(terms, filters)
+        groups: Dict[str, List[Dict]] = {}
+        for it in items_all:
+            src = (it.get("src") or "ebay").lower()
+            groups.setdefault(src, []).append(it)
+
+        new_all: List[Dict] = []
+        for src, group in groups.items():
+            new_items = mark_and_filter_new(a["user_email"], search_hash, src, group)
+            new_all.extend(new_items)
+
+        if not new_all or not a["user_email"] or "@" not in a["user_email"]:
+            if DEBUG_LOG:
+                print(f"[agent] alert_id={a['id']} no new items or invalid email")
             continue
 
-        new_items = new_items[:MAX_ITEMS_PER_ALERT]
-        subject = f"Neue Treffer: {', '.join(terms)}"
-        html = render_email_html(subject, new_items)
-        recipient = a["user_email"] or DEFAULT_TO
-        if recipient:
-            send_email(recipient, subject, html)
-            save_seen(a["id"], [i["id"] for i in new_items])
-        else:
-            print("[alerts] no recipient -> skip")
+        subject = f"Neue Treffer für „{', '.join(terms)}“ – {len(new_all)} neu"
+        html = render_email_html(subject, new_all)
 
+        if send_mail(smtp, [a["user_email"]], subject, html):
+            for src, group in groups.items():
+                sent_subset = [it for it in new_all if (it.get("src") or "ebay").lower() == src]
+                mark_sent(a["user_email"], search_hash, src, sent_subset)
+            total_mailed += 1
+
+        # last_run_ts aktualisieren
+        conn = get_db()
+        conn.execute("UPDATE search_alerts SET last_run_ts=? WHERE id=?", (int(time.time()), int(a["id"])))
+        conn.commit()
+        conn.close()
+
+    print(f"[agent] summary: alerts_checked={total_checked} alerts_emailed={total_mailed}")
+    print(f"[agent] end run")
+
+# Für lokalen Test:
 if __name__ == "__main__":
-    run_once()
+    run_agent_once()
