@@ -393,7 +393,7 @@ def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int
 # E-Mail: Versand + De-Duping
 # -------------------------------------------------------------------
 def _send_email(to_email: str, subject: str, html_body: str) -> bool:
-      if not (SMTP_HOST and SMTP_FROM and to_email):
+    if not (SMTP_HOST and SMTP_FROM and to_email):
         print("[email] SMTP configuration incomplete")
         return False
 
@@ -403,7 +403,7 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
     msg["Subject"] = subject
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-    # bis zu 3 Versuche mit kurzem Backoff
+    # up to 3 tries with small backoff
     for attempt in range(1, 4):
         try:
             if SMTP_USE_SSL:
