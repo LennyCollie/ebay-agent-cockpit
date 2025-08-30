@@ -393,32 +393,57 @@ def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int
 # E-Mail: Versand + De-Duping
 # -------------------------------------------------------------------
 def _send_email(to_email: str, subject: str, html_body: str) -> bool:
-    if not (SMTP_HOST and SMTP_FROM and to_email):
+      if not (SMTP_HOST and SMTP_FROM and to_email):
         print("[email] SMTP configuration incomplete")
         return False
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["From"] = SMTP_FROM
-        msg["To"] = to_email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-        if SMTP_USE_SSL:
-            context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=20) as s:
-                if SMTP_USER: s.login(SMTP_USER, SMTP_PASS)
-                s.send_message(msg)
-        else:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
-                if SMTP_USE_TLS:
-                    s.starttls()
-                if SMTP_USER: s.login(SMTP_USER, SMTP_PASS)
-                s.send_message(msg)
-        print(f"[mail] sent via {SMTP_HOST}:{SMTP_PORT} tls={SMTP_USE_TLS} ssl={SMTP_USE_SSL}")
-        return True
-    except Exception as e:
-        print("[email] send failed:", e)
-        return False
+    msg = MIMEMultipart("alternative")
+    msg["From"] = SMTP_FROM
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    # bis zu 3 Versuche mit kurzem Backoff
+    for attempt in range(1, 4):
+        try:
+            if SMTP_USE_SSL:
+                context = ssl.create_default_context()
+                with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=20) as s:
+                    if SMTP_USER:
+                        s.login(SMTP_USER, SMTP_PASS)
+                    s.send_message(msg)
+            else:
+                with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+                    try:
+                        s.ehlo()
+                    except Exception:
+                        pass
+                    if SMTP_USE_TLS:
+                        s.starttls(context=ssl.create_default_context())
+                        try:
+                            s.ehlo()
+                        except Exception:
+                            pass
+                    if SMTP_USER:
+                        s.login(SMTP_USER, SMTP_PASS)
+                    s.send_message(msg)
+
+            print(f"[mail] sent via {SMTP_HOST}:{SMTP_PORT} tls={SMTP_USE_TLS} ssl={SMTP_USE_SSL}")
+            return True
+
+        except (smtplib.SMTPServerDisconnected, ConnectionResetError) as e:
+            print(f"[email] transient SMTP disconnect (attempt {attempt}/3): {e}")
+            time.sleep(2 * attempt)
+            continue
+        except smtplib.SMTPAuthenticationError as e:
+            print("[email] auth failed:", e)
+            return False
+        except Exception as e:
+            print(f"[email] send failed (attempt {attempt}/3): {e}")
+            time.sleep(2 * attempt)
+            continue
+
+    return False
 
 def _make_search_hash(terms: List[str], filters: dict) -> str:
     payload = {
