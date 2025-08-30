@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="h4 mb-3">Agent-Status</h1>
+
+  {% if status %}
+    <dl class="row">
+      <dt class="col-sm-4">Aktive Alerts</dt>
+      <dd class="col-sm-8">{{ status.active_alerts }}</dd>
+
+      <dt class="col-sm-4">Letzter Lauf</dt>
+      <dd class="col-sm-8">{{ status.last_run_iso or "—" }}</dd>
+
+      <dt class="col-sm-4">Agent-Trigger konfiguriert</dt>
+      <dd class="col-sm-8">{{ "Ja" if status.agent_trigger_token_set else "Nein" }}</dd>
+    </dl>
+
+    <p class="text-muted">
+      <a href="{{ url_for('status_page', format='json') }}">Rohdaten als JSON ansehen</a>
+    </p>
+  {% else %}
+    {{ body|safe }}
+  {% endif %}
+
+  <a href="{{ url_for('public_home') }}" class="btn btn-primary mt-3">Zur Startseite</a>
+</div>
+{% endblock %}

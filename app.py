@@ -54,14 +54,20 @@ PREMIUM_SEARCH_LIMIT  = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
 PER_PAGE_DEFAULT      = int(os.getenv("PER_PAGE_DEFAULT", "20"))
 SEARCH_CACHE_TTL      = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
 
-# E-Mail / Notify
-SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "Agent <noreply@example.com>")
-SMTP_USE_TLS = as_bool(os.getenv("SMTP_USE_TLS", "1"))
-SMTP_USE_SSL = as_bool(os.getenv("SMTP_USE_SSL", "0"))
+# E-Mail / Notify  (robust: akzeptiert SMTP_* und EMAIL_*)
+SMTP_HOST = os.getenv("SMTP_HOST") or os.getenv("EMAIL_SMTP_HOST") or os.getenv("EMAIL_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT") or os.getenv("EMAIL_SMTP_PORT") or os.getenv("EMAIL_PORT") or "587")
+SMTP_USER = os.getenv("SMTP_USER") or os.getenv("EMAIL_USER") or ""
+SMTP_PASS = os.getenv("SMTP_PASS") or os.getenv("EMAIL_PASSWORD") or ""
+SMTP_FROM = (
+    os.getenv("SMTP_FROM")
+    or os.getenv("EMAIL_FROM")
+    or (SMTP_USER if SMTP_USER else "Agent <noreply@example.com>")
+)
+def _as_on(v, default="0"):
+    return str(v if v is not None else default).strip().lower() in {"1","true","yes","on"}
+SMTP_USE_TLS = _as_on(os.getenv("SMTP_USE_TLS", os.getenv("EMAIL_SMTP_TLS", "1")))
+SMTP_USE_SSL = _as_on(os.getenv("SMTP_USE_SSL", os.getenv("EMAIL_SMTP_SSL", "0")))
 NOTIFY_COOLDOWN_MIN = int(os.getenv("NOTIFY_COOLDOWN_MINUTES", "120"))
 NOTIFY_MAX_ITEMS_PER_MAIL = int(os.getenv("NOTIFY_MAX_ITEMS_PER_MAIL", "10"))
 
@@ -410,8 +416,12 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
                 s.send_message(msg)
         else:
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+                try: s.ehlo()
+                except Exception: pass
                 if SMTP_USE_TLS:
-                    s.starttls()
+                    s.starttls(context=ssl.create_default_context())
+                    try: s.ehlo()
+                    except Exception: pass
                 if SMTP_USER: s.login(SMTP_USER, SMTP_PASS)
                 s.send_message(msg)
         print(f"[mail] sent via {SMTP_HOST}:{SMTP_PORT} tls={SMTP_USE_TLS} ssl={SMTP_USE_SSL}")
@@ -1137,34 +1147,51 @@ def debug_env():
 def healthz():
     return "ok", 200
 
-# (Optional) Amazon Direkt-Suche
-@app.route("/amazon/search")
-def amazon_search():
-    q = (request.args.get("q") or "").strip()
-    if not q:
-        return safe_render("search.html", title="Amazon-Suche", body="Bitte Suchbegriff angeben.")
-    if not AMZ_OK:
-        flash("Amazon ist nicht konfiguriert.", "info")
-        return redirect(url_for("public_home"))
+# -------------------------------------------------------------------
+# STATUS-Seite (neu)
+# -------------------------------------------------------------------
+@app.get("/status")
+def status_page():
+    fmt_json = request.args.get("format") == "json" or "application/json" in (request.headers.get("Accept") or "")
 
-    page = 1
-    try:
-        page = max(1, int(request.args.get("page", 1)))
-    except Exception:
-        pass
+    conn = get_db()
+    cur = conn.cursor()
+    active_cnt = cur.execute("SELECT COUNT(*) AS c FROM search_alerts WHERE is_active=1").fetchone()["c"]
+    last_run_ts = cur.execute("SELECT COALESCE(MAX(last_run_ts),0) AS ts FROM search_alerts").fetchone()["ts"]
+    conn.close()
 
-    items, _ = amazon_search_one(q, limit=20, page=page)
+    data = {
+        "active_alerts": int(active_cnt or 0),
+        "last_run_ts": int(last_run_ts or 0),
+        "last_run_iso": (time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(last_run_ts)) if last_run_ts else None),
+        "agent_trigger_token_set": bool(os.getenv("AGENT_TRIGGER_TOKEN")),
+    }
+    if fmt_json:
+        return jsonify(data)
 
-    return safe_render(
-        "search_results.html",
-        title=f"Amazon-Ergebnisse für „{q}“",
-        terms=[q],
-        results=items,
-        filters={"price_min":"", "price_max":"", "sort":"best", "conditions":[]},
-        pagination={"page":1, "per_page":len(items), "total_estimated":len(items),
-                    "total_pages":1, "has_prev":False, "has_next":False},
-        base_qs={"q1": q, "per_page": len(items)}
-    )
+    body = f"""
+      <div class="mb-3"><strong>Aktive Alerts:</strong> {data['active_alerts']}</div>
+      <div class="mb-3"><strong>Letzter Lauf:</strong> {data['last_run_iso'] or '—'}</div>
+      <div class="mb-3"><strong>Agent-Trigger konfiguriert:</strong> {data['agent_trigger_token_set']}</div>
+      <p class="text-muted mt-3"><code>GET /status?format=json</code> liefert Rohdaten.</p>
+    """
+    return safe_render("status.html", title="Agent-Status", body=body, status=data)
+
+# -------------------------------------------------------------------
+# SMTP Test (neu)
+# -------------------------------------------------------------------
+@app.post("/email/test")
+def email_test():
+    to_email = (request.form.get("email") or session.get("user_email") or "").strip()
+    if not to_email or "@" not in to_email:
+        flash("Gültige E-Mail erforderlich (eingeloggt sein oder E-Mail angeben).", "warning")
+        return redirect(url_for("search"))
+    subject = "SMTP-Test (Super-Agent)"
+    html = "<p>Hallo! SMTP Test aus deiner App.</p>"
+    ok = _send_email(to_email, subject, html)
+    flash(("Testmail wurde versendet." if ok else "Testmail fehlgeschlagen (SMTP prüfen)."),
+         "success" if ok else "danger")
+    return redirect(url_for("search"))
 
 # -------------------------------------------------------------------
 # PRIVATER Cron-Trigger (neu, empfohlen): /internal/run-agent  (POST + Bearer)
@@ -1213,7 +1240,7 @@ def internal_run_agent():
 
     return jsonify({"status": "ok"}), 200
 
-# Registrierung des internen Blueprints (jetzt, wo er existiert)
+# Registrierung des internen Blueprints
 app.register_blueprint(internal_bp)
 
 # -------------------------------------------------------------------

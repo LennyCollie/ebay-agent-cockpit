@@ -169,19 +169,24 @@ def send_mail(
 # De-Dup kompatibel zur app.py
 # -----------------------
 
-def make_search_hash(terms: List[str], filters: Dict[str, object]) -> str:
+def make_search_hash(terms: list[str], filters: dict) -> str:
     payload = {
-        "terms": [t.strip() for t in terms if str(t).strip()],
+        "terms": [t.strip() for t in terms if t and str(t).strip()],
         "filters": {
-            "price_min": (filters.get("price_min") or ""),
-            "price_max": (filters.get("price_max") or ""),
-            "sort": (filters.get("sort") or "best"),
+            "price_min": filters.get("price_min") or "",
+            "price_max": filters.get("price_max") or "",
+            "sort":      filters.get("sort") or "best",
             "conditions": sorted(filters.get("conditions") or []),
         },
     }
     s = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
+# Alias für bestehenden Code, der _make_search_hash aufruft
+try:
+    _make_search_hash
+except NameError:
+    _make_search_hash = make_search_hash
 def mark_and_filter_new(user_email: str, search_hash: str, src: str, items: List[Dict]) -> List[Dict]:
     if not items:
         return []

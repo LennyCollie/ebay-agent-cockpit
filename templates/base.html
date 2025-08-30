@@ -68,6 +68,14 @@ Html
         </div>
     </nav>
 
+<!-- In base.html Navbar/Liste ergänzen -->
+<li class="nav-item">
+  <a class="nav-link" href="/_health/diag">Health/Diag</a>
+</li>
+<li class="nav-item">
+  <a class="nav-link" href="/status">Agent-Status</a>
+</li>
+
     <main class="container py-4">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}

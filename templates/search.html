@@ -12,45 +12,27 @@
     <div class="card-body">
       <div class="d-flex align-items-center mb-2">
         <strong class="me-2">Vorlagen:</strong>
-        <span class="text-muted">ein Klick füllt das Formular & startet die Suche</span>
+        <span class="text-muted">Ein Klick füllt das Formular & startet die Suche</span>
       </div>
       <div class="d-flex flex-wrap gap-2">
-        <!-- Vorlage 1 -->
-        <button type="button"
-                class="btn btn-outline-primary btn-sm preset"
-                data-q1="iPhone 11"
-                data-q2="128GB"
-                data-q3=""
-                data-price-min=""
-                data-price-max="220"
-                data-sort="newly"
-                data-cond="USED">
+        <button type="button" class="btn btn-outline-primary btn-sm preset"
+                data-q1="iPhone 11" data-q2="128GB" data-q3=""
+                data-price-min="" data-price-max="220"
+                data-sort="newly" data-cond="USED">
           📱 iPhone 11 • 128GB • bis 220€ • gebraucht
         </button>
 
-        <!-- Vorlage 2 -->
-        <button type="button"
-                class="btn btn-outline-primary btn-sm preset"
-                data-q1="LEGO Technic"
-                data-q2="42115"
-                data-q3=""
-                data-price-min="150"
-                data-price-max="300"
-                data-sort="price_asc"
-                data-cond="NEW">
+        <button type="button" class="btn btn-outline-primary btn-sm preset"
+                data-q1="LEGO Technic" data-q2="42115" data-q3=""
+                data-price-min="150" data-price-max="300"
+                data-sort="price_asc" data-cond="NEW">
           🧱 LEGO 42115 • 150–300€ • neu
         </button>
 
-        <!-- Vorlage 3 -->
-        <button type="button"
-                class="btn btn-outline-primary btn-sm preset"
-                data-q1="Nintendo Switch OLED"
-                data-q2="Zelda"
-                data-q3=""
-                data-price-min=""
-                data-price-max=""
-                data-sort="best"
-                data-cond="USED,CERTIFIED_REFURBISHED">
+        <button type="button" class="btn btn-outline-primary btn-sm preset"
+                data-q1="Nintendo Switch OLED" data-q2="Zelda" data-q3=""
+                data-price-min="" data-price-max=""
+                data-sort="best" data-cond="USED,CERTIFIED_REFURBISHED">
           🎮 Switch OLED + Zelda • gebraucht/refurb
         </button>
       </div>
@@ -85,8 +67,8 @@
 
         <div class="col-md-3">
           <label class="form-label">Sortierung</label>
+          {% set _sort = request.args.get('sort', 'best') %}
           <select class="form-select" name="sort">
-            {% set _sort = request.args.get('sort', 'best') %}
             <option value="best" {{ 'selected' if _sort=='best' else '' }}>Beste Treffer</option>
             <option value="price_asc" {{ 'selected' if _sort=='price_asc' else '' }}>Preis ↑</option>
             <option value="price_desc" {{ 'selected' if _sort=='price_desc' else '' }}>Preis ↓</option>
@@ -151,96 +133,74 @@
 </div>
 
 <script>
-  (function () {
-    const form = document.getElementById('searchForm');
-    const share = document.getElementById('shareUrl');
+(function () {
+  const form  = document.getElementById('searchForm');
+  const share = document.getElementById('shareUrl');
+  const copyBtn = document.getElementById('btnCopy');
 
-    // Presets (Auto-Fill + Auto-Submit)
-    document.querySelectorAll('.preset').forEach(btn => {
-      btn.addEventListener('click', () => {
-        // Textfelder
-        form.q1.value = btn.dataset.q1 || '';
-        form.q2.value = btn.dataset.q2 || '';
-        form.q3.value = btn.dataset.q3 || '';
+  function updateShareUrl() {
+    const params = new URLSearchParams();
 
-        // Preise
-        form.price_min.value = btn.dataset.priceMin || '';
-        form.price_max.value = btn.dataset.priceMax || '';
+    const q1 = (form.q1.value || '').trim();
+    const q2 = (form.q2.value || '').trim();
+    const q3 = (form.q3.value || '').trim();
+    if (q1) params.set('q1', q1);
+    if (q2) params.set('q2', q2);
+    if (q3) params.set('q3', q3);
 
-        // Sortierung
-        form.sort.value = btn.dataset.sort || 'best';
+    const pmin = (form.price_min.value || '').trim();
+    const pmax = (form.price_max.value || '').trim();
+    if (pmin) params.set('price_min', pmin);
+    if (pmax) params.set('price_max', pmax);
 
-        // Zustände (erst alles abwählen)
-        form.querySelectorAll('input[name="condition"]').forEach(cb => cb.checked = false);
-        const cond = (btn.dataset.cond || '').split(',').map(s => s.trim()).filter(Boolean);
-        if (cond.length) {
-          cond.forEach(val => {
-            const el = form.querySelector('input[name="condition"][value="' + val + '"]');
-            if (el) el.checked = true;
-          });
-        }
+    const sort = (form.sort.value || 'best').trim();
+    if (sort && sort !== 'best') params.set('sort', sort);
 
-        // Teilen-URL aktualisieren und absenden
-        updateShareUrl();
-        form.submit();
-      });
+    const per = (form.per_page.value || '').trim();
+    if (per) params.set('per_page', per);
+
+    form.querySelectorAll('input[name="condition"]:checked').forEach(cb => {
+      params.append('condition', cb.value);
     });
 
-    // Build GET-URL zu /search (inkl. Mehrfachparametern "condition")
-    function updateShareUrl() {
-      const params = new URLSearchParams();
+    const url = "{{ url_for('search') }}" + (params.toString() ? "?" + params.toString() : "");
+    if (share) share.value = url;
+  }
 
-      const q1 = (form.q1.value || '').trim();
-      const q2 = (form.q2.value || '').trim();
-      const q3 = (form.q3.value || '').trim();
-      if (q1) params.set('q1', q1);
-      if (q2) params.set('q2', q2);
-      if (q3) params.set('q3', q3);
-
-      const pmin = (form.price_min.value || '').trim();
-      const pmax = (form.price_max.value || '').trim();
-      if (pmin) params.set('price_min', pmin);
-      if (pmax) params.set('price_max', pmax);
-
-      const sort = (form.sort.value || 'best').trim();
-      if (sort && sort !== 'best') params.set('sort', sort);
-
-      const per = (form.per_page.value || '').trim();
-      if (per) params.set('per_page', per);
-
-      // Mehrfachwerte
-      form.querySelectorAll('input[name="condition"]:checked').forEach(cb => {
-        params.append('condition', cb.value);
+  document.querySelectorAll('.preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      form.q1.value = btn.dataset.q1 || '';
+      form.q2.value = btn.dataset.q2 || '';
+      form.q3.value = btn.dataset.q3 || '';
+      form.price_min.value = btn.dataset.priceMin || '';
+      form.price_max.value = btn.dataset.priceMax || '';
+      form.sort.value = btn.dataset.sort || 'best';
+      form.querySelectorAll('input[name="condition"]').forEach(cb => cb.checked = false);
+      (btn.dataset.cond || '').split(',').map(s => s.trim()).filter(Boolean).forEach(val => {
+        const el = form.querySelector('input[name="condition"][value="' + val + '"]');
+        if (el) el.checked = true;
       });
+      updateShareUrl();
+      form.submit();
+    });
+  });
 
-      const url = '{{ url_for("search") }}' + (params.toString() ? '?' + params.toString() : '');
-      if (share) share.value = url;
+  form.addEventListener('input', updateShareUrl);
+  form.addEventListener('change', updateShareUrl);
+  document.getElementById('btnReset').addEventListener('click', () => setTimeout(updateShareUrl, 0));
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(share.value);
+      const old = copyBtn.textContent;
+      copyBtn.textContent = '✔️ Kopiert';
+      setTimeout(() => copyBtn.textContent = old, 1200);
+    } catch (_) {
+      share.select(); document.execCommand('copy');
     }
+  });
 
-    // Eingaben beobachten → Share-URL aktuell halten
-    form.addEventListener('input', updateShareUrl);
-    form.addEventListener('change', updateShareUrl);
-    document.getElementById('btnReset').addEventListener('click', () => {
-      setTimeout(updateShareUrl, 0);
-    });
-
-    // Kopieren
-    document.getElementById('btnCopy').addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(share.value);
-        const old = document.getElementById('btnCopy').textContent;
-        document.getElementById('btnCopy').textContent = '✔️ Kopiert';
-        setTimeout(() => document.getElementById('btnCopy').textContent = old, 1200);
-      } catch (e) {
-        // Fallback
-        share.select();
-        document.execCommand('copy');
-      }
-    });
-
-    // Erste Initialisierung
-    updateShareUrl();
-  })();
+  updateShareUrl();
+})();
 </script>
 
 {% endblock %}
