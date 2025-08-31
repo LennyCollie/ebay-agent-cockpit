@@ -146,18 +146,53 @@ def ebay_get_token() -> Optional[str]:
         print(f"[ebay_get_token] {e}")
         return None
 
-def _build_ebay_filters(price_min: str, price_max: str, conditions: List[str]) -> Optional[str]:
+# --- robustere Filter: erlaubte Conditions + Preissäuberung -----------------
+
+_ALLOWED_CONDITIONS = {
+    "NEW", "USED", "CERTIFIED_REFURBISHED",
+    "EXCELLENT_REFURBISHED", "VERY_GOOD_REFURBISHED",
+    "GOOD_REFURBISHED", "LIKE_NEW",
+}
+
+def _clean_price(s: str) -> str:
+    """Komma->Punkt, nur Ziffern/Punkt behalten."""
+    s = (s or "").strip().replace(",", ".")
+    return "".join(ch for ch in s if (ch.isdigit() or ch == "."))
+
+def build_ebay_filters(price_min: str, price_max: str, conditions: List[str]) -> Optional[str]:
+    """Ebay filter-String bauen, dabei Werte säubern und nur erlaubte Conditions zulassen."""
     parts: List[str] = []
-    pmn = (price_min or "").strip()
-    pmx = (price_max or "").strip()
+
+    pmn = _clean_price(price_min)
+    pmx = _clean_price(price_max)
+    # falls vertauscht: tauschen
+    try:
+        if pmn and pmx and float(pmn) > float(pmx):
+            pmn, pmx = pmx, pmn
+    except Exception:
+        pass
+
     if pmn or pmx:
         parts.append(f"price:[{pmn}..{pmx}]")
         if EBAY_CURRENCY:
             parts.append(f"priceCurrency:{EBAY_CURRENCY}")
-    conds = [c.strip().upper() for c in (conditions or []) if c.strip()]
+
+    conds = []
+    for c in (conditions or []):
+        c = (c or "").strip().upper()
+        if c in _ALLOWED_CONDITIONS:
+            conds.append(c)
     if conds:
         parts.append("conditions:{" + ",".join(conds) + "}")
+
     return ",".join(parts) if parts else None
+
+# Kompatibilität: falls an anderer Stelle _build_ebay_filters aufgerufen wird
+try:
+    _build_ebay_filters
+except NameError:
+    _build_ebay_filters = build_ebay_filters  # alias
+
 
 def _map_sort(ui_sort: str) -> Optional[str]:
     s = (ui_sort or "").strip()
@@ -170,37 +205,78 @@ def _map_sort(ui_sort: str) -> Optional[str]:
 
 def ebay_search_one(term: str, limit: int, offset: int,
                     filter_str: Optional[str], sort: Optional[str]) -> Tuple[List[Dict], Optional[int]]:
+    """Ebay-Browse-API mit kleinem Retry & Fallback bei 400/Netzfehlern."""
     token = ebay_get_token()
     if not token or not term:
         return [], None
 
     url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
-    params = {"q": term, "limit": max(1, min(limit, 50)), "offset": max(0, offset)}
-    if filter_str: params["filter"] = filter_str
-    if sort:       params["sort"]   = sort
-    headers = {"Authorization": f"Bearer {token}", "X-EBAY-C-MARKETPLACE-ID": EBAY_MARKETPLACE_ID}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-EBAY-C-MARKETPLACE-ID": EBAY_MARKETPLACE_ID,
+    }
 
-    try:
-        r = _http.get(url, headers=headers, params=params, timeout=15)
-        r.raise_for_status()
-        j = r.json() or {}
-        items_raw = j.get("itemSummaries", []) or []
-        total     = j.get("total")
-        items: List[Dict] = []
-        for it in items_raw:
-            title = it.get("title") or "—"
-            web   = _append_affiliate(it.get("itemWebUrl"))
-            img   = (it.get("image") or {}).get("imageUrl")
-            price = (it.get("price") or {}).get("value")
-            cur   = (it.get("price") or {}).get("currency")
-            price_str = f"{price} {cur}" if price and cur else "–"
-            # stabile ID (für De-Duping)
-            iid = it.get("itemId") or it.get("legacyItemId") or it.get("epid") or (web or "")[:200]
-            items.append({"id": iid, "title": title, "price": price_str, "url": web, "img": img, "term": term, "src": "ebay"})
-        return items, (int(total) if isinstance(total, int) else None)
-    except Exception as e:
-        print(f"[ebay_search_one] {e}")
-        return [], None
+    base_params = {
+        "q": term,
+        "limit": max(1, min(int(limit or 1), 50)),
+        "offset": max(0, int(offset or 0)),
+    }
+    if sort:
+        base_params["sort"] = sort  # z.B. price, -price, newlyListed
+
+    def _call(params: dict) -> Tuple[List[Dict], Optional[int], Optional[int], Optional[str]]:
+        try:
+            r = _http.get(url, headers=headers, params=params, timeout=15)
+            status = r.status_code
+            if status != 200:
+                try:
+                    err_body = r.text[:1000]
+                except Exception:
+                    err_body = None
+                return [], None, status, err_body
+
+            j = r.json() or {}
+            items_raw = j.get("itemSummaries", []) or []
+            total     = j.get("total")
+            items: List[Dict] = []
+            for it in items_raw:
+                title = it.get("title") or "—"
+                web   = _append_affiliate(it.get("itemWebUrl"))
+                img   = (it.get("image") or {}).get("imageUrl")
+                price_val = (it.get("price") or {}).get("value")
+                cur       = (it.get("price") or {}).get("currency")
+                price_str = f"{price_val} {cur}" if price_val and cur else "–"
+                iid = it.get("itemId") or it.get("legacyItemId") or it.get("epid") or (web or "")[:200]
+                items.append({
+                    "id": iid, "title": title, "price": price_str,
+                    "url": web, "img": img, "term": term, "src": "ebay",
+                })
+            return items, (int(total) if isinstance(total, int) else None), 200, None
+
+        except (ReqConnError, ReqTimeout, RequestException) as e:
+            return [], None, None, str(e)
+
+    # 1) voller Versuch mit Filter
+    params = dict(base_params)
+    if filter_str:
+        params["filter"] = filter_str
+
+    items, total, status, err = _call(params)
+    if status == 200:
+        return items, total
+
+    # 2) Retry bei Netzfehlern / 5xx
+    if status is None or (status >= 500):
+        items, total, status2, err2 = _call(params)
+        if status2 == 200:
+            return items, total
+        print(f"[ebay_search_one] retry failed: status={status2} err={err2}")
+
+    # 3) Fallback bei 400: Filter schrittweise entschärfen
+    if status == 400 and filter_str:
+        # a) Ohne conditions
+        fs_parts = [p for p in filter_str.split(",") if not p.startswith("conditions:")]
+        params_looser = dict
 
 # Demo-Backend
 def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[List[Dict], int]:
