@@ -17,3 +17,15 @@ __pycache__/
 
 /venv/
 .env
+# Python/venv
+.venv/
+__pycache__/
+*.pyc
+
+# lokale Sicherungskopien
+app - Kopie*
+*.bak.venv/
+__pycache__/
+*.pyc
+app - Kopie*
+*.bak
