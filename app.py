@@ -240,7 +240,7 @@ def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: i
     if not LIVE_SEARCH or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
         return _backend_search_demo(terms, page, per_page)
 
-    filter_str = build_ebay_filters(filters.get("price_min",""), filters.get("price_max",""), filters.get("conditions") or [])
+    filter_str = _build_ebay_filters(filters.get("price_min",""), filters.get("price_max",""), filters.get("conditions") or [])
     sort       = _map_sort(filters.get("sort", "best"))
 
     n        = max(1, len(terms))
@@ -250,14 +250,19 @@ def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: i
     items_all: List[Dict] = []
     totals: List[int] = []
     for t in terms:
-        # HIER IST DIE KORREKTUR: Wir rufen die richtige Funktion auf!
-        items, total, _ = _ebay_search_one_api(t, per_term, offset, filter_str, sort)
+        items, total = ebay_search_one(t, per_term, offset, filter_str, sort)
         items_all.extend(items)
         if isinstance(total, int):
             totals.append(total)
 
+    if len(items_all) < per_page and terms:
+        rest, base = per_page - len(items_all), offset + per_term
+        extra, _ = ebay_search_one(terms[0], rest, base, filter_str, sort)
+        items_all.extend(extra)
+
     total_estimated = sum(totals) if totals else None
     return items_all[:per_page], total_estimated
+
 # -------------------------------------------------------------------
 # Amazon PA-API (optional + fail-safe)
 # -------------------------------------------------------------------
