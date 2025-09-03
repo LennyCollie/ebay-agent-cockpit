@@ -29,3 +29,5 @@ __pycache__/
 *.pyc
 app - Kopie*
 *.bak
+
+.venv/, __pycache__/, *.pyc
