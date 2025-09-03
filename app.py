@@ -15,10 +15,20 @@ from urllib.parse import urlencode
 
 import requests
 from flask import (
-    Flask, render_template, request, redirect, url_for,
-    session, flash, jsonify, abort, current_app, Blueprint
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    session,
+    flash,
+    jsonify,
+    abort,
+    current_app,
+    Blueprint,
 )
 
+from mailer import send_mail
 # -------------------------------------------------------------------
 # .env laden
 # -------------------------------------------------------------------
@@ -1212,6 +1222,22 @@ def internal_run_agent():
                 return jsonify({"status": "error", "error": "agent_run_failed"}), 500
 
     return jsonify({"status": "ok"}), 200
+
+
+# --- SMTP Test-Route (temporär) -----------------------------------------
+@internal_bp.route("/internal/mail-test", methods=["GET"])
+def internal_mail_test():
+    to = request.args.get("to")
+    if not to:
+        return "Use /internal/mail-test?to=deine@adresse.tld", 400
+    try:
+        send_mail(to, "SMTP Test", "Externer Versand via Gmail 587 + STARTTLS ✔")
+        return jsonify({"ok": True, "to": to}), 200
+    except Exception as e:
+        # erscheint in Render-Logs
+        current_app.logger.exception("mail-test failed")
+        return jsonify({"ok": False, "error": str(e)}), 500
+# ------------------------------------------------------------------------
 
 # Registrierung des internen Blueprints (jetzt, wo er existiert)
 app.register_blueprint(internal_bp)
