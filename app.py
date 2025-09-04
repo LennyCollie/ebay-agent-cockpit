@@ -1211,30 +1211,27 @@ internal_bp = Blueprint("internal", __name__)
 
 @internal_bp.route("/internal/run-agent", methods=["POST"])
 def internal_run_agent():
-    # 1) Auth via Bearer-Token
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    if not AGENT_TRIGGER_TOKEN or token != AGENT_TRIGGER_TOKEN:
+    # --- Bearer-Token-Check ---
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        auth = auth[7:]
+    if auth != os.getenv("AGENT_TRIGGER_TOKEN", ""):
         abort(401)
 
-    # 2) Prozess-/Worker-übergreifender Lock
+    # ab hier wie gehabt ...
     with agent_lock():
-        # 3) Agent-Lauf starten
         try:
             from agent import run_agent_once
         except Exception as e:
-            print(f"[internal] cannot import agent.run_agent_once: {e}")
+            current_app.logger.exception("import failed")
             return jsonify({"status": "error", "error": "agent_import_failed"}), 500
-
-        # Falls der Agent Flask-Extensions braucht, Kontext bereitstellen:
-        with current_app.app_context():
-            try:
-                run_agent_once()
-            except Exception as e:
-                print(f"[internal] agent run failed: {e}")
-                return jsonify({"status": "error", "error": "agent_run_failed"}), 500
+        try:
+            run_agent_once()
+        except Exception as e:
+            current_app.logger.exception("run failed")
+            return jsonify({"status": "error", "error": "agent_run_failed"}), 500
 
     return jsonify({"status": "ok"}), 200
-
 
 
 # Registrierung des internen Blueprints (jetzt, wo er existiert)
