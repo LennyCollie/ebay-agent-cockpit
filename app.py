@@ -1208,7 +1208,7 @@ except Exception:
             if ok:
                 _fallback_lock.release()
 
-internal_bp = Blueprint("internal", __name__, url_prefix="/internal")
+internal_bp = Blueprint("internal", __name__)
 
 def require_agent_token():
     token = request.headers.get("Authorization", "")
@@ -1235,45 +1235,39 @@ def internal_mail_test():
 
 @internal_bp.route("/run-agent", methods=["POST"])
 def internal_run_agent():
+    # Token prüfen (kleiner Helper – siehe unten)
     require_agent_token()
 
-    with agent_lock():                           # falls definiert
+    with agent_lock():  # <- das hast du schon
         try:
             from agent import run_agent_once
-        except Exception:
+        except Exception as e:
             current_app.logger.exception("agent import failed")
             return jsonify({"status": "error", "error": "agent_import_failed"}), 500
 
         try:
             run_agent_once()
-        except Exception:
+        except Exception as e:
             current_app.logger.exception("agent run failed")
             return jsonify({"status": "error", "error": "agent_run_failed"}), 500
 
     return jsonify({"ok": True}), 200
 
-    # ab hier wie gehabt ...
-    with agent_lock():
-        try:
-            from agent import run_agent_once
-        except Exception as e:
-            current_app.logger.exception("import failed")
-            return jsonify({"status": "error", "error": "agent_import_failed"}), 500
-        try:
-            run_agent_once()
-        except Exception as e:
-            current_app.logger.exception("run failed")
-            return jsonify({"status": "error", "error": "agent_run_failed"}), 500
-
-    return jsonify({"status": "ok"}), 200
-
 @app.route("/_routes")
 def _routes():
     return {"routes": [str(r) for r in app.url_map.iter_rules()]}
 
+def require_agent_token():
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        auth = auth[7:]
+    if auth != os.getenv("AGENT_TRIGGER_TOKEN", ""):
+        abort(401)
+
 
 # Registrierung des internen Blueprints (jetzt, wo er existiert)
-app.register_blueprint(internal_bp)
+
+app.register_blueprint(internal_bp, url_prefix="/internal")
 
 # -------------------------------------------------------------------
 # Run (nur lokal)
