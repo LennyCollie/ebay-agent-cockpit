@@ -12,6 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from urllib.parse import urlencode
+from mailer import send_mail  
 
 import requests
 from flask import (
@@ -1209,6 +1210,32 @@ except Exception:
 
 internal_bp = Blueprint("internal", __name__)
 
+@internal_bp.route("/mail-test", methods=["GET"])
+def internal_mail_test():
+    require_agent_token()
+    to = request.args.get("to", "").strip()
+    if not to:
+        return jsonify({"ok": False, "error": "missing 'to'"}), 400
+
+    # einfache Testmail
+    send_mail(
+        subject="Test vom ebay-agent-cockpit",
+        body="✓ Mail-Setup ok. (Staging)",
+        to=to,
+    )
+    return jsonify({"ok": True, "to": to}), 200
+
+
+@internal_bp.route("/run-agent", methods=["POST"])
+def internal_run_agent():
+    require_agent_token()
+    from agent import run_agent_once  # lokal importieren
+    try:
+        run_agent_once()
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @internal_bp.route("/internal/run-agent", methods=["POST"])
 def internal_run_agent():
     # --- Bearer-Token-Check ---
@@ -1232,6 +1259,10 @@ def internal_run_agent():
             return jsonify({"status": "error", "error": "agent_run_failed"}), 500
 
     return jsonify({"status": "ok"}), 200
+
+@app.route("/_routes")
+def _routes():
+    return {"routes": [str(r) for r in app.url_map.iter_rules()]}
 
 
 # Registrierung des internen Blueprints (jetzt, wo er existiert)
