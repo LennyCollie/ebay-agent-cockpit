@@ -1270,6 +1270,114 @@ app.register_blueprint(internal_bp, url_prefix="/internal")
 # -------------------------------------------------------------------
 # Run (nur lokal)
 # -------------------------------------------------------------------
+
+# ======= DEMO BLOCK: Storno-Radar (Begin) =======
+import os
+from datetime import datetime
+from flask import request, render_template_string, jsonify, abort
+# nutzt deine existierende send_mail-Funktion:
+from mailer import send_mail
+
+# Schalter (kannst du per ENV steuern)
+DEMO_ENABLED = os.getenv("DEMO_ENABLED", "1") == "1"
+PRACTICE_DEMO_SECRET = os.getenv("PRACTICE_DEMO_SECRET", "")  # optionaler Key
+
+# In-Memory Speicher (nur für Demo)
+DEMO_WAITLIST = []   # [{email, fach, plz, fenster, created}]
+DEMO_SLOTS    = []   # [{fach, until, link, created}]
+
+def _demo_guard():
+    if not DEMO_ENABLED:
+        abort(404)
+
+# --- Warteliste (Patient) ---
+@app.get("/pilot/waitlist")
+def pilot_waitlist_form():
+    _demo_guard()
+    html = """
+    <div style="font-family:sans-serif;max-width:520px;margin:24px auto">
+      <h2>Warteliste – Schnelltest</h2>
+      <form method="post" action="/pilot/waitlist">
+        <label>E-Mail:</label><br><input name="email" required style="width:100%"><br>
+        <label>Fachgebiet:</label><br>
+          <select name="fach" style="width:100%">
+            <option>Orthopädie</option><option>Dermatologie</option><option>HNO</option>
+          </select><br>
+        <label>PLZ (optional):</label><br><input name="plz" style="width:100%"><br>
+        <label>Zeitfenster (z. B. Mo–Fr 8–12):</label><br><input name="fenster" style="width:100%"><br><br>
+        <button type="submit">Auf Warteliste</button>
+      </form>
+      <p style="margin-top:1rem"><a href="/pilot/widget">→ Praxis-Widget öffnen</a></p>
+    </div>
+    """
+    return render_template_string(html)
+
+@app.post("/pilot/waitlist")
+def pilot_waitlist_save():
+    _demo_guard()
+    DEMO_WAITLIST.append({
+        "email": request.form.get("email","").strip(),
+        "fach": request.form.get("fach","").strip(),
+        "plz": request.form.get("plz","").strip(),
+        "fenster": request.form.get("fenster","").strip(),
+        "created": datetime.utcnow().isoformat()
+    })
+    return "<p>✅ Eingetragen! <a href='/pilot/waitlist'>Zurück</a> • <a href='/pilot/widget'>Praxis-Widget</a></p>"
+
+# --- Praxis-Widget (Slot freigeben) ---
+@app.get("/pilot/widget")
+def pilot_widget_form():
+    _demo_guard()
+    if PRACTICE_DEMO_SECRET and request.args.get("key") != PRACTICE_DEMO_SECRET:
+        return "401 demo key missing/invalid", 401
+    html = """
+    <div style="font-family:sans-serif;max-width:520px;margin:24px auto">
+      <h2>Praxis-Widget – Slot freigeben</h2>
+      <form method="post" action="/pilot/widget{qs}">
+        <label>Fachgebiet:</label><br>
+          <select name="fach" style="width:100%">
+            <option>Orthopädie</option><option>Dermatologie</option><option>HNO</option>
+          </select><br>
+        <label>Slot frei bis (HH:MM):</label><br><input name="until" placeholder="15:30" required style="width:100%"><br>
+        <label>Buchungslink (116117 / Praxis-Web / Tel-Hinweis):</label><br>
+          <input name="link" placeholder="https://www.116117.de/..." style="width:100%"><br><br>
+        <button type="submit">Slot freigeben & Benachrichtigen</button>
+      </form>
+      <p style="margin-top:1rem"><a href="/pilot/waitlist">→ Warteliste</a></p>
+    </div>
+    """.format(qs=("?key="+PRACTICE_DEMO_SECRET) if PRACTICE_DEMO_SECRET else "")
+    return render_template_string(html)
+
+@app.post("/pilot/widget")
+def pilot_widget_free():
+    _demo_guard()
+    if PRACTICE_DEMO_SECRET and request.args.get("key") != PRACTICE_DEMO_SECRET:
+        return "401 demo key missing/invalid", 401
+
+    fach  = request.form.get("fach","").strip()
+    until = request.form.get("until","").strip()
+    link  = request.form.get("link","").strip() or "(Telefon: 01234/56789)"
+    DEMO_SLOTS.append({"fach":fach, "until":until, "link":link, "created": datetime.utcnow().isoformat()})
+
+    # einfache Filterlogik: nur Fachgebiet matchen
+    matches = [w for w in DEMO_WAITLIST if w["fach"] == fach]
+    sent = 0
+    for w in matches[:20]:  # Sicherheitslimit
+        try:
+            send_mail(
+                to_addr=w["email"],
+                subject=f"Freier Termin ({fach}) bis {until}",
+                body=f"Hallo,\n\nin {fach} ist kurzfristig ein Termin frei – bis {until}.\nBuchen: {link}\n\nViele Grüße"
+            )
+            sent += 1
+        except Exception as e:
+            print("send failed", w["email"], e)
+
+    return f"<p>✅ Slot freigegeben ({fach} bis {until}). Benachrichtigungen verschickt: {sent}. <a href='/pilot/widget{qs}'>Zurück</a></p>".format(
+        qs=("?key="+PRACTICE_DEMO_SECRET) if PRACTICE_DEMO_SECRET else ""
+    )
+# ======= DEMO BLOCK: Storno-Radar (End) =======
+
 if __name__ == "__main__":
     port  = int(os.getenv("PORT", "5000"))
     debug = as_bool(os.getenv("FLASK_DEBUG", "1"))
