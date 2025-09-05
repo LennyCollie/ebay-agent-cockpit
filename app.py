@@ -836,6 +836,14 @@ def search():
         base_qs=base_qs,
     )
 
+@app.route("/", methods=["GET"])
+def index():
+    try:
+        return "<br>".join(map(str, app.url_map.iter_rules()))
+    except Exception:
+        current_app.logger.exception("index failed")
+        return "OK", 200
+
 # -------------------------------------------------------------------
 # Alerts: Subscribe / Send-now / Cron (HTTP-Trigger-Variante siehe unten)
 # -------------------------------------------------------------------
