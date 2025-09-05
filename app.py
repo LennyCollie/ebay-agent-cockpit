@@ -1208,7 +1208,14 @@ except Exception:
             if ok:
                 _fallback_lock.release()
 
-internal_bp = Blueprint("internal", __name__)
+internal_bp = Blueprint("internal", __name__, url_prefix="/internal")
+
+def require_agent_token():
+    token = request.headers.get("Authorization", "")
+    if token.startswith("Bearer "):
+        token = token[7:]
+    if token != os.getenv("AGENT_TRIGGER_TOKEN", ""):
+        abort(401)
 
 @internal_bp.route("/mail-test", methods=["GET"])
 def internal_mail_test():
