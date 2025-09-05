@@ -1229,21 +1229,21 @@ def internal_mail_test():
 @internal_bp.route("/run-agent", methods=["POST"])
 def internal_run_agent():
     require_agent_token()
-    from agent import run_agent_once  # lokal importieren
-    try:
-        run_agent_once()
-        return jsonify({"ok": True}), 200
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
 
-@internal_bp.route("/internal/run-agent", methods=["POST"])
-def internal_run_agent():
-    # --- Bearer-Token-Check ---
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        auth = auth[7:]
-    if auth != os.getenv("AGENT_TRIGGER_TOKEN", ""):
-        abort(401)
+    with agent_lock():                           # falls definiert
+        try:
+            from agent import run_agent_once
+        except Exception:
+            current_app.logger.exception("agent import failed")
+            return jsonify({"status": "error", "error": "agent_import_failed"}), 500
+
+        try:
+            run_agent_once()
+        except Exception:
+            current_app.logger.exception("agent run failed")
+            return jsonify({"status": "error", "error": "agent_run_failed"}), 500
+
+    return jsonify({"ok": True}), 200
 
     # ab hier wie gehabt ...
     with agent_lock():
