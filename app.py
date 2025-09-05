@@ -1225,10 +1225,10 @@ def internal_mail_test():
 
     # einfache Testmail
     send_mail(
-        subject="Test vom ebay-agent-cockpit",
-        body="✓ Mail-Setup ok. (Staging)",
-        to=to,
-    )
+    to_addr=to,
+    subject="Test vom ebay-agent-cockpit",
+    body="✓ Mail-Setup ok. (Staging)",
+)
     return jsonify({"ok": True, "to": to}), 200
 
 @internal_bp.route("/run-agent", methods=["POST"])
