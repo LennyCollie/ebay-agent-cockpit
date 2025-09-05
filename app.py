@@ -1219,7 +1219,6 @@ def require_agent_token():
 
 @internal_bp.route("/mail-test", methods=["GET"])
 def internal_mail_test():
-    require_agent_token()
     to = request.args.get("to", "").strip()
     if not to:
         return jsonify({"ok": False, "error": "missing 'to'"}), 400
@@ -1231,7 +1230,6 @@ def internal_mail_test():
         to=to,
     )
     return jsonify({"ok": True, "to": to}), 200
-
 
 @internal_bp.route("/run-agent", methods=["POST"])
 def internal_run_agent():
