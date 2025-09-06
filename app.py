@@ -1011,7 +1011,7 @@ def cron_run_alerts():
     return jsonify({"ok": True, "alerts_checked": total_checked, "alerts_emailed": total_sent})
 
 @app.get("/pilot/info")
-def pilot_info():
+def pilot_info_page():
     base = request.url_root.rstrip("/")
     waitlist_url = base + "/pilot/waitlist"
 
