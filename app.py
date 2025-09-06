@@ -12,7 +12,9 @@ from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from urllib.parse import urlencode
-from mailer import send_mail  
+from mailer import send_mail
+from datetime import datetime
+  
 
 import requests
 from flask import (
@@ -28,6 +30,7 @@ from flask import (
     current_app,
     Blueprint,
 )
+
 
 from mailer import send_mail
 # -------------------------------------------------------------------
@@ -844,6 +847,13 @@ def index():
         current_app.logger.exception("index failed")
         return "OK", 200
 
+
+@app.route("/pilot/info")
+def pilot_info():
+    waitlist_url = request.url_root.rstrip("/") + "/pilot/waitlist"
+    # Deinen internen Widget-Link NICHT direkt anzeigen (nur als Hinweis für das Team-Handout)
+    return render_template("pilot_info.html", waitlist_url=waitlist_url)
+
 # -------------------------------------------------------------------
 # Alerts: Subscribe / Send-now / Cron (HTTP-Trigger-Variante siehe unten)
 # -------------------------------------------------------------------
@@ -999,6 +1009,24 @@ def cron_run_alerts():
         conn.close()
 
     return jsonify({"ok": True, "alerts_checked": total_checked, "alerts_emailed": total_sent})
+
+@app.get("/pilot/info")
+def pilot_info():
+    base = request.url_root.rstrip("/")
+    waitlist_url = base + "/pilot/waitlist"
+
+    # Für Demo/Termin: Praxis-ID als Platzhalter
+    practice_id = "DEMO-PRAXIS"
+    token = os.getenv("PRACTICE_DEMO_SECRET", "")  # denselben Token wie fürs Widget nutzen
+    widget_url = f"{base}/pilot/widget?practice={practice_id}" + (f"&key={token}" if token else "")
+
+    return render_template(
+        "pilot_info.html",
+        waitlist_url=waitlist_url,
+        widget_url=widget_url,
+        year=datetime.now().year,
+    )
+
 
 # -------------------------------------------------------------------
 # Stripe (optional – fällt zurück, wenn nicht konfiguriert)
