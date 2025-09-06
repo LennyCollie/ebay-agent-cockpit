@@ -46,10 +46,17 @@
         <h1>Weniger Leerlauf, glücklichere Patient:innen.</h1>
         <p>Bei Absage einen Klick, und passende Wartelisten-Einträge bekommen automatisch eine E-Mail. Keine PVS-Integration nötig, in 10 Minuten startklar.</p>
         <div>
-          <a class="btn" href="{{ waitlist_url }}" target="_blank" rel="noopener">Warteliste ansehen</a>
-          &nbsp;&nbsp;
-          <a class="btn" href="{{ widget_url }}" target="_blank" rel="noopener">Praxis-Widget (Demo)</a>
+         <a class="btn" href="{{ waitlist_url }}" target="_blank" rel="noopener">Warteliste ansehen</a>
+         {% if widget_url %}
+           &nbsp;&nbsp;
+           <a class="btn" href="{{ widget_url }}" target="_blank" rel="noopener">Praxis-Widget (intern)</a>
+         {% else %}
+           <div style="margin-top:10px;color:#94a3b8;font-size:14px;">
+             Interner Praxis-Widget-Link wird dem Team separat bereitgestellt.
+           </div>
+         {% endif %}
         </div>
+
         <div class="kpi">
           <div class="card"><div class="num">~60 s</div><div>bis Slot gemeldet</div></div>
           <div class="card"><div class="num">30–70 %</div><div>wird besetzt</div></div>

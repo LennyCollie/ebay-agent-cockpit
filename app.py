@@ -1015,18 +1015,25 @@ def pilot_info():
     base = request.url_root.rstrip("/")
     waitlist_url = base + "/pilot/waitlist"
 
-    # Für Demo/Termin: Praxis-ID als Platzhalter
-    practice_id = "DEMO-PRAXIS"
-    token = os.getenv("PRACTICE_DEMO_SECRET", "")  # denselben Token wie fürs Widget nutzen
-    widget_url = f"{base}/pilot/widget?practice={practice_id}" + (f"&key={token}" if token else "")
+    # Praxis-ID dynamisch aus der URL, fallback für Demo
+    practice = request.args.get("practice", "DEMO-PRAXIS")
+
+    # Interner Key aus ENV
+    token = os.getenv("PRACTICE_DEMO_SECRET", "")
+
+    # Widget-Link nur zeigen, wenn der aufrufende Link den korrekten key mitliefert
+    show_widget = bool(token) and (request.args.get("key") == token)
+    widget_url = None
+    if show_widget:
+        widget_url = f"{base}/pilot/widget?practice={practice}&key={token}"
 
     return render_template(
         "pilot_info.html",
         waitlist_url=waitlist_url,
-        widget_url=widget_url,
+        widget_url=widget_url,     # None ⇒ Button wird versteckt
+        practice=practice,
         year=datetime.now().year,
     )
-
 
 # -------------------------------------------------------------------
 # Stripe (optional – fällt zurück, wenn nicht konfiguriert)
