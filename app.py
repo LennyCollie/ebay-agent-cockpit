@@ -1397,28 +1397,47 @@ def pilot_widget_free():
     if PRACTICE_DEMO_SECRET and request.args.get("key") != PRACTICE_DEMO_SECRET:
         return "401 demo key missing/invalid", 401
 
-    fach  = request.form.get("fach","").strip()
-    until = request.form.get("until","").strip()
-    link  = request.form.get("link","").strip() or "(Telefon: 01234/56789)"
-    DEMO_SLOTS.append({"fach":fach, "until":until, "link":link, "created": datetime.utcnow().isoformat()})
+    fach  = request.form.get("fach", "").strip()
+    until = request.form.get("until", "").strip()
+    link  = request.form.get("link", "").strip() or "(Telefon: 01234/56789)"
+
+    DEMO_SLOTS.append({
+        "fach": fach,
+        "until": until,
+        "link": link,
+        "created": datetime.utcnow().isoformat()
+    })
 
     # einfache Filterlogik: nur Fachgebiet matchen
     matches = [w for w in DEMO_WAITLIST if w["fach"] == fach]
     sent = 0
     for w in matches[:20]:  # Sicherheitslimit
         try:
-            send_mail(
-                to_addr=w["email"],
+            addr = w["email"]
+            send_mail_pilot(
+                to=addr,
                 subject=f"Freier Termin ({fach}) bis {until}",
-                body=f"Hallo,\n\nin {fach} ist kurzfristig ein Termin frei – bis {until}.\nBuchen: {link}\n\nViele Grüße"
+                text=(
+                    f"Hallo,\n\n"
+                    f"in {fach} ist kurzfristig ein Termin frei – gültig bis {until}.\n\n"
+                    f"Buchen/Info: {link}\n"
+                ),
+                # optional: separater Message-Stream für Pilot
+                stream=os.getenv("PILOT_MESSAGE_STREAM"),
+                # optional: Reply-To
+                reply_to=os.getenv("PILOT_SENDER_EMAIL"),
             )
             sent += 1
-        except Exception as e:
-            print("send failed", w["email"], e)
+        except Exception:
+            current_app.logger.exception("pilot mail failed")
 
-    return f"<p>✅ Slot freigegeben ({fach} bis {until}). Benachrichtigungen verschickt: {sent}. <a href='/pilot/widget{qs}'>Zurück</a></p>".format(
-        qs=("?key="+PRACTICE_DEMO_SECRET) if PRACTICE_DEMO_SECRET else ""
-    )
+    qs = f"?key={PRACTICE_DEMO_SECRET}" if PRACTICE_DEMO_SECRET else ""
+    return (
+        f"<p>✅ Slot freigegeben ({fach}) bis {until}. "
+        f"Benachrichtigungen verschickt: {sent}. "
+        f"<a href='/pilot/widget{qs}'>Zurück</a></p>"
+    )          
+
 # ======= DEMO BLOCK: Storno-Radar (End) =======
 
 if __name__ == "__main__":
