@@ -1263,18 +1263,22 @@ def require_agent_token():
 
 @internal_bp.route("/mail-test", methods=["GET"])
 def internal_mail_test():
+    # oben in der Datei muss stehen: from mailer import send_mail
+
     to = request.args.get("to", "").strip()
     if not to:
         return jsonify({"ok": False, "error": "missing 'to'"}), 400
 
-    # einfache Testmail
-    send_mail(
-    to_addr=to,
-    subject="Test vom ebay-agent-cockpit",
-    body="✓ Mail-Setup ok. (Staging)",
-)
-    return jsonify({"ok": True, "to": to}), 200
-
+    try:
+        send_mail(
+            to=to,
+            subject="Test vom ebay-agent-cockpit",
+            text="? Mail-Setup ok. (Staging)",
+        )
+        return jsonify({"ok": True, "to": to}), 200
+    except Exception as e:
+        current_app.logger.exception("mail test failed")
+        return jsonify({"ok": False, "error": str(e)}), 500
 @internal_bp.route("/run-agent", methods=["POST"])
 def internal_run_agent():
     # Token prüfen (kleiner Helper – siehe unten)
@@ -1445,3 +1449,4 @@ if __name__ == "__main__":
     port  = int(os.getenv("PORT", "5000"))
     debug = as_bool(os.getenv("FLASK_DEBUG", "1"))
     app.run(host="0.0.0.0", port=port, debug=debug)
+
