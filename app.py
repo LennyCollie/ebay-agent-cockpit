@@ -1299,6 +1299,145 @@ def internal_run_agent():
 
     return jsonify({"ok": True}), 200
 
+# ========= INTERN: Helfer für Alerts / DB-Inspektion =========
+
+def _detect_alerts_table(conn):
+    """
+    Sucht eine Tabelle mit einer 'email'-Spalte und einer Aktiv-Spalte ('active' oder 'is_active').
+    Gibt (table_name, email_col, active_col, id_col) zurück oder (None, ...), falls nicht gefunden.
+    """
+    cur = conn.cursor()
+    # alle Tabellen
+    rows = cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    tables = [r[0] for r in rows]
+    for t in tables:
+        cols = cur.execute(f"PRAGMA table_info({t})").fetchall()  # cid, name, type, notnull, dflt, pk
+        names = {c[1].lower(): c for c in cols}
+        # Pflicht: email + irgendeine Aktiv-Spalte
+        if "email" in names and ("active" in names or "is_active" in names):
+            email_col = "email"
+            active_col = "active" if "active" in names else "is_active"
+            # ID-Spalte heuristisch
+            id_col = "id" if "id" in names else ( "alert_id" if "alert_id" in names else list(names.keys())[0] )
+            return t, email_col, active_col, id_col
+    return None, None, None, None
+
+
+@internal_bp.route("/db-info", methods=["GET"])
+def internal_db_info():
+    """Zeigt Tabellen + vermutete Alerts-Tabelle/Spalten – zum Nachsehen im Browser."""
+    require_agent_token()  # denselben Token-Check nutzen wie bei deinen anderen /internal-Routen
+    conn = get_db()
+    cur = conn.cursor()
+    tables = cur.execute("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+    found = _detect_alerts_table(conn)
+    data = {
+        "tables": [{"name": n, "create_sql": s} for (n, s) in tables],
+        "alerts_detection": {
+            "table": found[0],
+            "email_col": found[1],
+            "active_col": found[2],
+            "id_col": found[3],
+        },
+    }
+    from flask import jsonify
+    return jsonify(data), 200
+
+
+@internal_bp.route("/alerts/disable-all", methods=["POST"])
+def internal_alerts_disable_all():
+    """Setzt alle Alarme für eine E-Mail auf inaktiv."""
+    require_agent_token()
+    email = request.form.get("email", "").strip().lower()
+    if not email:
+        return ("missing email", 400)
+
+    conn = get_db()
+    table, email_col, active_col, _ = _detect_alerts_table(conn)
+    if not table:
+        return ("could not detect alerts table", 500)
+
+    cur = conn.cursor()
+    cur.execute(f"UPDATE {table} SET {active_col}=0 WHERE lower({email_col})=?", (email,))
+    conn.commit()
+    return {"ok": True, "email": email, "updated": cur.rowcount}, 200
+
+
+@internal_bp.route("/my-alerts", methods=["GET"])
+def internal_my_alerts():
+    """
+    Mini-Übersicht + Toggle. Aufruf: /internal/my-alerts?email=dein@postfach.de
+    """
+    require_agent_token()
+    email = request.args.get("email", "").strip().lower()
+    if not email:
+        return ("missing ?email=...", 400)
+
+    conn = get_db()
+    table, email_col, active_col, id_col = _detect_alerts_table(conn)
+    if not table:
+        return ("could not detect alerts table", 500)
+
+    cur = conn.cursor()
+    rows = cur.execute(
+        f"SELECT {id_col} AS id, {email_col} AS email, {active_col} AS active, * FROM {table} WHERE lower({email_col})=? ORDER BY {id_col} DESC",
+        (email,),
+    ).fetchall()
+
+    # ganz einfacher HTML-Renderer, kein extra Template nötig
+    html = ["<h1>Meine Alarme</h1>"]
+    html.append(f"<p>Email: <b>{email}</b></p>")
+    if not rows:
+        html.append("<p>Keine Alarme gefunden.</p>")
+    else:
+        html.append("<table border=1 cellpadding=6><tr><th>ID</th><th>Aktiv</th><th>Aktion</th></tr>")
+        for r in rows:
+            rid = r["id"] if isinstance(r, dict) else r[0]
+            is_active = r["active"] if isinstance(r, dict) else r[2]
+            label = "deaktivieren" if is_active else "aktivieren"
+            new_val = 0 if is_active else 1
+            html.append(
+                f"<tr><td>{rid}</td>"
+                f"<td>{'✅ aktiv' if is_active else '⛔ inaktiv'}</td>"
+                f"<td>"
+                f"<form method='post' action='/internal/alerts/toggle' style='margin:0;'>"
+                f"<input type='hidden' name='id' value='{rid}'/>"
+                f"<input type='hidden' name='active' value='{new_val}'/>"
+                f"<input type='hidden' name='email' value='{email}'/>"
+                f"<button type='submit'>{label}</button>"
+                f"</form>"
+                f"</td></tr>"
+            )
+        html.append("</table>")
+        html.append("<p style='margin-top:12px'>Tipp: <form method='post' action='/internal/alerts/disable-all' style='display:inline;'>"
+                    f"<input type='hidden' name='email' value='{email}'/>"
+                    "<button>Alle für diese E-Mail deaktivieren</button></form></p>")
+    return "\n".join(html), 200
+
+
+@internal_bp.route("/alerts/toggle", methods=["POST"])
+def internal_alerts_toggle():
+    """Aktiv-Flag eines Alerts umschalten (von der Tabelle oben aus)."""
+    require_agent_token()
+    rid = request.form.get("id", "").strip()
+    target = request.form.get("active", "").strip()
+    email = request.form.get("email", "").strip().lower()
+
+    if not rid or target not in ("0", "1"):
+        return ("bad request", 400)
+
+    conn = get_db()
+    table, email_col, active_col, id_col = _detect_alerts_table(conn)
+    if not table:
+        return ("could not detect alerts table", 500)
+
+    cur = conn.cursor()
+    cur.execute(f"UPDATE {table} SET {active_col}=? WHERE {id_col}=?", (int(target), rid))
+    conn.commit()
+    # wieder zurück zur Liste für diese E-Mail
+    return redirect(f"/internal/my-alerts?email={email}")
+
+
 @app.route("/_routes")
 def _routes():
     return {"routes": [str(r) for r in app.url_map.iter_rules()]}
