@@ -1,0 +1,23 @@
+{
+  // Einrückung: 4 Spaces, keine Tabs
+  "editor.insertSpaces": true,
+  "editor.tabSize": 4,
+  "editor.detectIndentation": false,
+
+  // Zeilenenden einheitlich (LF = \n). Wenn du CRLF willst, setz "\r\n".
+  "files.eol": "\n",
+
+  // Whitespace sichtbar & aufräumen
+  "editor.renderWhitespace": "boundary",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  // Formatieren
+  "editor.formatOnSave": true,
+
+  // Python: Black als Formatter
+  "python.formatting.provider": "black",
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python"
+  }
+}

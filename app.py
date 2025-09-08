@@ -1257,6 +1257,7 @@ def require_agent_token():
     token = request.headers.get("Authorization", "")
     if token.startswith("Bearer "):
         token = token[7:]
+    env_tok = os.getenv("AGENT_TRIGGER_TOKEN", "")
     if token != os.getenv("AGENT_TRIGGER_TOKEN", ""):
         abort(401)
 

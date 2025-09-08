@@ -1,6 +1,7 @@
 # mailer.py
 import os, smtplib
 from email.message import EmailMessage
+from email.utils import formataddr
 
 def _env(*keys, default=None):
     for k in keys:
@@ -22,29 +23,72 @@ SENDER_NAME  = _env("SENDER_NAME", default="Ebay Agent")
 
 MAIL_TIMEOUT_SECONDS = int(_env("MAIL_TIMEOUT_SECONDS", default="30"))
 
-def send_mail(to_addr: str, subject: str, body: str):
-    if not all([SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SENDER_EMAIL]):
-        raise RuntimeError("SMTP-ENV unvollständig (Host/Port/User/Pass/Sender)")
+# ---- Konfiguration je nach Modus holen
+
+MAIL_TIMEOUT_SECONDS = int(os.getenv("MAIL_TIMEOUT_SECONDS", "30"))
+
+# ---- Konfiguration je nach Modus holen
+def _mail_cfg(use_pilot: bool):
+    prefix = "PILOT_" if use_pilot else ""
+    host  = os.getenv(f"{prefix}SMTP_HOST", "smtp.postmarkapp.com")
+    port  = int(os.getenv(f"{prefix}SMTP_PORT", "587"))
+    user  = os.getenv(f"{prefix}SMTP_USERNAME")         # = Server API Token bei Postmark
+    pwd   = os.getenv(f"{prefix}SMTP_PASSWORD")         # = derselbe Token
+    use_tls = os.getenv(f"{prefix}SMTP_USE_TLS", "1") in ("1", "true", "True")
+    sender = os.getenv(f"{prefix}SENDER_EMAIL") or os.getenv("SENDER_EMAIL")
+    sender_name = os.getenv("SENDER_NAME") or os.getenv("SITE_NAME", "App")
+    # Stream: erst prefix-spezifisch, sonst global (falls du auch fürs eBay-Stream einen setzen willst)
+    stream = os.getenv(f"{prefix}MESSAGE_STREAM") or os.getenv("MESSAGE_STREAM")
+    return host, port, user, pwd, use_tls, sender, sender_name, stream
+
+def send_mail(
+    to,
+    subject,
+    text,
+    html=None,
+    *,
+    use_pilot: bool = False,
+    stream: str | None = None,
+    sender_email: str | None = None,
+    sender_name: str | None = None,
+    reply_to: str | None = None,
+):
+    """
+    - use_pilot=True  -> nutzt PILOT_* ENV + setzt X-PM-Message-Stream
+    - stream=None     -> nimmt ggf. (PILOT_)MESSAGE_STREAM aus ENV
+    """
+    (host, port, user, pwd, use_tls,
+     default_sender, default_sender_name, default_stream) = _mail_cfg(use_pilot)
+
+    sender_email = sender_email or default_sender
+    sender_name  = sender_name  or default_sender_name
+    stream       = stream or default_stream
+
+    if not sender_email:
+        raise RuntimeError("Keine Absenderadresse (SENDER_EMAIL / PILOT_SENDER_EMAIL) konfiguriert.")
 
     msg = EmailMessage()
+    msg["From"] = formataddr((sender_name, sender_email))
+    msg["To"] = to if isinstance(to, str) else ", ".join(to)
     msg["Subject"] = subject
-    msg["From"] = f"{SENDER_NAME} <{SENDER_EMAIL}>"
-    msg["To"] = to_addr
-    msg["Reply-To"] = SENDER_EMAIL
-    msg.set_content(body)
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    if stream:
+        msg["X-PM-Message-Stream"] = stream
 
-    if SMTP_USE_SSL:
-        import ssl
-        ctx = ssl.create_default_context()
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=MAIL_TIMEOUT_SECONDS, context=ctx) as s:
-            s.login(SMTP_USERNAME, SMTP_PASSWORD)
-            s.send_message(msg)
-        return
+    if html:
+        msg.set_content(text or "")
+        msg.add_alternative(html, subtype="html")
+    else:
+        msg.set_content(text or "")
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=MAIL_TIMEOUT_SECONDS) as s:
-        s.ehlo()
-        if SMTP_USE_TLS:
+    with smtplib.SMTP(host, port, timeout=MAIL_TIMEOUT_SECONDS) as s:
+        if use_tls:
             s.starttls()
-            s.ehlo()
-        s.login(SMTP_USERNAME, SMTP_PASSWORD)
+        if user and pwd:
+            s.login(user, pwd)
         s.send_message(msg)
+
+# Bequemer Wrapper für den Pilot
+def send_mail_pilot(to, subject, text, html=None, stream: str | None = None, reply_to: str | None = None):
+    return send_mail(to, subject, text, html, use_pilot=True, stream=stream, reply_to=reply_to)
