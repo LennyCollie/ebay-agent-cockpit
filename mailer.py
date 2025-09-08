@@ -10,7 +10,7 @@ def _env(*keys, default=None):
             return v
     return default
 
-SMTP_HOST = _env("SMTP_HOST", default="smtp.gmail.com")
+
 SMTP_PORT = int(_env("SMTP_PORT", default="587"))
 SMTP_USE_TLS = _env("SMTP_USE_TLS", default="1") in ("1","true","True")
 SMTP_USE_SSL = _env("SMTP_USE_SSL", default="0") in ("1","true","True")
@@ -90,5 +90,7 @@ def send_mail(
         s.send_message(msg)
 
 # Bequemer Wrapper für den Pilot
-def send_mail_pilot(to, subject, text, html=None, stream: str | None = None, reply_to: str | None = None):
-    return send_mail(to, subject, text, html, use_pilot=True, stream=stream, reply_to=reply_to)
+
+def send_mail_simple(to_addr: str, subject: str, body: str):
+    """Backwards-compat wrapper that uses the new Postmark-based sender."""
+    return send_mail(to=to_addr, subject=subject, text=body)
