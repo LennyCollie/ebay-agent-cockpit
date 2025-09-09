@@ -14,48 +14,10 @@
         <strong class="me-2">Vorlagen:</strong>
         <span class="text-muted">ein Klick füllt das Formular & startet die Suche</span>
       </div>
-      <div class="d-flex flex-wrap gap-2">
-        <!-- Vorlage 1 -->
-        <button type="button"
-                class="btn btn-outline-primary btn-sm preset"
-                data-q1="iPhone 11"
-                data-q2="128GB"
-                data-q3=""
-                data-price-min=""
-                data-price-max="220"
-                data-sort="newly"
-                data-cond="USED">
-          📱 iPhone 11 • 128GB • bis 220€ • gebraucht
-        </button>
 
-        <!-- Vorlage 2 -->
-        <button type="button"
-                class="btn btn-outline-primary btn-sm preset"
-                data-q1="LEGO Technic"
-                data-q2="42115"
-                data-q3=""
-                data-price-min="150"
-                data-price-max="300"
-                data-sort="price_asc"
-                data-cond="NEW">
-          🧱 LEGO 42115 • 150–300€ • neu
-        </button>
-
-        <!-- Vorlage 3 -->
-        <button type="button"
-                class="btn btn-outline-primary btn-sm preset"
-                data-q1="Nintendo Switch OLED"
-                data-q2="Zelda"
-                data-q3=""
-                data-price-min=""
-                data-price-max=""
-                data-sort="best"
-                data-cond="USED,CERTIFIED_REFURBISHED">
-          🎮 Switch OLED + Zelda • gebraucht/refurb
-        </button>
+      <div class="d-flex flex-wrap gap-2" id="preset-list">
+       <span class="text-muted">wird geladen …</span>
       </div>
-    </div>
-  </div>
 
   <!-- Suchformular -->
   <form id="searchForm" action="{{ url_for('search') }}" method="post" class="card">
@@ -156,35 +118,81 @@
     const share = document.getElementById('shareUrl');
 
     // Presets (Auto-Fill + Auto-Submit)
-    document.querySelectorAll('.preset').forEach(btn => {
-      btn.addEventListener('click', () => {
-        // Textfelder
-        form.q1.value = btn.dataset.q1 || '';
-        form.q2.value = btn.dataset.q2 || '';
-        form.q3.value = btn.dataset.q3 || '';
+    // === Dynamische Presets aus /static/templates.json ===
 
-        // Preise
-        form.price_min.value = btn.dataset.priceMin || '';
-        form.price_max.value = btn.dataset.priceMax || '';
+// 1) Presets laden
+async function loadPresets() {
+  try {
+    const res = await fetch('/static/templates.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    return Array.isArray(data?.presets) ? data.presets : [];
+  } catch (e) {
+    console.warn('Konnte Presets nicht laden:', e);
+    return [];
+  }
+}
 
-        // Sortierung
-        form.sort.value = btn.dataset.sort || 'best';
+// 2) Preset anwenden und Suche starten
+function applyPreset(p) {
+  form.q1.value = (p.q1 || '').trim();
+  form.q2.value = (p.q2 || '').trim();
+  form.q3.value = (p.q3 || '').trim();
 
-        // Zustände (erst alles abwählen)
-        form.querySelectorAll('input[name="condition"]').forEach(cb => cb.checked = false);
-        const cond = (btn.dataset.cond || '').split(',').map(s => s.trim()).filter(Boolean);
-        if (cond.length) {
-          cond.forEach(val => {
-            const el = form.querySelector('input[name="condition"][value="' + val + '"]');
-            if (el) el.checked = true;
-          });
-        }
+  form.price_min.value = (p.price_min ?? '').toString();
+  form.price_max.value = (p.price_max ?? '').toString();
 
-        // Teilen-URL aktualisieren und absenden
-        updateShareUrl();
-        form.submit();
-      });
+  form.sort.value = (p.sort || 'best');
+
+  form.querySelectorAll('input[name="condition"]').forEach(cb => (cb.checked = false));
+  if (p.cond) {
+    p.cond.split(',').map(s => s.trim()).filter(Boolean).forEach(val => {
+      const el = form.querySelector('input[name="condition"][value="' + val + '"]');
+      if (el) el.checked = true;
     });
+  }
+
+  updateShareUrl();
+  form.submit(); // nur hier absenden
+}
+
+// 3) Buttons in #preset-list rendern
+function renderChips(presets) {
+  const list = document.getElementById('preset-list');
+  if (!list) return;
+
+  list.innerHTML = '';
+  if (!presets.length) {
+    list.innerHTML = '<span class="text-muted">keine Presets gefunden</span>';
+    return;
+  }
+
+  presets.forEach(p => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-outline-primary btn-sm';
+    btn.textContent = p.label || p.id || 'Preset';
+    btn.title = [p.q1, p.q2, p.q3].filter(Boolean).join(' • ');
+    btn.addEventListener('click', () => applyPreset(p));
+    list.appendChild(btn);
+  });
+
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'btn btn-outline-secondary btn-sm';
+  reset.textContent = 'Zurücksetzen';
+  reset.addEventListener('click', () => {
+    if (typeof form.reset === 'function') form.reset();
+    form.querySelectorAll('input[type="text"], input[type="number"]').forEach(inp => (inp.value = ''));
+    form.querySelectorAll('input[name="condition"]').forEach(cb => (cb.checked = false));
+    updateShareUrl();
+  });
+  list.appendChild(reset);
+}
+
+// 4) Start
+loadPresets().then(renderChips);
+
 
     // Build GET-URL zu /search (inkl. Mehrfachparametern "condition")
     function updateShareUrl() {
