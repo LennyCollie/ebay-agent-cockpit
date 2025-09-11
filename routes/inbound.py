@@ -7,6 +7,8 @@ import hmac
 import base64
 import hashlib
 from typing import Any, Dict
+from datetime import datetime
+from flask import current_app
 
 from flask import Blueprint, request, abort, jsonify, current_app
 
@@ -107,6 +109,21 @@ def _check_postmark_signature(raw_body: bytes) -> bool:
         return True
 
     return False
+
+def store_event(source: str, payload: dict) -> None:
+    current_app.logger.warning(
+        "store_event STUB used | source=%s | subject=%s | t=%s",
+        source,
+        payload.get("Subject"),
+        datetime.utcnow().isoformat() + "Z",
+    )
+
+# 2) Optional echten Store importieren und den Stub ersetzen
+try:
+    from services.inbound_store import store_event as _real_store_event
+    store_event = _real_store_event  # überschreibt den Stub nur, wenn Import klappt
+except Exception as e:
+    current_app.logger.warning("using store_event STUB (import failed): %s", e)
 
 
 @bp.route("/inbound/postmark", methods=["GET", "POST"])
