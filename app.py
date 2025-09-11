@@ -14,7 +14,7 @@ from typing import Optional, List, Dict, Tuple
 from urllib.parse import urlencode
 from mailer import send_mail
 from datetime import datetime
-  
+
 
 import requests
 from flask import (
@@ -48,6 +48,9 @@ except Exception:
 # -------------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
+
+from routes.inbound import bp as inbound_bp
+app.register_blueprint(inbound_bp)
 
 # Plausible (für base.html)
 PLAUSIBLE_DOMAIN = os.getenv("PLAUSIBLE_DOMAIN", "")
@@ -1580,7 +1583,7 @@ def pilot_widget_free():
         f"<p>✅ Slot freigegeben ({fach}) bis {until}. "
         f"Benachrichtigungen verschickt: {sent}. "
         f"<a href='/pilot/widget{qs}'>Zurück</a></p>"
-    )          
+    )
 
 # ======= DEMO BLOCK: Storno-Radar (End) =======
 
