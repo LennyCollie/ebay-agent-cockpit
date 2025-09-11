@@ -4,28 +4,38 @@ import hmac
 import base64
 import hashlib
 import fnmatch
+import logging
 from datetime import datetime
-from flask import Blueprint, request, abort, current_app
+from flask import Blueprint, request, abort, current_app, has_app_context
 
 bp = Blueprint("inbound", __name__)
 
-# --- Fail-safe: immer einen store_event-Stub bereitstellen -------------------
+# -------- logging helpers ----------------------------------------------------
+logger = logging.getLogger("inbound")
+
+def _log(level: str, msg: str, *args):
+    """Loggt sicher – mit current_app.logger wenn Kontext da ist, sonst std-Logger."""
+    if has_app_context():
+        getattr(current_app.logger, level)(msg, *args)
+    else:
+        getattr(logger, level)(msg, *args)
+
+# -------- fail-safe store_event (Stub by default) ----------------------------
 def store_event(source: str, payload: dict) -> None:
-    current_app.logger.warning(
-        "store_event STUB used | source=%s | subject=%s | received=%s",
-        source,
-        payload.get("Subject"),
-        datetime.utcnow().isoformat() + "Z",
-    )
+    # läuft normalerweise im Request-Kontext, aber hier trotzdem sicher:
+    _log("warning",
+         "store_event STUB used | source=%s | subject=%s | received=%s",
+         source, payload.get("Subject"),
+         datetime.utcnow().isoformat() + "Z")
 
 try:
-    # echter Store (falls vorhanden) ersetzt den Stub
+    # echter Store, falls vorhanden
     from services.inbound_store import store_event as _real_store_event  # type: ignore
     store_event = _real_store_event  # noqa: F811
 except Exception as e:
-    current_app.logger.warning("using store_event STUB (import failed): %s", e)
+    _log("warning", "using store_event STUB (import failed): %s", e)
 
-# --- Optional: Kleinanzeigen-Parser fail-safe einbinden ----------------------
+# -------- Kleinanzeigen-Parser optional & fail-safe --------------------------
 def _is_from_kleinanzeigen(_payload: dict) -> bool:  # Stub
     return False
 
@@ -33,14 +43,15 @@ def _extract_summary(_payload: dict) -> dict:       # Stub
     return {}
 
 try:
-    # Korrekte Import-Form (NICHT "import services.kleinanzeigen_parser.extract_summary")
-    from services.kleinanzeigen_parser import is_from_kleinanzeigen, extract_summary  # type: ignore
+    from services.kleinanzeigen_parser import (  # type: ignore
+        is_from_kleinanzeigen, extract_summary
+    )
     _is_from_kleinanzeigen = is_from_kleinanzeigen
     _extract_summary = extract_summary
 except Exception as e:
-    current_app.logger.info("kleinanzeigen_parser not available (ok): %s", e)
+    _log("info", "kleinanzeigen_parser not available (ok): %s", e)
 
-# --- Hilfsfunktionen ---------------------------------------------------------
+# -------- helpers ------------------------------------------------------------
 def _ok_sender(sender: str) -> bool:
     """Wildcards in INBOUND_ALLOWED_SENDERS, z. B. '*postmarkapp.com, *kleinanzeigen.de'."""
     allowed = os.getenv("INBOUND_ALLOWED_SENDERS", "")
@@ -73,15 +84,14 @@ def _signature_ok(raw_body: bytes) -> bool:
     return hmac.compare_digest(sig, expected)
 
 def _get_sender(data: dict) -> str:
-    # Postmark-Inbound: 'FromFull':{'Email':...} oder 'From'
     return ((data.get("FromFull") or {}).get("Email")
             or data.get("From")
             or "").strip()
 
-# --- Routes ------------------------------------------------------------------
+# -------- routes -------------------------------------------------------------
 @bp.route("/inbound/postmark", methods=["GET", "POST"])
 def inbound_postmark():
-    # Healthcheck im Browser
+    # Healthcheck
     if request.method == "GET":
         return "inbound ok", 200
 
@@ -94,7 +104,7 @@ def inbound_postmark():
         abort(401)
 
     # 3) Body + optionale Signaturprüfung
-    raw = request.get_data()  # wichtig für HMAC
+    raw = request.get_data()
     if not _signature_ok(raw):
         abort(401)
 
@@ -103,37 +113,31 @@ def inbound_postmark():
 
     # 4) Absender-Filter
     if not _ok_sender(sender):
-        current_app.logger.warning("Inbound blocked by sender filter: %s", sender)
+        _log("warning", "Inbound blocked by sender filter: %s", sender)
         abort(403)
 
-    # 5) Event-Daten aufbauen
-    subject = data.get("Subject") or ""
-    text = data.get("TextBody") or ""
-    html = data.get("HtmlBody") or ""
-    message_id = data.get("MessageID") or ""
-
+    # 5) Event-Daten
     event = {
-        "Subject": subject,
+        "Subject": data.get("Subject") or "",
         "From": sender,
-        "TextBody": text,
-        "HtmlBody": html,
-        "MessageID": message_id,
+        "TextBody": data.get("TextBody") or "",
+        "HtmlBody": data.get("HtmlBody") or "",
+        "MessageID": data.get("MessageID") or "",
         "ReceivedAt": datetime.utcnow().isoformat() + "Z",
         "Raw": data,
     }
 
     # 6) Optional: Kleinanzeigen-Zusammenfassung
-    if _is_from_kleinanzeigen(data):
-        try:
-            summary = _extract_summary(data) or {}
-            event["Summary"] = summary
-        except Exception as e:
-            current_app.logger.warning("extract_summary failed: %s", e)
+    try:
+        if _is_from_kleinanzeigen(data):
+            event["Summary"] = _extract_summary(data) or {}
+    except Exception as e:
+        _log("warning", "extract_summary failed: %s", e)
 
-    # 7) Speichern / Weiterverarbeiten (echter Store oder Stub)
+    # 7) Speichern / Weiterverarbeiten
     try:
         store_event("postmark", event)
     except Exception as e:
-        current_app.logger.error("store_event failed: %s", e)
+        _log("error", "store_event failed: %s", e)
 
     return "ok", 200
