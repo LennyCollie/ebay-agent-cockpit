@@ -1,173 +1,139 @@
 # routes/inbound.py
-from __future__ import annotations
-
 import os
-import re
 import hmac
 import base64
 import hashlib
-from typing import Any, Dict
+import fnmatch
 from datetime import datetime
-from flask import current_app
-
-from flask import Blueprint, request, abort, jsonify, current_app
-
-# interne Services (sind in deinem Projekt vorhanden)
-from services.inbound_store import store_event
-from services.kleinanzeigen_parser import is_from_kleinanzeigen, extract_summary
+from flask import Blueprint, request, abort, current_app
 
 bp = Blueprint("inbound", __name__)
 
-# -------------------------
-# Erkennung Kleinanzeigen
-# -------------------------
-RX_KA_SENDER = re.compile(r'@(?:mail\.)?kleinanzeigen\.de$', re.I)
-RX_KA_URL = re.compile(
-    r'https?://(?:www\.)?kleinanzeigen\.de/s-anzeige/[^"\s<>]+', re.I
-)
-
-def _ok_sender(sender: str) -> bool:
-    """
-    Prüft, ob der äußere From-Absender (z. B. bei Weiterleitungen) zur Allowlist passt.
-    INBOUND_ALLOWED_SENDERS nimmt komma-separierte Patterns, z. B.:
-      "*@mail.kleinanzeigen.de, *@kleinanzeigen.de, *@freenet.de"
-    Ein '*' bedeutet: Teilstring-Match.
-    """
-    sender = (sender or "").lower().strip()
-    allowed_raw = os.getenv("INBOUND_ALLOWED_SENDERS", "")
-    for p in (allowed_raw or "").split(","):
-        patt = p.strip().lower()
-        if not patt:
-            continue
-        # simples Wildcard-Matching: '*' entfernen -> Teilstring
-        if "*" in patt:
-            patt = patt.replace("*", "")
-            if patt and patt in sender:
-                return True
-        else:
-            if sender.endswith(patt):
-                return True
-    return False
-
-
-def _ok_by_payload(pm: Dict[str, Any]) -> bool:
-    """
-    Zulassen, wenn der Postmark-Payload eindeutig nach Kleinanzeigen aussieht:
-     - innerer Absender @mail.kleinanzeigen.de oder
-     - im Text/HTML/Betreff steckt eine Kleinanzeigen-URL
-    """
-    from_email = ((pm.get("FromFull") or {}).get("Email")) or pm.get("From") or ""
-    if RX_KA_SENDER.search(from_email):
-        return True
-    text = " ".join([
-        pm.get("TextBody") or "",
-        pm.get("HtmlBody") or "",
-        pm.get("Subject") or "",
-    ])
-    return bool(RX_KA_URL.search(text))
-
-
-def _check_basic_auth() -> bool:
-    """Optionales Basic-Auth-Gate. Aktiv, wenn beide ENV-Variablen gesetzt sind."""
-    user = os.getenv("INBOUND_BASIC_USER")
-    pw = os.getenv("INBOUND_BASIC_PASS")
-    if not user or not pw:
-        return True  # nicht konfiguriert -> nicht prüfen
-
-    auth_hdr = request.headers.get("Authorization", "")
-    expected = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
-    return auth_hdr == expected
-
-
-def _check_postmark_signature(raw_body: bytes) -> bool:
-    """
-    Verifiziert die Postmark-Inbound-Signatur, falls POSTMARK_INBOUND_SIGNING_SECRET gesetzt ist.
-    Postmark sendet 'X-Postmark-Signature' (hex oder base64 je nach lib). Wir prüfen beides.
-    """
-    secret = os.getenv("POSTMARK_INBOUND_SIGNING_SECRET")
-    if not secret:
-        return True  # kein Secret -> nicht prüfen
-
-    header_sig = request.headers.get("X-Postmark-Signature", "") or ""
-    if not header_sig:
-        return False
-
-    digest = hmac.new(
-        key=secret.encode("utf-8"),
-        msg=raw_body,
-        digestmod=hashlib.sha256,
-    ).digest()
-
-    # 1) Base64-Vergleich
-    b64_sig = base64.b64encode(digest).decode()
-    if hmac.compare_digest(header_sig, b64_sig):
-        return True
-
-    # 2) Hex-Vergleich (manche Clients nutzen das)
-    hex_sig = digest.hex()
-    if hmac.compare_digest(header_sig.lower(), hex_sig.lower()):
-        return True
-
-    return False
-
+# --- Fail-safe: immer einen store_event-Stub bereitstellen -------------------
 def store_event(source: str, payload: dict) -> None:
     current_app.logger.warning(
-        "store_event STUB used | source=%s | subject=%s | t=%s",
+        "store_event STUB used | source=%s | subject=%s | received=%s",
         source,
         payload.get("Subject"),
         datetime.utcnow().isoformat() + "Z",
     )
 
-# 2) Optional echten Store importieren und den Stub ersetzen
 try:
-    from services.inbound_store import store_event as _real_store_event
-    store_event = _real_store_event  # überschreibt den Stub nur, wenn Import klappt
+    # echter Store (falls vorhanden) ersetzt den Stub
+    from services.inbound_store import store_event as _real_store_event  # type: ignore
+    store_event = _real_store_event  # noqa: F811
 except Exception as e:
     current_app.logger.warning("using store_event STUB (import failed): %s", e)
 
+# --- Optional: Kleinanzeigen-Parser fail-safe einbinden ----------------------
+def _is_from_kleinanzeigen(_payload: dict) -> bool:  # Stub
+    return False
 
+def _extract_summary(_payload: dict) -> dict:       # Stub
+    return {}
+
+try:
+    # Korrekte Import-Form (NICHT "import services.kleinanzeigen_parser.extract_summary")
+    from services.kleinanzeigen_parser import is_from_kleinanzeigen, extract_summary  # type: ignore
+    _is_from_kleinanzeigen = is_from_kleinanzeigen
+    _extract_summary = extract_summary
+except Exception as e:
+    current_app.logger.info("kleinanzeigen_parser not available (ok): %s", e)
+
+# --- Hilfsfunktionen ---------------------------------------------------------
+def _ok_sender(sender: str) -> bool:
+    """Wildcards in INBOUND_ALLOWED_SENDERS, z. B. '*postmarkapp.com, *kleinanzeigen.de'."""
+    allowed = os.getenv("INBOUND_ALLOWED_SENDERS", "")
+    if not allowed.strip():
+        return True
+    s = (sender or "").lower().strip()
+    for patt in [p.strip().lower() for p in allowed.split(",") if p.strip()]:
+        if fnmatch.fnmatch(s, patt):
+            return True
+    return False
+
+def _basic_ok() -> bool:
+    """Basic Auth nur prüfen, wenn User+Pass gesetzt sind."""
+    user = os.getenv("INBOUND_BASIC_USER")
+    pw = os.getenv("INBOUND_BASIC_PASS")
+    if not user or not pw:
+        return True
+    auth = request.headers.get("Authorization", "")
+    expected = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
+    return hmac.compare_digest(auth, expected)
+
+def _signature_ok(raw_body: bytes) -> bool:
+    """Postmark Inbound HMAC-SHA256 (Base64) prüfen, wenn Secret gesetzt ist."""
+    key = os.getenv("POSTMARK_INBOUND_SIGNING_SECRET", "")
+    if not key:
+        return True
+    sig = request.headers.get("X-Postmark-Signature", "")
+    digest = hmac.new(key.encode(), raw_body, hashlib.sha256).digest()
+    expected = base64.b64encode(digest).decode()
+    return hmac.compare_digest(sig, expected)
+
+def _get_sender(data: dict) -> str:
+    # Postmark-Inbound: 'FromFull':{'Email':...} oder 'From'
+    return ((data.get("FromFull") or {}).get("Email")
+            or data.get("From")
+            or "").strip()
+
+# --- Routes ------------------------------------------------------------------
 @bp.route("/inbound/postmark", methods=["GET", "POST"])
 def inbound_postmark():
-    # --- Healthcheck (einfach im Browser prüfbar)
+    # Healthcheck im Browser
     if request.method == "GET":
         return "inbound ok", 200
 
-    # --- URL-Secret
+    # 1) URL-Secret (Pflicht)
     if request.args.get("secret") != os.getenv("INBOUND_SECRET", ""):
         abort(401)
 
-    # --- optional Basic-Auth
-    if not _check_basic_auth():
+    # 2) Optional Basic-Auth
+    if not _basic_ok():
         abort(401)
 
-    # --- rohen Body holen (für Signatur) + JSON parsen
-    raw = request.get_data(cache=False, as_text=False)
-    if not _check_postmark_signature(raw):
+    # 3) Body + optionale Signaturprüfung
+    raw = request.get_data()  # wichtig für HMAC
+    if not _signature_ok(raw):
         abort(401)
 
-    pm = request.get_json(force=True, silent=False)  # Postmark sendet JSON
+    data = request.get_json(silent=True) or {}
+    sender = _get_sender(data)
 
-    # --- Absender/Fallback-Prüfung
-    outer_from = ((pm.get("FromFull") or {}).get("Email")) or pm.get("From") or ""
-    sender_ok = _ok_sender(outer_from) or _ok_by_payload(pm)
-    if not sender_ok:
-        current_app.logger.warning(
-            "Inbound blocked by sender filter",
-            extra={"outer_from": outer_from}
-        )
+    # 4) Absender-Filter
+    if not _ok_sender(sender):
+        current_app.logger.warning("Inbound blocked by sender filter: %s", sender)
         abort(403)
 
-    # --- Quelle bestimmen und zusammenfassen
-    source = "kleinanzeigen" if is_from_kleinanzeigen(pm) else "email"
-    summary = extract_summary(pm)
+    # 5) Event-Daten aufbauen
+    subject = data.get("Subject") or ""
+    text = data.get("TextBody") or ""
+    html = data.get("HtmlBody") or ""
+    message_id = data.get("MessageID") or ""
 
-    # --- Event speichern / weiterreichen
+    event = {
+        "Subject": subject,
+        "From": sender,
+        "TextBody": text,
+        "HtmlBody": html,
+        "MessageID": message_id,
+        "ReceivedAt": datetime.utcnow().isoformat() + "Z",
+        "Raw": data,
+    }
+
+    # 6) Optional: Kleinanzeigen-Zusammenfassung
+    if _is_from_kleinanzeigen(data):
+        try:
+            summary = _extract_summary(data) or {}
+            event["Summary"] = summary
+        except Exception as e:
+            current_app.logger.warning("extract_summary failed: %s", e)
+
+    # 7) Speichern / Weiterverarbeiten (echter Store oder Stub)
     try:
-        store_event(source, pm, summary=summary)
-    except Exception as exc:
-        current_app.logger.exception("Failed to store inbound event", extra={"err": str(exc)})
-        # Wir antworten trotzdem 204, damit Postmark nicht spamt; Logging reicht uns hier.
-        return "", 204
+        store_event("postmark", event)
+    except Exception as e:
+        current_app.logger.error("store_event failed: %s", e)
 
-    # Postmark erwartet i. d. R. 200/204 bei Erfolg
-    return "", 204
+    return "ok", 200
