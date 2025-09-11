@@ -1,137 +1,156 @@
 # routes/inbound.py
+from __future__ import annotations
+
 import os
 import re
 import hmac
-import json
 import base64
 import hashlib
-from typing import Dict, Any
+from typing import Any, Dict
 
 from flask import Blueprint, request, abort, jsonify, current_app
 
-# --- optionale Services laden (fallen auf Stubs zurück, wenn lokal nicht vorhanden) ----
-try:
-    from services.inbound_store import store_event  # z.B. DB/Log persistieren
-except Exception:
-    def store_event(source: str, payload: Dict[str, Any]) -> None:
-        current_app.logger.info("store_event (stub) %s: %s", source, payload.get("Subject"))
-
-try:
-    from services.kleinanzeigen_parser import is_from_kleinanzeigen, extract_summary
-except Exception:
-    def is_from_kleinanzeigen(payload: Dict[str, Any]) -> bool:
-        return False
-
-    def extract_summary(payload: Dict[str, Any]) -> Dict[str, Any]:
-        return {}
-
-# ---------------------------------------------------------------------------------------
+# interne Services (sind in deinem Projekt vorhanden)
+from services.inbound_store import store_event
+from services.kleinanzeigen_parser import is_from_kleinanzeigen, extract_summary
 
 bp = Blueprint("inbound", __name__)
 
-# ----------------------------- Helper -----------------------------------------------
+# -------------------------
+# Erkennung Kleinanzeigen
+# -------------------------
+RX_KA_SENDER = re.compile(r'@(?:mail\.)?kleinanzeigen\.de$', re.I)
+RX_KA_URL = re.compile(
+    r'https?://(?:www\.)?kleinanzeigen\.de/s-anzeige/[^"\s<>]+', re.I
+)
 
 def _ok_sender(sender: str) -> bool:
     """
-    Optionaler Absender-Filter über INBOUND_ALLOWED_SENDERS.
-    Komma-separierte Liste, Wildcards * erlaubt (z.B. *@postmarkapp.com, *@kleinanzeigen.de).
-    Ist die Variable leer, ist ALLES erlaubt.
+    Prüft, ob der äußere From-Absender (z. B. bei Weiterleitungen) zur Allowlist passt.
+    INBOUND_ALLOWED_SENDERS nimmt komma-separierte Patterns, z. B.:
+      "*@mail.kleinanzeigen.de, *@kleinanzeigen.de, *@freenet.de"
+    Ein '*' bedeutet: Teilstring-Match.
     """
-    allowed = os.getenv("INBOUND_ALLOWED_SENDERS", "")
-    if not allowed.strip():
-        return True  # nichts konfiguriert -> nicht filtern
-
-    sender = (sender or "").lower()
-    patterns = [p.strip().lower() for p in allowed.split(",") if p.strip()]
-    for pat in patterns:
-        # Wildcard zu Regex
-        rx = "^" + re.escape(pat).replace(r"\*", ".*") + "$"
-        if re.match(rx, sender):
-            return True
+    sender = (sender or "").lower().strip()
+    allowed_raw = os.getenv("INBOUND_ALLOWED_SENDERS", "")
+    for p in (allowed_raw or "").split(","):
+        patt = p.strip().lower()
+        if not patt:
+            continue
+        # simples Wildcard-Matching: '*' entfernen -> Teilstring
+        if "*" in patt:
+            patt = patt.replace("*", "")
+            if patt and patt in sender:
+                return True
+        else:
+            if sender.endswith(patt):
+                return True
     return False
 
 
+def _ok_by_payload(pm: Dict[str, Any]) -> bool:
+    """
+    Zulassen, wenn der Postmark-Payload eindeutig nach Kleinanzeigen aussieht:
+     - innerer Absender @mail.kleinanzeigen.de oder
+     - im Text/HTML/Betreff steckt eine Kleinanzeigen-URL
+    """
+    from_email = ((pm.get("FromFull") or {}).get("Email")) or pm.get("From") or ""
+    if RX_KA_SENDER.search(from_email):
+        return True
+    text = " ".join([
+        pm.get("TextBody") or "",
+        pm.get("HtmlBody") or "",
+        pm.get("Subject") or "",
+    ])
+    return bool(RX_KA_URL.search(text))
+
+
 def _check_basic_auth() -> bool:
-    """
-    Optionaler Basic-Auth Schutz über INBOUND_BASIC_USER / INBOUND_BASIC_PASS.
-    Ist eins davon leer, ist Basic-Auth deaktiviert.
-    """
+    """Optionales Basic-Auth-Gate. Aktiv, wenn beide ENV-Variablen gesetzt sind."""
     user = os.getenv("INBOUND_BASIC_USER")
     pw = os.getenv("INBOUND_BASIC_PASS")
     if not user or not pw:
-        return True  # deaktiviert
+        return True  # nicht konfiguriert -> nicht prüfen
 
-    auth = request.headers.get("Authorization", "")
+    auth_hdr = request.headers.get("Authorization", "")
     expected = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
-    return hmac.compare_digest(auth, expected)
+    return auth_hdr == expected
 
 
-def _verify_postmark_signature(raw_body: bytes) -> bool:
+def _check_postmark_signature(raw_body: bytes) -> bool:
     """
-    Prüft die X-Postmark-Signature, wenn POSTMARK_INBOUND_SIGNING_SECRET gesetzt ist.
+    Verifiziert die Postmark-Inbound-Signatur, falls POSTMARK_INBOUND_SIGNING_SECRET gesetzt ist.
+    Postmark sendet 'X-Postmark-Signature' (hex oder base64 je nach lib). Wir prüfen beides.
     """
-    secret = os.getenv("POSTMARK_INBOUND_SIGNING_SECRET", "").strip()
+    secret = os.getenv("POSTMARK_INBOUND_SIGNING_SECRET")
     if not secret:
-        return True  # keine Prüfung gewünscht
+        return True  # kein Secret -> nicht prüfen
 
-    header_sig = request.headers.get("X-Postmark-Signature", "")
-    calc = base64.b64encode(
-        hmac.new(secret.encode(), msg=raw_body, digestmod=hashlib.sha256).digest()
-    ).decode()
-    return hmac.compare_digest(header_sig, calc)
+    header_sig = request.headers.get("X-Postmark-Signature", "") or ""
+    if not header_sig:
+        return False
 
-# ------------------------------ Routes ----------------------------------------------
+    digest = hmac.new(
+        key=secret.encode("utf-8"),
+        msg=raw_body,
+        digestmod=hashlib.sha256,
+    ).digest()
+
+    # 1) Base64-Vergleich
+    b64_sig = base64.b64encode(digest).decode()
+    if hmac.compare_digest(header_sig, b64_sig):
+        return True
+
+    # 2) Hex-Vergleich (manche Clients nutzen das)
+    hex_sig = digest.hex()
+    if hmac.compare_digest(header_sig.lower(), hex_sig.lower()):
+        return True
+
+    return False
+
 
 @bp.route("/inbound/postmark", methods=["GET", "POST"])
 def inbound_postmark():
-    """
-    Healthcheck: GET  -> 'inbound ok'
-    Produktiv:  POST -> Postmark Inbound Webhook
-    Schutz:
-      - ?secret=...   (INBOUND_SECRET, verpflichtend wenn gesetzt)
-      - Basic-Auth   (INBOUND_BASIC_USER/PASS, optional)
-      - Signatur     (POSTMARK_INBOUND_SIGNING_SECRET, optional)
-      - Absender     (INBOUND_ALLOWED_SENDERS, optional)
-    """
+    # --- Healthcheck (einfach im Browser prüfbar)
     if request.method == "GET":
         return "inbound ok", 200
 
-    # 1) URL-Secret (wenn gesetzt)
-    expected_secret = os.getenv("INBOUND_SECRET", "")
-    if expected_secret:
-        if request.args.get("secret") != expected_secret:
-            abort(401)
+    # --- URL-Secret
+    if request.args.get("secret") != os.getenv("INBOUND_SECRET", ""):
+        abort(401)
 
-    # 2) Basic-Auth (wenn konfiguriert)
+    # --- optional Basic-Auth
     if not _check_basic_auth():
         abort(401)
 
-    # 3) Postmark-Signatur (wenn konfiguriert)
+    # --- rohen Body holen (für Signatur) + JSON parsen
     raw = request.get_data(cache=False, as_text=False)
-    if not _verify_postmark_signature(raw):
+    if not _check_postmark_signature(raw):
         abort(401)
 
-    # 4) Payload parsen
-    payload = request.get_json(silent=True) or {}
-    from_addr = (payload.get("FromFull", {}) or {}).get("Email") or payload.get("From") or ""
-    subject = payload.get("Subject", "")
+    pm = request.get_json(force=True, silent=False)  # Postmark sendet JSON
 
-    # 5) Optional Absender-Filter
-    if not _ok_sender(from_addr):
-        current_app.logger.warning("Inbound blocked by sender filter: %s", from_addr)
+    # --- Absender/Fallback-Prüfung
+    outer_from = ((pm.get("FromFull") or {}).get("Email")) or pm.get("From") or ""
+    sender_ok = _ok_sender(outer_from) or _ok_by_payload(pm)
+    if not sender_ok:
+        current_app.logger.warning(
+            "Inbound blocked by sender filter",
+            extra={"outer_from": outer_from}
+        )
         abort(403)
 
-    # 6) Kleinanzeigen-Heuristik (optional)
-    ka = is_from_kleinanzeigen(payload)
-    summary = extract_summary(payload) if ka else None
+    # --- Quelle bestimmen und zusammenfassen
+    source = "kleinanzeigen" if is_from_kleinanzeigen(pm) else "email"
+    summary = extract_summary(pm)
 
-    # 7) Persistieren / Weiterverarbeiten
+    # --- Event speichern / weiterreichen
     try:
-        store_event("kleinanzeigen" if ka else "postmark", payload)
-    except Exception as e:
-        current_app.logger.exception("store_event failed: %s", e)
+        store_event(source, pm, summary=summary)
+    except Exception as exc:
+        current_app.logger.exception("Failed to store inbound event", extra={"err": str(exc)})
+        # Wir antworten trotzdem 204, damit Postmark nicht spamt; Logging reicht uns hier.
+        return "", 204
 
-    current_app.logger.info(
-        "Inbound OK from=%s subject=%s kleinanzeigen=%s", from_addr, subject, ka
-    )
-    return jsonify({"status": "ok"}), 200
+    # Postmark erwartet i. d. R. 200/204 bei Erfolg
+    return "", 204
