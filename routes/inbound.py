@@ -1,75 +1,137 @@
 # routes/inbound.py
-import os, time, re, hmac, base64, hashlib
-from flask import Blueprint, request, jsonify, abort
+import os
+import re
+import hmac
+import json
+import base64
+import hashlib
+from typing import Dict, Any
+
+from flask import Blueprint, request, abort, jsonify, current_app
+
+# --- optionale Services laden (fallen auf Stubs zurück, wenn lokal nicht vorhanden) ----
+try:
+    from services.inbound_store import store_event  # z.B. DB/Log persistieren
+except Exception:
+    def store_event(source: str, payload: Dict[str, Any]) -> None:
+        current_app.logger.info("store_event (stub) %s: %s", source, payload.get("Subject"))
+
+try:
+    from services.kleinanzeigen_parser import is_from_kleinanzeigen, extract_summary
+except Exception:
+    def is_from_kleinanzeigen(payload: Dict[str, Any]) -> bool:
+        return False
+
+    def extract_summary(payload: Dict[str, Any]) -> Dict[str, Any]:
+        return {}
+
+# ---------------------------------------------------------------------------------------
 
 bp = Blueprint("inbound", __name__)
 
-# sehr einfache Extraktion aus Kleinanzeigen-Mails
-_RX_URL   = re.compile(r"https?://www\.kleinanzeigen\.de/s-anzeige/[^\s\"'>]+", re.I)
-_RX_PRICE = re.compile(r"(\d+[.,]?\d*)\s*€", re.I)
+# ----------------------------- Helper -----------------------------------------------
 
 def _ok_sender(sender: str) -> bool:
+    """
+    Optionaler Absender-Filter über INBOUND_ALLOWED_SENDERS.
+    Komma-separierte Liste, Wildcards * erlaubt (z.B. *@postmarkapp.com, *@kleinanzeigen.de).
+    Ist die Variable leer, ist ALLES erlaubt.
+    """
     allowed = os.getenv("INBOUND_ALLOWED_SENDERS", "")
-    if not allowed:
-        return True
+    if not allowed.strip():
+        return True  # nichts konfiguriert -> nicht filtern
+
     sender = (sender or "").lower()
-    for patt in [p.strip().lower().replace("*", "") for p in allowed.split(",") if p.strip()]:
-        if patt and patt in sender:
+    patterns = [p.strip().lower() for p in allowed.split(",") if p.strip()]
+    for pat in patterns:
+        # Wildcard zu Regex
+        rx = "^" + re.escape(pat).replace(r"\*", ".*") + "$"
+        if re.match(rx, sender):
             return True
     return False
 
+
 def _check_basic_auth() -> bool:
+    """
+    Optionaler Basic-Auth Schutz über INBOUND_BASIC_USER / INBOUND_BASIC_PASS.
+    Ist eins davon leer, ist Basic-Auth deaktiviert.
+    """
     user = os.getenv("INBOUND_BASIC_USER")
-    pw   = os.getenv("INBOUND_BASIC_PASS")
+    pw = os.getenv("INBOUND_BASIC_PASS")
     if not user or not pw:
-        return True
+        return True  # deaktiviert
+
     auth = request.headers.get("Authorization", "")
     expected = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
-    return auth == expected
+    return hmac.compare_digest(auth, expected)
+
+
+def _verify_postmark_signature(raw_body: bytes) -> bool:
+    """
+    Prüft die X-Postmark-Signature, wenn POSTMARK_INBOUND_SIGNING_SECRET gesetzt ist.
+    """
+    secret = os.getenv("POSTMARK_INBOUND_SIGNING_SECRET", "").strip()
+    if not secret:
+        return True  # keine Prüfung gewünscht
+
+    header_sig = request.headers.get("X-Postmark-Signature", "")
+    calc = base64.b64encode(
+        hmac.new(secret.encode(), msg=raw_body, digestmod=hashlib.sha256).digest()
+    ).decode()
+    return hmac.compare_digest(header_sig, calc)
+
+# ------------------------------ Routes ----------------------------------------------
 
 @bp.route("/inbound/postmark", methods=["GET", "POST"])
 def inbound_postmark():
-    # ---- einfacher GET-Healthcheck (damit du im Browser sofort siehst, ob die Route da ist)
+    """
+    Healthcheck: GET  -> 'inbound ok'
+    Produktiv:  POST -> Postmark Inbound Webhook
+    Schutz:
+      - ?secret=...   (INBOUND_SECRET, verpflichtend wenn gesetzt)
+      - Basic-Auth   (INBOUND_BASIC_USER/PASS, optional)
+      - Signatur     (POSTMARK_INBOUND_SIGNING_SECRET, optional)
+      - Absender     (INBOUND_ALLOWED_SENDERS, optional)
+    """
     if request.method == "GET":
         return "inbound ok", 200
 
-    # ---- URL-Secret prüfen
-    if request.args.get("secret") != os.getenv("INBOUND_SECRET", ""):
-        abort(401)
+    # 1) URL-Secret (wenn gesetzt)
+    expected_secret = os.getenv("INBOUND_SECRET", "")
+    if expected_secret:
+        if request.args.get("secret") != expected_secret:
+            abort(401)
 
-    # ---- optional Basic-Auth prüfen
+    # 2) Basic-Auth (wenn konfiguriert)
     if not _check_basic_auth():
         abort(401)
 
-    # ---- optional: Postmark-Signatur prüfen (nur wenn Key gesetzt ist)
-    pm_secret = os.getenv("POSTMARK_INBOUND_SIGNING_SECRET", "")
-    if pm_secret:
-        raw = request.get_data()
-        sig = request.headers.get("X-Postmark-Signature", "")
-        calc = hmac.new(pm_secret.encode(), raw, hashlib.sha256).digest()
-        if not hmac.compare_digest(base64.b64encode(calc).decode(), sig):
-            abort(401)
+    # 3) Postmark-Signatur (wenn konfiguriert)
+    raw = request.get_data(cache=False, as_text=False)
+    if not _verify_postmark_signature(raw):
+        abort(401)
 
-    payload = request.get_json(force=True, silent=True) or {}
-    from_addr = (payload.get("FromFull") or {}).get("Email") or payload.get("From")
+    # 4) Payload parsen
+    payload = request.get_json(silent=True) or {}
+    from_addr = (payload.get("FromFull", {}) or {}).get("Email") or payload.get("From") or ""
+    subject = payload.get("Subject", "")
+
+    # 5) Optional Absender-Filter
     if not _ok_sender(from_addr):
+        current_app.logger.warning("Inbound blocked by sender filter: %s", from_addr)
         abort(403)
 
-    text = (payload.get("TextBody") or "") + "\n" + (payload.get("HtmlBody") or "")
-    urls = list(dict.fromkeys(_RX_URL.findall(text)))[:10]
-    m_price = _RX_PRICE.search(text)
-    price = float(m_price.group(1).replace(",", ".")) if m_price else None
+    # 6) Kleinanzeigen-Heuristik (optional)
+    ka = is_from_kleinanzeigen(payload)
+    summary = extract_summary(payload) if ka else None
 
-    items = [{
-        "id": u,
-        "title": payload.get("Subject") or "Kleinanzeigen Angebot",
-        "url": u,
-        "price": price,
-        "currency": "EUR" if price is not None else None,
-        "image": None,
-        "condition": "used",
-        "source": "ebk",
-        "seen_at": int(time.time()),
-    } for u in urls]
+    # 7) Persistieren / Weiterverarbeiten
+    try:
+        store_event("kleinanzeigen" if ka else "postmark", payload)
+    except Exception as e:
+        current_app.logger.exception("store_event failed: %s", e)
 
-    return jsonify({"received": len(items), "items": items}), 200
+    current_app.logger.info(
+        "Inbound OK from=%s subject=%s kleinanzeigen=%s", from_addr, subject, ka
+    )
+    return jsonify({"status": "ok"}), 200
