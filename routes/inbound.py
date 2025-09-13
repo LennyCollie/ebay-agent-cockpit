@@ -141,7 +141,7 @@ def inbound_postmark():
 
     if summary:
         event["Summary"] = summary
-except Exception as e:
+    except Exception as e:
     _log("warning", "extract_summary failed: %s", e)
 
     return "ok", 200
