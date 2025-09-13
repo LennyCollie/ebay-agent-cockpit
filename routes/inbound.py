@@ -123,6 +123,7 @@ def inbound_postmark():
 
     # 6) Optional: Kleinanzeigen-Zusammenfassung
     # 6) Optional: Kleinanzeigen-Zusammenfassung
+# 6) Optional: Kleinanzeigen-Zusammenfassung
 try:
     # Strings für den Parser herstellen
     subject = (data.get("Subject") or "").strip()
