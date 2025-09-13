@@ -123,15 +123,25 @@ def inbound_postmark():
 
     # 6) Optional: Kleinanzeigen-Zusammenfassung
     try:
-        if _is_from_kleinanzeigen(data):
-            event["Summary"] = _extract_summary(data) or {}
-    except Exception as e:
-        _log("warning", "extract_summary failed: %s", e)
+    # Strings für den Parser herstellen
+    subject = (data.get("Subject") or "").strip()
+    # Text bevorzugt aus TextBody, sonst HTML als Fallback (ohne Anspruch auf perfektes Strippen)
+    text = (data.get("TextBody") or data.get("HtmlBody") or "").strip()
 
-    # 7) Speichern / Weiterverarbeiten
-    try:
-        store_event("postmark", event)
-    except Exception as e:
-        _log("error", "store_event failed: %s", e)
+    summary = {}
+    if _is_from_kleinanzeigen(data) or "kleinanzeigen" in subject.lower():
+        # robust aufrufen – verschiedene Parser-Signaturen abfangen
+        try:
+            summary = _extract_summary(subject=subject, text=text) or {}
+        except TypeError:
+            try:
+                summary = _extract_summary(text) or {}
+            except TypeError:
+                summary = _extract_summary(subject + "\n" + text) or {}
+
+    if summary:
+        event["Summary"] = summary
+except Exception as e:
+    _log("warning", "extract_summary failed: %s", e)
 
     return "ok", 200
