@@ -1,5 +1,8 @@
 # services/inbound_store.py
+from datetime import datetime
+import json, os
 import json, sqlite3, time
+
 from typing import Optional, Dict, Any
 
 DB_PATH = "instance/app.db"  # falls du einen anderen Pfad nutzt, anpassen
@@ -43,3 +46,16 @@ def store_event(src: str, payload: Dict[str, Any]) -> None:
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (ts, src, from_email, to_email, subject, body, raw_json),
         )
+
+def store_event(source: str, payload: dict, summary: str | None = None):
+    """Schreibt jedes Inbound-Event als JSONL-Zeile (append) – super zum Debuggen & Replays."""
+    line = {
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "source": source,
+        "summary": summary,
+        "payload": payload,
+    }
+    out = os.getenv("INBOUND_DUMP_PATH", "/tmp/inbound_events.jsonl")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "a", encoding="utf-8") as f:
+        f.write(json.dumps(line, ensure_ascii=False) + "\n")

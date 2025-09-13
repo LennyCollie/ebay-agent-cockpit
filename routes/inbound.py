@@ -5,8 +5,12 @@ import base64
 import hashlib
 import fnmatch
 import logging
+import os, time, hmac, base64, hashlib, json
 from datetime import datetime
 from flask import Blueprint, request, abort, current_app, has_app_context
+from flask import Blueprint, request, abort, current_app
+from services.kleinanzeigen_parser import is_from_kleinanzeigen, extract_summary
+from services.inbound_store import store_event   # falls du die Store-Funktion nutzt
 
 bp = Blueprint("inbound", __name__)
 
@@ -140,4 +144,45 @@ def inbound_postmark():
     except Exception as e:
         _log("error", "store_event failed: %s", e)
 
+    return "ok", 200
+
+
+@bp.route("/inbound/postmark", methods=["GET", "POST"])
+def inbound_postmark():
+    # Healthcheck für GET
+    if request.method == "GET":
+        return "inbound ok", 200
+
+    # Secret in URL prüfen (wie bisher)
+    if request.args.get("secret") != os.getenv("INBOUND_SECRET", ""):
+        abort(401)
+
+    data = request.get_json(silent=True) or {}
+    subject  = data.get("Subject", "")
+    text     = data.get("TextBody", "") or ""
+    sender   = (data.get("FromFull", {}) or {}).get("Email") or data.get("From", "")
+
+    # --- Allow-List prüfen (dein vorhandener Code) ---
+    # ... hier bleibt deine bestehende Sender-Filterlogik ...
+
+    # --- Mini-Parser nur anwenden, wenn es nach Kleinanzeigen aussieht ---
+    summary = {}
+    if is_from_kleinanzeigen(sender):
+        summary = extract_summary(subject=subject, text=text)
+
+    # Rohpayload + Summary speichern (oder loggen)
+    payload = {
+        "subject": subject,
+        "sender": sender,
+        "text": text,
+        "received_at": int(time.time()),
+    }
+
+    # wenn du eine Store-Funktion hast:
+    try:
+        store_event(source="kleinanzeigen", payload=payload, summary=summary)
+    except Exception as exc:
+        current_app.logger.warning("store_event failed: %s", exc, exc_info=True)
+
+    # immer 200 an Postmark zurück (sonst retried es)
     return "ok", 200
