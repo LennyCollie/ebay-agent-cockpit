@@ -162,6 +162,17 @@ def inbound_postmark():
     text = str(data.get("TextBody") or "")
     html = str(data.get("HtmlBody") or "")
 
+# Postmark-"Check"-Ping erlauben, wenn kein Sender vorhanden ist
+ua = (request.headers.get("User-Agent") or "").lower()
+is_postmark = ("postmark" in ua) or bool(request.headers.get("X-Postmark-Clock"))
+
+if is_postmark and not sender:
+    current_app.logger.info("Inbound check-ping from Postmark – sender empty -> allowed")
+    return "ok", 200
+
+# ---------------------------------------------------------------------------
+
+
     # 5) Allowlist
     if not _ok_sender(sender):
         _log("warning", "Inbound blocked by sender filter: %s", sender)
