@@ -122,10 +122,10 @@ def inbound_postmark():
     }
 
     # 6) Optional: Kleinanzeigen-Zusammenfassung
-    try:
+    # 6) Optional: Kleinanzeigen-Zusammenfassung
+try:
     # Strings für den Parser herstellen
     subject = (data.get("Subject") or "").strip()
-    # Text bevorzugt aus TextBody, sonst HTML als Fallback (ohne Anspruch auf perfektes Strippen)
     text = (data.get("TextBody") or data.get("HtmlBody") or "").strip()
 
     summary = {}
@@ -141,7 +141,8 @@ def inbound_postmark():
 
     if summary:
         event["Summary"] = summary
-    except Exception as e:
+except Exception as e:
     _log("warning", "extract_summary failed: %s", e)
+
 
     return "ok", 200
