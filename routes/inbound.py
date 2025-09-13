@@ -143,14 +143,29 @@ def inbound_postmark():
         "Raw": data,
     }
 
-    # 6) Optionaler Kleinanzeigen-Mini-Parser (fail-safe)
-    try:
-        if _is_from_ka({"sender": sender, "subject": subject, "text": text}):
-            summary = _extract_summary(subject=subject, text=text, payload=data)
-            if summary:
-                event["Summary"] = summary
-    except Exception as e:
-        _log("warning", "extract_summary failed: %s", e)
+# 6) Optional: Kleinanzeigen-Zusammenfassung (robust)
+subject = (data.get("Subject") or "")
+text    = (data.get("TextBody") or data.get("HtmlBody") or "")
+
+# Alles zu Strings zwingen (falls Postmark Felder mal nicht-String sind)
+if not isinstance(subject, str):
+    subject = str(subject)
+if not isinstance(text, str):
+    text = str(text)
+
+looks_like_ka = "kleinanzeigen" in (subject + "\n" + text).lower()
+
+try:
+    if looks_like_ka:
+        # Parser-Signatur 1: extract_summary(subject=..., text=...)
+        try:
+            event["Summary"] = _extract_summary(subject=subject, text=text) or {}
+        except TypeError:
+            # Fallback auf ältere Signatur: extract_summary(text)
+            event["Summary"] = _extract_summary(text) or {}
+except Exception as e:
+    _log("warning", "extract_summary failed: %s", e)
+
 
     # 7) Speichern / Weiterverarbeiten (fail-safe)
     try:
