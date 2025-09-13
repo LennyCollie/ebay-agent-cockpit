@@ -14,6 +14,40 @@ from flask import Blueprint, request, abort, current_app, has_app_context
 
 bp = Blueprint("inbound", __name__)
 
+
+def _to_str(x) -> str:
+    """Sicher zu String konvertieren (None -> '', Dict/List -> repr)."""
+    if isinstance(x, str):
+        return x
+    if x is None:
+        return ""
+    return str(x)
+
+def _ka_is_from(subject: str, text: str) -> bool:
+    """Adapter für verschiedene Parser-Signaturen."""
+    try:
+        # Neuer Stil: is_from_kleinanzeigen(subject=..., text=...)
+        return _is_from_kleinanzeigen(subject=subject, text=text)  # type: ignore
+    except TypeError:
+        try:
+            # Alter Stil: is_from_kleinanzeigen(payload_dict)
+            return _is_from_kleinanzeigen({"subject": subject, "text": text})  # type: ignore
+        except Exception:
+            return False
+
+def _ka_extract_summary(subject: str, text: str) -> dict:
+    """Adapter für verschiedene Parser-Signaturen."""
+    try:
+        # Neuer Stil
+        return _extract_summary(subject=subject, text=text) or {}  # type: ignore
+    except TypeError:
+        try:
+            # Alter Stil
+            return _extract_summary({"subject": subject, "text": text}) or {}  # type: ignore
+        except Exception:
+            return {}
+
+
 # --------------------------------------------------------------------------- #
 # Logging (nutzt current_app.logger wenn verfügbar, sonst eigenen Logger)
 # --------------------------------------------------------------------------- #
@@ -149,11 +183,21 @@ def inbound_postmark():
     }
 
     # 6) Optional: Kleinanzeigen-Zusammenfassung
-    try:
-        if _is_from_kleinanzeigen(data):
-            event["Summary"] = _extract_summary(data) or {}
-    except Exception as e:
-        _log("warning", "extract_summary failed: %s", e)
+    # 6) Optional: Kleinanzeigen-Zusammenfassung (robust)
+subject = _to_str(data.get("Subject"))
+text = _to_str(
+    data.get("TextBody")
+    or data.get("StrippedTextReply")   # Postmark-Feld mit „nur Antwort“
+    or data.get("HtmlBody")            # notfalls HTML (dann ggf. weniger sauber)
+    or ""
+)
+
+try:
+    if _ka_is_from(subject, text):
+        event["Summary"] = _ka_extract_summary(subject, text)
+except Exception as e:
+    _log("warning", "extract_summary failed: %s", e)
+
 
     # 7) Speichern / Weiterverarbeiten
     try:
