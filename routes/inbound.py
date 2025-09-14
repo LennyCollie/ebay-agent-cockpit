@@ -3,187 +3,179 @@ from __future__ import annotations
 
 import base64
 import fnmatch
-import hmac
 import hashlib
+import hmac
 import logging
 import os
 from datetime import datetime
+from typing import Dict, Any
 
 from flask import Blueprint, request, abort, current_app, has_app_context
 
 bp = Blueprint("inbound", __name__)
 
-# -----------------------------------------------------------------------------
-# Logging helpers
-# -----------------------------------------------------------------------------
-_logger = logging.getLogger("inbound")
+# ---------------------------------------------------------------------------
+# Logging utilities
+# ---------------------------------------------------------------------------
 
-def _log(level: str, msg: str, *args):
+logger = logging.getLogger("inbound")
+
+def _log(level: str, msg: str, *args: Any) -> None:
+    """Loggt sicher – mit current_app.logger (falls Kontext), sonst std-Logger."""
     if has_app_context():
         getattr(current_app.logger, level)(msg, *args)
     else:
-        getattr(_logger, level)(msg, *args)
+        getattr(logger, level)(msg, *args)
 
-# -----------------------------------------------------------------------------
-# Optional store_event – echter Import wenn vorhanden, sonst Stub
-# -----------------------------------------------------------------------------
-def store_event(source: str, payload: dict) -> None:
-    _log(
-        "warning",
-        "store_event STUB used | source=%s | subject=%s | received=%s",
-        source,
-        payload.get("Subject"),
-        datetime.utcnow().isoformat() + "Z",
-    )
+# ---------------------------------------------------------------------------
+# Optional: Store-Adapter (Stub → kann durch services.inbound_store überschrieben werden)
+# ---------------------------------------------------------------------------
+
+def store_event(source: str, payload: Dict[str, Any]) -> None:
+    """Fallback-Store: nur loggen (wird überschrieben, wenn echter Store vorhanden ist)."""
+    _log("info", "store_event (STUB) source=%s subject=%s", source, payload.get("Subject"))
 
 try:
+    # wenn vorhanden, den echten Store benutzen
     from services.inbound_store import store_event as _real_store_event  # type: ignore
     store_event = _real_store_event  # noqa: F811
 except Exception as e:
-    _log("info", "using store_event STUB (import failed): %s", e)
+    _log("warning", "using store_event STUB (import failed): %s", e)
 
-# -----------------------------------------------------------------------------
-# Optional Kleinanzeigen-Parser – robust mit Fallback
-# -----------------------------------------------------------------------------
-def _extract_summary_safe(subject: str, text: str) -> dict:
-    """
-    Versucht extract_summary in zwei Varianten:
-    1) extract_summary(subject=..., text=...)
-    2) extract_summary(text)
-    Gibt {} zurück, falls Parser nicht vorhanden oder Fehler.
-    """
-    try:
-        from services.kleinanzeigen_parser import extract_summary  # type: ignore
-    except Exception:
-        return {}
+# ---------------------------------------------------------------------------
+# Optional: Kleinanzeigen-Mini-Parser (sanft; wenn nicht vorhanden -> no-op)
+# ---------------------------------------------------------------------------
 
-    try:
-        # Neuere Signatur
-        return extract_summary(subject=subject, text=text) or {}
-    except TypeError:
-        # Ältere Signatur
-        try:
-            return extract_summary(text) or {}
-        except Exception:
-            return {}
-    except Exception:
-        return {}
+def _is_from_kleinanzeigen(_payload: Dict[str, Any]) -> bool:
+    return False
 
-# -----------------------------------------------------------------------------
-# Helfer: Sender, Allow-List, Basic-Auth, Signatur
-# -----------------------------------------------------------------------------
-def _get_sender(data: dict) -> str:
-    # Postmark liefert häufig FromFull: { Email, Name }
-    sender = ((data.get("FromFull") or {}) or {}).get("Email")
-    if not sender:
-        sender = data.get("From")
-    sender = (sender or "").strip()
-    return sender
+def _extract_summary(_payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {}
+
+try:
+    from services.kleinanzeigen_parser import (  # type: ignore
+        is_from_kleinanzeigen as _is_from_kleinanzeigen,
+        extract_summary as _extract_summary,
+    )
+except Exception as e:
+    _log("info", "kleinanzeigen_parser not available (ok): %s", e)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _get_sender(data: Dict[str, Any]) -> str:
+    """Zieht die Absenderadresse robust aus dem Postmark-Payload und normalisiert sie."""
+    sender = ((data.get("FromFull") or {}) or {}).get("Email") or data.get("From") or ""
+    return sender.strip().lower()
 
 def _allowed_sender(sender: str) -> bool:
     """
-    INBOUND_ALLOWED_SENDERS: Kommagetrennte Wildcards, z.B.:
-        "*postmarkapp.com, *@kleinanzeigen.de, noreply@beispiel.de"
-    Leer -> alles erlaubt.
+    Allow-List per ENV INBOUND_ALLOWED_SENDERS.
+    Beispiele: "*@kleinanzeigen.de, *@postmarkapp.com"
+    Wildcards werden mit fnmatch unterstützt.
+    Leere Liste ⇒ alles erlauben.
     """
-    allowed = os.getenv("INBOUND_ALLOWED_SENDERS", "")
-    if not allowed.strip():
+    raw = (os.getenv("INBOUND_ALLOWED_SENDERS") or "").strip()
+    if not raw:
         return True
-
-    s = (sender or "").lower().strip()
-    for patt in [p.strip().lower() for p in allowed.split(",") if p.strip()]:
+    patterns = [p.strip().lower() for p in raw.split(",") if p.strip()]
+    s = (sender or "").lower()
+    for patt in patterns:
         if fnmatch.fnmatch(s, patt):
             return True
     return False
 
 def _basic_ok() -> bool:
-    user = os.getenv("INBOUND_BASIC_USER")
-    pw = os.getenv("INBOUND_BASIC_PASS")
+    """Optional: Basic-Auth, wenn INBOUND_BASIC_USER / INBOUND_BASIC_PASS gesetzt."""
+    user = os.getenv("INBOUND_BASIC_USER") or ""
+    pw = os.getenv("INBOUND_BASIC_PASS") or ""
     if not user or not pw:
         return True
-    auth = request.headers.get("Authorization", "")
+    header = request.headers.get("Authorization", "")
     expected = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
-    return hmac.compare_digest(auth, expected)
+    # timing-safe compare
+    return hmac.compare_digest(header, expected)
 
 def _signature_ok(raw_body: bytes) -> bool:
     """
-    Postmark Inbound Signature (HMAC SHA256, Base64) prüfen, wenn Secret gesetzt.
+    Optional: Postmark-Inbound-Signatur prüfen (HMAC-SHA256 Base64),
+    wenn POSTMARK_INBOUND_SIGNING_SECRET gesetzt.
     """
-    key = os.getenv("POSTMARK_INBOUND_SIGNING_SECRET", "")
-    if not key:
+    secret = os.getenv("POSTMARK_INBOUND_SIGNING_SECRET") or ""
+    if not secret:
         return True
-    provided = request.headers.get("X-Postmark-Signature", "")
-    digest = hmac.new(key.encode(), raw_body, hashlib.sha256).digest()
+    recv_sig = request.headers.get("X-Postmark-Signature", "") or ""
+    digest = hmac.new(secret.encode(), raw_body, hashlib.sha256).digest()
     expected = base64.b64encode(digest).decode()
-    return hmac.compare_digest(provided, expected)
+    return hmac.compare_digest(recv_sig, expected)
 
-# -----------------------------------------------------------------------------
+def _is_postmark_ping() -> bool:
+    """
+    Erlaubt Postmark-„Healthchecks“ mit User-Agent enthält 'postmark'
+    und gleichzeitig fehlendem Absender. Solche Pings sollen immer 200 liefern.
+    """
+    ua = (request.headers.get("User-Agent") or "").lower()
+    data = request.get_json(silent=True) or {}
+    sender_present = bool(_get_sender(data))
+    return ("postmark" in ua) and (not sender_present)
+
+# ---------------------------------------------------------------------------
 # Route
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+
 @bp.route("/inbound/postmark", methods=["GET", "POST"])
 def inbound_postmark():
-    # 0) GET = Healthcheck
+    # 0) einfacher Healthcheck
     if request.method == "GET":
         return "inbound ok", 200
 
-    # 1) URL-Secret (Pflicht)
-    if request.args.get("secret") != os.getenv("INBOUND_SECRET", ""):
+    # 1) Secret in URL (Pflicht)
+    if request.args.get("secret") != (os.getenv("INBOUND_SECRET") or ""):
         abort(401)
 
-    # 2) Basic-Auth (optional)
+    # 1b) Postmark-Ping erlauben (User-Agent=Postmark & kein Sender)
+    if _is_postmark_ping():
+        _log("info", "Postmark ping OK (no sender; UA contains 'postmark')")
+        return "ok", 200
+
+    # 2) Optional Basic-Auth
     if not _basic_ok():
         abort(401)
 
-    # 3) Signatur (optional)
-    raw = request.get_data()  # bytes
+    # 3) Optionale Signaturprüfung (HMAC)
+    raw = request.get_data(cache=False, as_text=False)
     if not _signature_ok(raw):
         abort(401)
 
-    # 4) Payload aus JSON
-    data = request.get_json(silent=True) or {}
+    # 4) Payload & Sender holen
+    data: Dict[str, Any] = request.get_json(silent=True) or {}
     sender = _get_sender(data)
 
-    # 4a) Postmark-Webhook-Ping: User-Agent enthält "Postmark", Sender leer
-    #     => immer 200 OK zurückgeben, damit Postmark "grün" bleibt.
-    ua = (request.headers.get("User-Agent") or "").lower()
-    if "postmark" in ua and not sender:
-        _log("info", "Postmark ping detected (no sender) -> allow")
-        return "ok", 200
+    # 5) Allow-List
+    if not _allowed_sender(sender):
+        _log("warning", "Inbound blocked by sender filter: %s", sender)
+        abort(403)
 
-    # 5) Allow-List prüfen
-    if not _ok_sender(sender):
-       _log("info", "Inbound blocked by sender filter: %s", sender)
-       abort(403)
-
-
-    # 6) Felder sicher als Strings holen
-    subject = data.get("Subject") or ""
-    text = data.get("TextBody") or data.get("HtmlBody") or ""
-    if not isinstance(subject, str):
-        subject = str(subject)
-    if not isinstance(text, str):
-        text = str(text)
-
-    # 7) Event aufbauen
-    event = {
-        "Subject": subject,
+    # 6) Event aufbereiten
+    event: Dict[str, Any] = {
+        "Subject": data.get("Subject") or "",
         "From": sender,
-        "TextBody": text,
+        "TextBody": data.get("TextBody") or "",
         "HtmlBody": data.get("HtmlBody") or "",
         "MessageID": data.get("MessageID") or "",
         "ReceivedAt": datetime.utcnow().isoformat() + "Z",
         "Raw": data,
     }
 
-    # 8) Kleinanzeigen-Zusammenfassung (heuristisch)
-    looks_like_ka = "kleinanzeigen" in (subject + "\n" + text).lower()
-    if looks_like_ka:
-        try:
-            event["Summary"] = _extract_summary_safe(subject, text)
-        except Exception as e:
-            _log("warning", "extract_summary failed: %s", e)
+    # 7) Optional: Kleinanzeigen-Zusammenfassung
+    try:
+        if _is_from_kleinanzeigen(data):
+            event["Summary"] = _extract_summary(data) or {}
+    except Exception as e:
+        _log("warning", "kleinanzeigen summary failed: %s", e)
 
-    # 9) Speichern / Weiterverarbeiten
+    # 8) Speichern / Weiterverarbeiten
     try:
         store_event("postmark", event)
     except Exception as e:
