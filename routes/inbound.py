@@ -152,8 +152,8 @@ def inbound_postmark():
 
     # 5) Allow-List prüfen
     if not _ok_sender(sender):
-    _log("info", "Inbound blocked by sender filter: %s", sender)
-    abort(403)
+       _log("info", "Inbound blocked by sender filter: %s", sender)
+       abort(403)
 
 
     # 6) Felder sicher als Strings holen
