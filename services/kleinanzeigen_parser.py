@@ -1,15 +1,16 @@
 # services/kleinanzeigen_parser.py
 import re
 from typing import Dict, Optional
+from utils.text import normalize
 
 _RX_URL   = re.compile(r"https?://www\.kleinanzeigen\.de/s-anzeige/[^\s<>\"]+", re.I)
 _RX_PRICE = re.compile(r"(\d{1,3}(?:[.\s]\d{3})*(?:[.,]\d{2})?)\s*€", re.I)
 _RX_ID    = re.compile(r"Anzeigenummer[:\s]*([0-9]{6,})", re.I)
 _RX_TITLE = re.compile(r'Anzeige\s+"([^"]+)"', re.I)  # Fallback aus Betreff/Text
 
-def is_from_kleinanzeigen(sender: str) -> bool:
-    """Sehr simpler Check für den Absender."""
-    return "kleinanzeigen.de" in (sender or "").lower()
+def is_from_kleinanzeigen(sender) -> bool:
+    """Robuster Check für Absender (verträgt dict/list/None)."""
+    return "kleinanzeigen" in normalize(sender)
 
 def _norm_price(raw: str) -> Optional[str]:
     if not raw:
@@ -18,10 +19,10 @@ def _norm_price(raw: str) -> Optional[str]:
     val = raw.replace(" ", "").replace(".", "").replace(",", ".")
     return val
 
-def extract_summary(subject: str, text: str) -> Dict[str, Optional[str]]:
-    """Extrahiert grobe Eckdaten aus Betreff/Text."""
-    subject = subject or ""
-    text    = text or ""
+def extract_summary(subject, text) -> Dict[str, Optional[str]]:
+    """Extrahiert Eckdaten aus Betreff/Text (robust gegen None/dicts)."""
+    subject = normalize(subject)
+    text    = normalize(text)
 
     url   = None
     price = None
@@ -49,7 +50,7 @@ def extract_summary(subject: str, text: str) -> Dict[str, Optional[str]]:
 
     return {
         "title": title,
-        "price": price,           # als String "1234.56" (du kannst später in float wandeln)
+        "price": price,   # "1234.56"
         "url": url,
         "ad_id": ad_id,
     }
