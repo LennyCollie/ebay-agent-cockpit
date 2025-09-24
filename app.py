@@ -4,11 +4,7 @@ import time
 import math
 import base64
 import sqlite3
-import smtplib
-import ssl
 import hashlib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from urllib.parse import urlencode
@@ -83,14 +79,7 @@ PREMIUM_SEARCH_LIMIT  = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
 PER_PAGE_DEFAULT      = int(os.getenv("PER_PAGE_DEFAULT", "20"))
 SEARCH_CACHE_TTL      = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
 
-# E-Mail / Notify
-SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "Agent <noreply@example.com>")
-SMTP_USE_TLS = as_bool(os.getenv("SMTP_USE_TLS", "1"))
-SMTP_USE_SSL = as_bool(os.getenv("SMTP_USE_SSL", "0"))
+
 NOTIFY_COOLDOWN_MIN = int(os.getenv("NOTIFY_COOLDOWN_MINUTES", "120"))
 NOTIFY_MAX_ITEMS_PER_MAIL = int(os.getenv("NOTIFY_MAX_ITEMS_PER_MAIL", "10"))
 
@@ -422,31 +411,16 @@ def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int
 # E-Mail: Versand + De-Duping
 # -------------------------------------------------------------------
 def _send_email(to_email: str, subject: str, html_body: str) -> bool:
-    if not (SMTP_HOST and SMTP_FROM and to_email):
-        print("[email] SMTP configuration incomplete")
-        return False
+    """Use Postmark API via mailer.py"""
     try:
-        msg = MIMEMultipart("alternative")
-        msg["From"] = SMTP_FROM
-        msg["To"] = to_email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(html_body, "html", "utf-8"))
-
-        if SMTP_USE_SSL:
-            context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=20) as s:
-                if SMTP_USER: s.login(SMTP_USER, SMTP_PASS)
-                s.send_message(msg)
+        success = send_mail(to_email, subject, "Email content", html_body)
+        if success:
+            print(f"[email] sent via Postmark API to {to_email}")
         else:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
-                if SMTP_USE_TLS:
-                    s.starttls()
-                if SMTP_USER: s.login(SMTP_USER, SMTP_PASS)
-                s.send_message(msg)
-        print(f"[mail] sent via {SMTP_HOST}:{SMTP_PORT} tls={SMTP_USE_TLS} ssl={SMTP_USE_SSL}")
-        return True
+            print(f"[email] Postmark API failed for {to_email}")
+        return success
     except Exception as e:
-        print("[email] send failed:", e)
+        print(f"[email] send failed: {e}")
         return False
 
 def _make_search_hash(terms: List[str], filters: dict) -> str:
