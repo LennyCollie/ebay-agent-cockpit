@@ -1,50 +1,29 @@
-# mailer.py - Postmark API Version
+# mailer.py - Postmark API with Bounce Handling
 import os
 import requests
 from datetime import datetime
+from pathlib import Path
 
-def send_mail(to_email, subject, text_body, html_body=None):
-    """Send email via Postmark API"""
-    api_key = os.getenv('POSTMARK_SERVER_TOKEN')
-    from_email = os.getenv('SENDER_EMAIL', 'noreply@ebay-agent.com')
-    
-    if not api_key:
-        print("[ERROR] POSTMARK_SERVER_TOKEN not configured")
-        return False
-    
-    payload = {
-        'From': from_email,
-        'To': to_email,
-        'Subject': subject,
-        'TextBody': text_body,
-        'MessageStream': 'outbound'
-    }
-    
-    if html_body:
-        payload['HtmlBody'] = html_body
-    
+# Bounce-Liste Datei
+BOUNCE_FILE = Path("bounced_emails.txt")
+
+def load_bounced_emails():
+    """Load bounced email addresses from file"""
     try:
-        response = requests.post(
-            'https://api.postmarkapp.com/email',
-            headers={
-                'X-Postmark-Server-Token': api_key,
-                'Content-Type': 'application/json'
-            },
-            json=payload,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            print(f"[SUCCESS] Email sent to {to_email}")
-            return True
-        else:
-            print(f"[ERROR] Postmark API error: {response.status_code} - {response.text}")
-            return False
-            
+        if BOUNCE_FILE.exists():
+            with open(BOUNCE_FILE, 'r') as f:
+                return set(line.strip().lower() for line in f if line.strip())
     except Exception as e:
-        print(f"[ERROR] Email send failed: {e}")
-        return False
+        print(f"[BOUNCE] Error loading bounce file: {e}")
+    return set()
 
-# Backwards compatibility wrapper
-def send_mail_simple(to_addr, subject, body):
-    return send_mail(to_addr, subject, body)
+def add_bounced_email(email):
+    """Add email to bounce list"""
+    try:
+        email = email.lower().strip()
+        bounced = load_bounced_emails()
+        if email not in bounced:
+            with open(BOUNCE_FILE, 'a') as f:
+                f.write(f"{email}\n")
+            print(f"[BOUNCE] Added to blacklist: {email}")
+    except Excepti
