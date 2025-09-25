@@ -1561,6 +1561,310 @@ def pilot_widget_free():
 
 # ======= DEMO BLOCK: Storno-Radar (End) =======
 
+# ========== ADMIN PANEL ==========
+
+@app.route('/admin')
+def admin_login_form():
+    """Admin Login Seite"""
+    if session.get('is_admin'):
+        return redirect('/admin/dashboard')
+    
+    return """
+    <div style="max-width:400px;margin:50px auto;font-family:Arial">
+        <h2>Admin Login</h2>
+        <form method="post" action="/admin/login">
+            <div style="margin:15px 0">
+                <label>Username:</label><br>
+                <input type="text" name="username" required style="width:100%;padding:8px">
+            </div>
+            <div style="margin:15px 0">
+                <label>Password:</label><br>
+                <input type="password" name="password" required style="width:100%;padding:8px">
+            </div>
+            <button type="submit" style="background:#007cba;color:white;padding:10px 20px;border:none;border-radius:4px">
+                Login
+            </button>
+        </form>
+    </div>
+    """
+
+@app.route('/admin/login', methods=['POST'])
+def admin_login():
+    """Admin Login verarbeiten"""
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+    
+    # Einfache Admin-Credentials (ändern Sie diese!)
+    ADMIN_USER = os.getenv('ADMIN_USERNAME', 'admin')
+    ADMIN_PASS = os.getenv('ADMIN_PASSWORD', 'change-me-123')
+    
+    if username == ADMIN_USER and password == ADMIN_PASS:
+        session['is_admin'] = True
+        return redirect('/admin/dashboard')
+    else:
+        return 'Falscher Username oder Password. <a href="/admin">Zurück</a>'
+
+@app.route('/admin/logout')
+def admin_logout():
+    """Admin Logout"""
+    session.pop('is_admin', None)
+    return redirect('/admin')
+
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    """Admin Dashboard"""
+    if not session.get('is_admin'):
+        return redirect('/admin')
+    
+    # Statistiken aus der Datenbank holen
+    conn = get_db()
+    cur = conn.cursor()
+    
+    user_count = cur.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+    alert_count = cur.execute('SELECT COUNT(*) FROM search_alerts WHERE is_active=1').fetchone()[0]
+    total_alerts = cur.execute('SELECT COUNT(*) FROM search_alerts').fetchone()[0]
+    
+    conn.close()
+    
+    return f"""
+    <div style="font-family:Arial;max-width:1000px;margin:20px auto;padding:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:30px">
+            <h1>Admin Dashboard</h1>
+            <a href="/admin/logout" style="color:#dc3545">Logout</a>
+        </div>
+        
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:40px">
+            <div style="background:#f8f9fa;padding:20px;border-radius:8px;text-align:center">
+                <h3 style="margin:0;color:#28a745">{user_count}</h3>
+                <p style="margin:5px 0 0 0">Benutzer</p>
+            </div>
+            <div style="background:#f8f9fa;padding:20px;border-radius:8px;text-align:center">
+                <h3 style="margin:0;color:#007cba">{alert_count}</h3>
+                <p style="margin:5px 0 0 0">Aktive Alerts</p>
+            </div>
+            <div style="background:#f8f9fa;padding:20px;border-radius:8px;text-align:center">
+                <h3 style="margin:0;color:#6c757d">{total_alerts}</h3>
+                <p style="margin:5px 0 0 0">Alerts gesamt</p>
+            </div>
+        </div>
+        
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:30px">
+            <div>
+                <h3>Benutzerverwaltung</h3>
+                <a href="/admin/users" style="background:#007cba;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">
+                    Benutzer verwalten
+                </a>
+            </div>
+            <div>
+                <h3>Alert-Verwaltung</h3>
+                <a href="/admin/alerts" style="background:#28a745;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">
+                    Alerts verwalten
+                </a>
+            </div>
+        </div>
+        
+        <div style="margin-top:40px">
+            <h3>Bounce-Management</h3>
+            <a href="/admin/bounces" style="background:#dc3545;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">
+                Gebounce E-Mails verwalten
+            </a>
+        </div>
+    </div>
+    """
+
+@app.route('/admin/users')
+def admin_users():
+    """Benutzerverwaltung"""
+    if not session.get('is_admin'):
+        return redirect('/admin')
+    
+    conn = get_db()
+    cur = conn.cursor()
+    users = cur.execute('SELECT id, email, password, is_premium FROM users ORDER BY id DESC').fetchall()
+    conn.close()
+    
+    user_rows = ""
+    for user in users:
+        premium_badge = "🌟 Premium" if user[3] else "🆓 Free"
+        user_rows += f"""
+        <tr>
+            <td>{user[0]}</td>
+            <td>{user[1]}</td>
+            <td>{premium_badge}</td>
+            <td>
+                <a href="/admin/user/{user[0]}/alerts" style="margin-right:10px">Alerts</a>
+                <a href="/admin/user/{user[0]}/delete" onclick="return confirm('Wirklich löschen?')" style="color:red">Löschen</a>
+            </td>
+        </tr>
+        """
+    
+    return f"""
+    <div style="font-family:Arial;max-width:1000px;margin:20px auto;padding:20px">
+        <div style="margin-bottom:20px">
+            <a href="/admin/dashboard">← Zurück zum Dashboard</a>
+        </div>
+        
+        <h2>Benutzerverwaltung</h2>
+        <table style="width:100%;border-collapse:collapse;margin-top:20px">
+            <tr style="background:#f8f9fa">
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">ID</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">E-Mail</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Status</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktionen</th>
+            </tr>
+            {user_rows}
+        </table>
+    </div>
+    """
+
+@app.route('/admin/alerts')
+def admin_alerts():
+    """Alert-Verwaltung"""
+    if not session.get('is_admin'):
+        return redirect('/admin')
+    
+    conn = get_db()
+    cur = conn.cursor()
+    alerts = cur.execute('''
+        SELECT id, user_email, terms_json, is_active, last_run_ts 
+        FROM search_alerts 
+        ORDER BY id DESC 
+        LIMIT 50
+    ''').fetchall()
+    conn.close()
+    
+    alert_rows = ""
+    for alert in alerts:
+        try:
+            terms = json.loads(alert[2])
+            terms_text = ", ".join(terms[:3])  # Erste 3 Begriffe
+        except:
+            terms_text = "Fehlerhafte Daten"
+        
+        status = "🟢 Aktiv" if alert[3] else "🔴 Inaktiv"
+        last_run = "Nie" if alert[4] == 0 else f"Zuletzt: {alert[4]}"
+        
+        alert_rows += f"""
+        <tr>
+            <td style="padding:8px;border:1px solid #ddd">{alert[0]}</td>
+            <td style="padding:8px;border:1px solid #ddd">{alert[1]}</td>
+            <td style="padding:8px;border:1px solid #ddd">{terms_text}</td>
+            <td style="padding:8px;border:1px solid #ddd">{status}</td>
+            <td style="padding:8px;border:1px solid #ddd">
+                <a href="/admin/alert/{alert[0]}/toggle">Toggle</a> | 
+                <a href="/admin/alert/{alert[0]}/delete" style="color:red">Löschen</a>
+            </td>
+        </tr>
+        """
+    
+    return f"""
+    <div style="font-family:Arial;max-width:1200px;margin:20px auto;padding:20px">
+        <div style="margin-bottom:20px">
+            <a href="/admin/dashboard">← Zurück zum Dashboard</a>
+        </div>
+        
+        <h2>Alert-Verwaltung</h2>
+        <table style="width:100%;border-collapse:collapse;margin-top:20px">
+            <tr style="background:#f8f9fa">
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">ID</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">E-Mail</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Suchbegriffe</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Status</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktionen</th>
+            </tr>
+            {alert_rows}
+        </table>
+    </div>
+    """
+
+@app.route('/admin/alert/<int:alert_id>/toggle')
+def admin_toggle_alert(alert_id):
+    """Alert aktivieren/deaktivieren"""
+    if not session.get('is_admin'):
+        return redirect('/admin')
+    
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('UPDATE search_alerts SET is_active = 1 - is_active WHERE id = ?', (alert_id,))
+    conn.commit()
+    conn.close()
+    
+    return redirect('/admin/alerts')
+
+@app.route('/admin/alert/<int:alert_id>/delete')
+def admin_delete_alert(alert_id):
+    """Alert löschen"""
+    if not session.get('is_admin'):
+        return redirect('/admin')
+    
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM search_alerts WHERE id = ?', (alert_id,))
+    cur.execute('DELETE FROM alert_seen WHERE search_hash IN (SELECT search_hash FROM search_alerts WHERE id = ?)', (alert_id,))
+    conn.commit()
+    conn.close()
+    
+    return redirect('/admin/alerts')
+
+@app.route('/admin/bounces')
+def admin_bounces():
+    """Bounce-Management"""
+    if not session.get('is_admin'):
+        return redirect('/admin')
+    
+    # Bounce-Liste laden
+    from mailer import get_bounce_stats
+    stats = get_bounce_stats()
+    
+    bounce_rows = ""
+    for email in stats['bounced_emails']:
+        bounce_rows += f"""
+        <tr>
+            <td style="padding:8px;border:1px solid #ddd">{email}</td>
+            <td style="padding:8px;border:1px solid #ddd">
+                <a href="/admin/bounce/{email}/remove" style="color:green">Entfernen</a>
+            </td>
+        </tr>
+        """
+    
+    return f"""
+    <div style="font-family:Arial;max-width:800px;margin:20px auto;padding:20px">
+        <div style="margin-bottom:20px">
+            <a href="/admin/dashboard">← Zurück zum Dashboard</a>
+        </div>
+        
+        <h2>Bounce-Management</h2>
+        <p>Gesamt: {stats['total_bounced']} gebounce E-Mail-Adressen</p>
+        
+        <div style="margin:20px 0">
+            <a href="/admin/bounces/clear" 
+               onclick="return confirm('Alle Bounces löschen?')"
+               style="background:#dc3545;color:white;padding:10px 20px;text-decoration:none;border-radius:4px">
+                Alle Bounces löschen
+            </a>
+        </div>
+        
+        <table style="width:100%;border-collapse:collapse;margin-top:20px">
+            <tr style="background:#f8f9fa">
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">E-Mail-Adresse</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktion</th>
+            </tr>
+            {bounce_rows}
+        </table>
+    </div>
+    """
+
+@app.route('/admin/bounces/clear')
+def admin_clear_bounces():
+    """Alle Bounces löschen"""
+    if not session.get('is_admin'):
+        return redirect('/admin')
+    
+    from mailer import clear_bounce_list
+    clear_bounce_list()
+    
+    return redirect('/admin/bounces')
+
 if __name__ == "__main__":
     port  = int(os.getenv("PORT", "5000"))
     debug = as_bool(os.getenv("FLASK_DEBUG", "1"))
