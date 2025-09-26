@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Hero -->
+<section class="py-5 bg-body-tertiary text-center border-bottom">
+    <div class="container py-4">
+        <span class="badge text-bg-success mb-2">3 Suchen gratis – keine Registrierung nötig</span>
+        <h1 class="display-5 fw-bold mb-3">Verpasse nie wieder eBay-Schnäppchen</h1>
+        <p class="lead mx-auto" style="max-width: 720px;">
+            Erhalte <strong>Echtzeit-E-Mails</strong>, sobald neue eBay-Angebote zu deinen Suchbegriffen online gehen –
+            mit Preis- &amp; Zustands-Filtern.
+        </p>
+
+        <div class="d-flex justify-content-center gap-2 flex-wrap mt-4">
+            <a href="{{ url_for('search') }}" class="btn btn-primary btn-lg px-4">Suche öffnen</a>
+            <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-secondary btn-lg px-4">Preise ansehen</a>
+        </div>
+
+        <!-- Nutzen-Bullets -->
+        <ul class="list-inline mt-4 text-muted small">
+            <li class="list-inline-item">• Echtzeit-Alerts per E-Mail</li>
+            <li class="list-inline-item">• Unbegrenzte Agenten mit Premium</li>
+            <li class="list-inline-item">• Erweiterte Filter</li>
+        </ul>
+        <!-- Deine bestehenden Trust-Signale -->
+        <ul class="list-inline mt-2 mb-0 text-muted small">
+            <li class="list-inline-item">🔐 Sichere Anmeldung</li>
+            <li class="list-inline-item">⚙️ Sync-Jobs vorbereitet</li>
+            <li class="list-inline-item">🧾 Stripe-Abo & Rechnungen</li>
+        </ul>
+    </div>
+</section>
+
+<!-- Beliebte Suchen -->
+<section class="container py-5" id="popular-searches">
+    <div class="text-center mb-4">
+        <h2 class="h2 fw-bold">Beliebte Suchen</h2>
+        <p class="text-muted">Ein Klick – sofort vorgefüllt starten.</p>
+    </div>
+
+    <div class="row g-3 row-cols-1 row-cols-sm-2 row-cols-lg-3">
+        <!-- Karte 1: LEGO Technic 42115 (korrigiert: max 200 €, gebraucht, neu eingestellt) -->
+        <div class="col">
+            <a href="/search?q1=lego+technic+42115&price_max=200&sort=newly&per_page=100&condition=USED"
+                class="card h-100 text-decoration-none border-2">
+                <div class="card-body">
+                    <h3 class="h6 text-dark mb-1">LEGO Technic 42115 „Lamborghini Sián“</h3>
+                    <p class="text-muted small mb-3">Gebraucht · max. 200 € · Neu eingestellt</p>
+                    <span class="fw-medium">Jetzt öffnen →</span>
+                </div>
+            </a>
+        </div>
+
+        <!-- Karte 2: GameCube Controller -->
+        <div class="col">
+            <a href="/search?q1=nintendo+gamecube+controller+original&price_max=30&sort=newly&per_page=100&condition=USED"
+                class="card h-100 text-decoration-none border-2">
+                <div class="card-body">
+                    <h3 class="h6 text-dark mb-1">Nintendo GameCube Controller (Original)</h3>
+                    <p class="text-muted small mb-3">Gebraucht · max. 30 € · Neu eingestellt</p>
+                    <span class="fw-medium">Jetzt öffnen →</span>
+                </div>
+            </a>
+        </div>
+
+        <!-- Karte 3: iPhone 12 Display -->
+        <div class="col">
+            <a href="/search?q1=iphone+12+display+original&price_min=40&price_max=80&sort=newly&per_page=60&condition=CERTIFIED_REFURBISHED"
+                class="card h-100 text-decoration-none border-2">
+                <div class="card-body">
+                    <h3 class="h6 text-dark mb-1">iPhone 12 Display (Original/Refurbished)</h3>
+                    <p class="text-muted small mb-3">Refurb. · 40–80 € · Neu eingestellt</p>
+                    <span class="fw-medium">Jetzt öffnen →</span>
+                </div>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Features (wie gehabt) -->
+<section class="container py-5">
+    <h2 class="text-center mb-4">Warum Super-Agent?</h2>
+    <div class="row g-4 row-cols-1 row-cols-md-3">
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="fs-2 mb-2">⚡</div>
+                    <h5 class="card-title mb-2">Schnell & einfach</h5>
+                    <p class="card-text text-muted mb-0">
+                        In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="fs-2 mb-2">🔒</div>
+                    <h5 class="card-title mb-2">Sicher</h5>
+                    <p class="card-text text-muted mb-0">
+                        Login, Sessions & Best Practices standardmäßig aktiv.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="fs-2 mb-2">📈</div>
+                    <h5 class="card-title mb-2">Skalierbar</h5>
+                    <p class="card-text text-muted mb-0">
+                        Vom lokalen Test bis zum Render-Deploy. Für die Zukunft vorbereitet.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="py-5 text-center border-top">
+    <div class="container">
+        <p class="text-muted mb-3">
+            Ohne Registrierung sind 3 Suchen gratis. Mit Konto kannst du später jederzeit upgraden.
+        </p>
+        <a href="{{ url_for('start_free') }}" class="btn btn-primary btn-lg">
+            Kostenlos starten
+        </a>
+    </div>
+</section>
+
+{% endblock %}
