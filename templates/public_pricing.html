@@ -1,80 +1,176 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container py-4">
 
-  <div class="text-center mb-5">
-    <h1 class="display-6 fw-bold">Werde zum Power-User</h1>
-    <p class="text-muted mb-0">
-      Schalte alle Features frei und finde deine Wunschartikel schneller.
-    </p>
+<style>
+  .pricing-hero{background:linear-gradient(135deg,#0b5ed7,#6f42c1);} /* Bootstrap primary → purple */
+  .card-hover{transition:transform .15s ease, box-shadow .15s ease}
+  .card-hover:hover{transform:translateY(-2px); box-shadow:0 .5rem 1rem rgba(0,0,0,.15)}
+</style>
+
+<!-- ============ HERO ============ -->
+<section class="pricing-hero text-white text-center py-5 border-bottom">
+  <div class="container py-3">
+    <h1 class="display-6 fw-bold mb-2">Preise</h1>
+    <p class="lead mb-0 text-white-50">Starte kostenlos – upgrade, wenn du mehr Power brauchst.</p>
   </div>
+</section>
 
-  <div class="row g-4 justify-content-center">
-    <!-- Free -->
-    <div class="col-12 col-md-5">
-      <div class="card h-100 shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title">Free</h5>
-          <ul class="list-unstyled small mb-4">
-            <li>✅ 3 Suchläufe</li>
-            <li>✅ Basisfunktionen</li>
+<div class="container py-5">
+  {% if ev_free_limit_hit %}
+    <div class="alert alert-info" role="alert">
+      Du hast das Limit der kostenlosen Suchen erreicht. Mit <strong>Premium</strong> erhältst du unbegrenzte Agenten und schnellere Intervalle.
+    </div>
+  {% endif %}
+
+  <!-- ============ PLANS ============ -->
+  <div class="row g-4 row-cols-1 row-cols-lg-2 align-items-stretch">
+    <!-- Free Plan -->
+    <div class="col">
+      <div class="card h-100 shadow-sm card-hover">
+        <div class="card-body p-4 d-flex flex-column">
+          <h3 class="h4 mb-1">Free</h3>
+          <p class="text-muted">Ideal zum Ausprobieren</p>
+          <div class="display-6 fw-bold mb-2">0 € <span class="fs-6 fw-normal text-muted">/ immer</span></div>
+          <ul class="list-unstyled small my-3 flex-grow-1">
+            <li class="mb-1">✔ 3 Suchen gratis</li>
+            <li class="mb-1">✔ Basisfunktionen</li>
+            <li class="mb-1">✔ Teilen‑Links</li>
           </ul>
-          <a href="{{ url_for('start_free') }}" class="btn btn-outline-secondary">
-            Kostenlos starten
-          </a>
+          <a href="{{ url_for('search') }}" class="btn btn-outline-primary mt-auto">Kostenlos starten</a>
         </div>
       </div>
     </div>
 
-    <!-- Premium -->
-    <div class="col-12 col-md-5">
-      <div class="card h-100 border-primary shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title text-primary">Premium</h5>
-          <div class="h3 mb-3">9,99 € <small class="text-muted fs-6">/ Monat</small></div>
-          <ul class="list-unstyled small mb-4">
-            <li>🚀 Unlimitierte Suchagenten</li>
-            <li>⚡ Schnellere Intervalle</li>
-            <li>🎯 Erweiterte Filter</li>
-            <li>📧 E-Mail & (bald) Push-Benachrichtigungen</li>
+    <!-- Premium Plan -->
+    <div class="col">
+      <div class="card h-100 shadow-sm border-0 card-hover" style="background:linear-gradient(135deg,#0d6efd,#6610f2);">
+        <div class="card-body p-4 text-white d-flex flex-column">
+          <div class="d-flex justify-content-between align-items-start">
+            <h3 class="h4 mb-1">Premium</h3>
+            <span class="badge text-bg-light text-dark">Beliebtester Plan</span>
+          </div>
+          <div class="display-6 fw-bold">9,99 € <span class="fs-6 fw-normal text-white-50">/ Monat</span></div>
+          <ul class="list-unstyled small my-3 flex-grow-1">
+            <li class="mb-1">✔ Unbegrenzte Suchagenten</li>
+            <li class="mb-1">✔ Schnellere Intervalle</li>
+            <li class="mb-1">✔ Erweiterte Filter</li>
+            <li class="mb-1">✔ E‑Mail‑Benachrichtigungen (& bald Push)</li>
+            <li class="mb-1">✔ Priorisierte Verarbeitung</li>
           </ul>
-
-          <!-- Abo starten via GET (deine /checkout-Route kann GET) -->
-          <a href="{{ url_for('checkout') }}" class="btn btn-success me-2">
-            Abo starten
-          </a>
-
-          <!-- Platzhalter – wird in der App.py abgefangen -->
-          <a href="{{ url_for('billing_portal') }}" class="btn btn-outline-secondary">
-            Abo verwalten
-          </a>
+          <!-- Wenn dein Checkout eine Route hat, nimm url_for('public_checkout'). Fallback: /checkout -->
+          <div class="d-grid gap-2">
+            <a href="/checkout" class="btn btn-light btn-lg">Abo starten</a>
+            <a href="#faq" class="btn btn-outline-light">Fragen? Sieh dir die FAQ an</a>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- ============ FEATURE COMPARISON ============ -->
+  <div class="table-responsive mt-5">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Funktion</th>
+          <th>Free</th>
+          <th>Premium</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Suchagenten</td>
+          <td>3</td>
+          <td>Unbegrenzt</td>
+        </tr>
+        <tr>
+          <td>Intervall</td>
+          <td>Regelmäßig</td>
+          <td><span class="badge text-bg-success">Schneller</span></td>
+        </tr>
+        <tr>
+          <td>E‑Mail‑Benachrichtigungen</td>
+          <td>—</td>
+          <td>✔</td>
+        </tr>
+        <tr>
+          <td>Erweiterte Filter</td>
+          <td>—</td>
+          <td>✔</td>
+        </tr>
+        <tr>
+          <td>Teilen‑Links</td>
+          <td>✔</td>
+          <td>✔</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============ FAQ ============ -->
+  <div class="mt-5" id="faq">
+    <h2 class="h4 mb-3">Häufige Fragen</h2>
+
+    <div class="accordion" id="faqAccordion">
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="q1">
+          <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#a1" aria-expanded="true" aria-controls="a1">
+            Wie funktionieren die E‑Mail‑Alerts?
+          </button>
+        </h2>
+        <div id="a1" class="accordion-collapse collapse show" aria-labelledby="q1" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+            Du speicherst eine Suche (Begriffe + Filter). Sobald neue passende eBay‑Angebote online gehen, senden wir dir eine E‑Mail.
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="q2">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a2" aria-expanded="false" aria-controls="a2">
+            Was ist der Unterschied zwischen Free und Premium?
+          </button>
+        </h2>
+        <div id="a2" class="accordion-collapse collapse" aria-labelledby="q2" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+            Free eignet sich zum Testen mit 3 Agenten. Premium schaltet unbegrenzte Agenten, schnellere Intervalle und Alerts frei.
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="q3">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a3" aria-expanded="false" aria-controls="a3">
+            Kann ich monatlich kündigen?
+          </button>
+        </h2>
+        <div id="a3" class="accordion-collapse collapse" aria-labelledby="q3" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+            Ja. Du kannst monatlich kündigen; dein Abo läuft dann zum Ende des bezahlten Zeitraums aus.
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="q4">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a4" aria-expanded="false" aria-controls="a4">
+            Bietet ihr einen Jahresplan an?
+          </button>
+        </h2>
+        <div id="a4" class="accordion-collapse collapse" aria-labelledby="q4" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+            Auf Wunsch ja – typischerweise mit 20–30% Rabatt. Sprich uns an, wenn du wechseln möchtest.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FINAL CTA ============ -->
+  <div class="text-center mt-5">
+    <p class="text-muted mb-3">Bereit? Sichere dir Premium und verpasse keine neuen Angebote mehr.</p>
+    <a href="/checkout" class="btn btn-primary btn-lg">Abo starten</a>
+  </div>
 </div>
+
 {% endblock %}
-
-<form action="{{ url_for('checkout') }}" method="post" class="d-inline">
-  <button id="btnCheckout" type="submit" class="btn btn-success btn-lg">
-    🚀 Abo starten
-  </button>
-</form>
-
-<script>
-  (function(){
-    if (!window.plausible) return;
-
-    var cta = document.getElementById('btnCheckout');
-    if (cta) {
-      cta.addEventListener('click', function(){
-        plausible('checkout_opened', {props:{plan: 'pro'}});
-      });
-    }
-
-    {% if ev_free_limit_hit %}
-      plausible('free_limit_hit');
-    {% endif %}
-  })();
-</script>

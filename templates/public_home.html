@@ -1,36 +1,43 @@
 {% extends "base.html" %}
 {% block content %}
 
-<!-- Hero -->
-<section class="py-5 bg-body-tertiary text-center border-bottom">
+<!-- Small styles just for this page -->
+<style>
+  .hero-gradient{background:radial-gradient(120% 120% at 50% 0%, #0d6efd 0%, #0a58ca 35%, #0b2239 100%);}
+  .card-hover{transition:transform .15s ease, box-shadow .15s ease}
+  .card-hover:hover{transform:translateY(-2px); box-shadow:0 .5rem 1rem rgba(0,0,0,.15)}
+</style>
+
+<!-- =================== HERO =================== -->
+<section class="py-5 hero-gradient text-white text-center border-bottom">
   <div class="container py-4">
-    <span class="badge text-bg-success mb-2">3 Suchen gratis – keine Registrierung nötig</span>
-    <h1 class="display-5 fw-bold mb-3">Verpasse nie wieder eBay-Schnäppchen</h1>
-    <p class="lead mx-auto" style="max-width: 720px;">
-      Erhalte <strong>Echtzeit-E-Mails</strong>, sobald neue eBay-Angebote zu deinen Suchbegriffen online gehen – mit Preis- &amp; Zustands-Filtern.
+    <span class="badge text-bg-success mb-3">3 Suchen gratis – keine Registrierung nötig</span>
+    <h1 class="display-5 fw-bold mb-3">Verpasse nie wieder eBay‑Schnäppchen</h1>
+    <p class="lead mx-auto text-white-50" style="max-width: 760px;">
+      Erhalte <strong class="text-white">Echtzeit‑E‑Mails</strong>, sobald neue eBay‑Angebote zu deinen Suchbegriffen online gehen – mit Preis‑ &amp; Zustands‑Filtern.
     </p>
 
     <div class="d-flex justify-content-center gap-2 flex-wrap mt-4">
-      <a href="{{ url_for('search') }}" class="btn btn-primary btn-lg px-4">Suche öffnen</a>
-      <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-secondary btn-lg px-4">Preise ansehen</a>
+      <a href="{{ url_for('search') }}" class="btn btn-light btn-lg px-4">Suche öffnen</a>
+      <a href="#popular-searches" class="btn btn-outline-light btn-lg px-4">Beliebte Suchen</a>
+      <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-light btn-lg px-4">Preise ansehen</a>
     </div>
 
-    <!-- Nutzen-Bullets -->
-    <ul class="list-inline mt-4 text-muted small">
-      <li class="list-inline-item">• Echtzeit-Alerts per E-Mail</li>
+    <!-- Nutzen-Bullets + Trust -->
+    <ul class="list-inline mt-4 mb-1 text-white-50 small">
+      <li class="list-inline-item">• Echtzeit‑Alerts per E‑Mail</li>
       <li class="list-inline-item">• Unbegrenzte Agenten mit Premium</li>
       <li class="list-inline-item">• Erweiterte Filter</li>
     </ul>
-    <!-- Deine bestehenden Trust-Signale -->
-    <ul class="list-inline mt-2 mb-0 text-muted small">
+    <ul class="list-inline mt-1 mb-0 text-white-50 small">
       <li class="list-inline-item">🔐 Sichere Anmeldung</li>
-      <li class="list-inline-item">⚙️ Sync-Jobs vorbereitet</li>
-      <li class="list-inline-item">🧾 Stripe-Abo & Rechnungen</li>
+      <li class="list-inline-item">⚙️ Sync‑Jobs vorbereitet</li>
+      <li class="list-inline-item">🧾 Stripe‑Abo & Rechnungen</li>
     </ul>
   </div>
 </section>
 
-<!-- Beliebte Suchen -->
+<!-- ============ BELIEBTE SUCHEN / KACHELN ============ -->
 <section class="container py-5" id="popular-searches">
   <div class="text-center mb-4">
     <h2 class="h2 fw-bold">Beliebte Suchen</h2>
@@ -38,13 +45,13 @@
   </div>
 
   <div class="row g-3 row-cols-1 row-cols-sm-2 row-cols-lg-3">
-    <!-- Karte 1: LEGO Technic 42115 (korrigiert: max 200 €, gebraucht, neu eingestellt) -->
+    <!-- Karte 1: LEGO Technic 42115 -->
     <div class="col">
-      <a href="/search?q1=lego+technic+42115&price_max=200&sort=newly&per_page=100&condition=USED"
-         class="card h-100 text-decoration-none border-2">
+      <a href="/search?q1=lego+technic+42115&price_max=200&sort=newly&per_page=100&condition=USED" class="card card-hover h-100 text-decoration-none border-primary border-2">
         <div class="card-body">
+          <span class="badge text-bg-primary mb-2">Neu eingestellt</span>
           <h3 class="h6 text-dark mb-1">LEGO Technic 42115 „Lamborghini Sián“</h3>
-          <p class="text-muted small mb-3">Gebraucht · max. 200 € · Neu eingestellt</p>
+          <p class="text-muted small mb-3">Gebraucht · max. 200 €</p>
           <span class="fw-medium">Jetzt öffnen →</span>
         </div>
       </a>
@@ -52,11 +59,11 @@
 
     <!-- Karte 2: GameCube Controller -->
     <div class="col">
-      <a href="/search?q1=nintendo+gamecube+controller+original&price_max=30&sort=newly&per_page=100&condition=USED"
-         class="card h-100 text-decoration-none border-2">
+      <a href="/search?q1=nintendo+gamecube+controller+original&price_max=30&sort=newly&per_page=100&condition=USED" class="card card-hover h-100 text-decoration-none border-success border-2">
         <div class="card-body">
+          <span class="badge text-bg-success mb-2">Schnäppchen</span>
           <h3 class="h6 text-dark mb-1">Nintendo GameCube Controller (Original)</h3>
-          <p class="text-muted small mb-3">Gebraucht · max. 30 € · Neu eingestellt</p>
+          <p class="text-muted small mb-3">Gebraucht · max. 30 €</p>
           <span class="fw-medium">Jetzt öffnen →</span>
         </div>
       </a>
@@ -64,11 +71,11 @@
 
     <!-- Karte 3: iPhone 12 Display -->
     <div class="col">
-      <a href="/search?q1=iphone+12+display+original&price_min=40&price_max=80&sort=newly&per_page=60&condition=CERTIFIED_REFURBISHED"
-         class="card h-100 text-decoration-none border-2">
+      <a href="/search?q1=iphone+12+display+original&price_min=40&price_max=80&sort=newly&per_page=60&condition=CERTIFIED_REFURBISHED" class="card card-hover h-100 text-decoration-none border-warning border-2">
         <div class="card-body">
+          <span class="badge text-bg-warning mb-2">Refurbished</span>
           <h3 class="h6 text-dark mb-1">iPhone 12 Display (Original/Refurbished)</h3>
-          <p class="text-muted small mb-3">Refurb. · 40–80 € · Neu eingestellt</p>
+          <p class="text-muted small mb-3">40–80 € · Zert. Refurb.</p>
           <span class="fw-medium">Jetzt öffnen →</span>
         </div>
       </a>
@@ -76,57 +83,97 @@
   </div>
 </section>
 
-<!-- Features (wie gehabt) -->
+<!-- =================== FEATURES =================== -->
 <section class="container py-5">
-  <h2 class="text-center mb-4">Warum Super-Agent?</h2>
+  <h2 class="text-center mb-4">Warum Super‑Agent?</h2>
   <div class="row g-4 row-cols-1 row-cols-md-3">
     <div class="col">
-      <div class="card h-100 shadow-sm">
+      <div class="card h-100 shadow-sm card-hover">
         <div class="card-body">
-          <div class="fs-2 mb-2">⚡</div>
+          <div class="rounded-circle bg-primary-subtle d-inline-flex align-items-center justify-content-center mb-2" style="width:48px;height:48px;">⚡</div>
           <h5 class="card-title mb-2">Schnell & einfach</h5>
-          <p class="card-text text-muted mb-0">
-            In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.
-          </p>
+          <p class="card-text text-muted mb-0">In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.</p>
         </div>
       </div>
     </div>
-
     <div class="col">
-      <div class="card h-100 shadow-sm">
+      <div class="card h-100 shadow-sm card-hover">
         <div class="card-body">
-          <div class="fs-2 mb-2">🔒</div>
+          <div class="rounded-circle bg-success-subtle d-inline-flex align-items-center justify-content-center mb-2" style="width:48px;height:48px;">🔒</div>
           <h5 class="card-title mb-2">Sicher</h5>
-          <p class="card-text text-muted mb-0">
-            Login, Sessions & Best Practices standardmäßig aktiv.
-          </p>
+          <p class="card-text text-muted mb-0">Login, Sessions & Best Practices standardmäßig aktiv.</p>
         </div>
       </div>
     </div>
-
     <div class="col">
-      <div class="card h-100 shadow-sm">
+      <div class="card h-100 shadow-sm card-hover">
         <div class="card-body">
-          <div class="fs-2 mb-2">📈</div>
+          <div class="rounded-circle bg-warning-subtle d-inline-flex align-items-center justify-content-center mb-2" style="width:48px;height:48px;">📈</div>
           <h5 class="card-title mb-2">Skalierbar</h5>
-          <p class="card-text text-muted mb-0">
-            Vom lokalen Test bis zum Render-Deploy. Für die Zukunft vorbereitet.
-          </p>
+          <p class="card-text text-muted mb-0">Vom lokalen Test bis zum Render‑Deploy. Für die Zukunft vorbereitet.</p>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- CTA -->
-<section class="py-5 text-center border-top">
+<!-- =================== PRICING (SUMMARY) =================== -->
+<section class="py-5 bg-body-tertiary border-top" id="pricing">
   <div class="container">
-    <p class="text-muted mb-3">
-      Ohne Registrierung sind 3 Suchen gratis. Mit Konto kannst du später jederzeit upgraden.
-    </p>
-    <a href="{{ url_for('start_free') }}" class="btn btn-primary btn-lg">
-      Kostenlos starten
-    </a>
+    <div class="text-center mb-4">
+      <h2 class="h2 fw-bold">Preise</h2>
+      <p class="text-muted">Starte kostenlos – upgrade, wenn du mehr Power brauchst.</p>
+    </div>
+
+    <div class="row g-4 row-cols-1 row-cols-lg-2">
+      <!-- Free Plan -->
+      <div class="col">
+        <div class="card h-100 shadow-sm card-hover">
+          <div class="card-body p-4">
+            <h3 class="h5 mb-1">Free</h3>
+            <p class="text-muted mb-3">Ideal zum Ausprobieren</p>
+            <ul class="list-unstyled small mb-4">
+              <li class="mb-1">✔ 3 Suchen gratis</li>
+              <li class="mb-1">✔ Basisfunktionen</li>
+            </ul>
+            <a href="{{ url_for('search') }}" class="btn btn-outline-primary">Kostenlos starten</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Premium Plan -->
+      <div class="col">
+        <div class="card h-100 shadow-sm border-0" style="background:linear-gradient(135deg,#0d6efd,#6610f2);">
+          <div class="card-body p-4 text-white">
+            <div class="d-flex justify-content-between align-items-start">
+              <h3 class="h5 mb-1">Premium</h3>
+              <span class="badge text-bg-light text-dark">Beliebtester Plan</span>
+            </div>
+            <div class="display-6 fw-bold">9,99 € <span class="fs-6 fw-normal text-white-50">/ Monat</span></div>
+            <ul class="list-unstyled small my-3">
+              <li class="mb-1">✔ Unbegrenzte Suchagenten</li>
+              <li class="mb-1">✔ Schnellere Intervalle</li>
+              <li class="mb-1">✔ Erweiterte Filter</li>
+              <li class="mb-1">✔ E‑Mail‑Benachrichtigungen (& bald Push)</li>
+            </ul>
+            <div class="d-flex gap-2">
+              <a href="{{ url_for('public_pricing') }}" class="btn btn-light">Abo starten</a>
+              <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-light">Mehr Details</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-center text-muted small mt-3 mb-0">Tipp: Jahresplan mit Rabatt anbieten – spart Support & Zahlungsvorgänge.</p>
+  </div>
+</section>
+
+<!-- =================== FINAL CTA =================== -->
+<section class="py-5 text-center border-top" style="background:linear-gradient(135deg,#f8f9fa,#e9efff);">
+  <div class="container">
+    <p class="text-muted mb-3">Ohne Registrierung sind 3 Suchen gratis. Mit Konto kannst du später jederzeit upgraden.</p>
+    <a href="{{ url_for('start_free') }}" class="btn btn-primary btn-lg">Kostenlos starten</a>
   </div>
 </section>
 
