@@ -1003,6 +1003,11 @@ def pilot_info():
     return render_template("pilot_info.html", waitlist_url=waitlist_url)
 
 
+@app.route("/favicon.ico")
+def legacy_favicon():
+    return redirect(url_for("static", filename="icons/favicon.ico"), code=302)
+
+
 # -------------------------------------------------------------------
 # Alerts: Subscribe / Send-now / Cron (HTTP-Trigger-Variante siehe unten)
 # -------------------------------------------------------------------
