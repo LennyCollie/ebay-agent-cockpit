@@ -8,9 +8,9 @@ import hmac
 import logging
 import os
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any, Dict
 
-from flask import Blueprint, request, abort, current_app, has_app_context
+from flask import Blueprint, abort, current_app, has_app_context, request
 
 bp = Blueprint("inbound", __name__)
 
@@ -20,6 +20,7 @@ bp = Blueprint("inbound", __name__)
 
 logger = logging.getLogger("inbound")
 
+
 def _log(level: str, msg: str, *args: Any) -> None:
     """Loggt sicher – mit current_app.logger (falls Kontext), sonst std-Logger."""
     if has_app_context():
@@ -27,17 +28,26 @@ def _log(level: str, msg: str, *args: Any) -> None:
     else:
         getattr(logger, level)(msg, *args)
 
+
 # ---------------------------------------------------------------------------
 # Optional: Store-Adapter (Stub → kann durch services.inbound_store überschrieben werden)
 # ---------------------------------------------------------------------------
 
+
 def store_event(source: str, payload: Dict[str, Any]) -> None:
     """Fallback-Store: nur loggen (wird überschrieben, wenn echter Store vorhanden ist)."""
-    _log("info", "store_event (STUB) source=%s subject=%s", source, payload.get("Subject"))
+    _log(
+        "info",
+        "store_event (STUB) source=%s subject=%s",
+        source,
+        payload.get("Subject"),
+    )
+
 
 try:
     # wenn vorhanden, den echten Store benutzen
     from services.inbound_store import store_event as _real_store_event  # type: ignore
+
     store_event = _real_store_event  # noqa: F811
 except Exception as e:
     _log("warning", "using store_event STUB (import failed): %s", e)
@@ -46,16 +56,19 @@ except Exception as e:
 # Optional: Kleinanzeigen-Mini-Parser (sanft; wenn nicht vorhanden -> no-op)
 # ---------------------------------------------------------------------------
 
+
 def _is_from_kleinanzeigen(_payload: Dict[str, Any]) -> bool:
     return False
+
 
 def _extract_summary(_payload: Dict[str, Any]) -> Dict[str, Any]:
     return {}
 
+
 try:
-    from services.kleinanzeigen_parser import (  # type: ignore
-        is_from_kleinanzeigen as _is_from_kleinanzeigen,
-        extract_summary as _extract_summary,
+    from services.kleinanzeigen_parser import extract_summary as _extract_summary
+    from services.kleinanzeigen_parser import (
+        is_from_kleinanzeigen as _is_from_kleinanzeigen,  # type: ignore
     )
 except Exception as e:
     _log("info", "kleinanzeigen_parser not available (ok): %s", e)
@@ -64,10 +77,12 @@ except Exception as e:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_sender(data: Dict[str, Any]) -> str:
     """Zieht die Absenderadresse robust aus dem Postmark-Payload und normalisiert sie."""
     sender = ((data.get("FromFull") or {}) or {}).get("Email") or data.get("From") or ""
     return sender.strip().lower()
+
 
 def _allowed_sender(sender: str) -> bool:
     """
@@ -86,6 +101,7 @@ def _allowed_sender(sender: str) -> bool:
             return True
     return False
 
+
 def _basic_ok() -> bool:
     """Optional: Basic-Auth, wenn INBOUND_BASIC_USER / INBOUND_BASIC_PASS gesetzt."""
     user = os.getenv("INBOUND_BASIC_USER") or ""
@@ -96,6 +112,7 @@ def _basic_ok() -> bool:
     expected = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
     # timing-safe compare
     return hmac.compare_digest(header, expected)
+
 
 def _signature_ok(raw_body: bytes) -> bool:
     """
@@ -110,6 +127,7 @@ def _signature_ok(raw_body: bytes) -> bool:
     expected = base64.b64encode(digest).decode()
     return hmac.compare_digest(recv_sig, expected)
 
+
 def _is_postmark_ping() -> bool:
     """
     Erlaubt Postmark-„Healthchecks“ mit User-Agent enthält 'postmark'
@@ -120,9 +138,11 @@ def _is_postmark_ping() -> bool:
     sender_present = bool(_get_sender(data))
     return ("postmark" in ua) and (not sender_present)
 
+
 # ---------------------------------------------------------------------------
 # Route
 # ---------------------------------------------------------------------------
+
 
 @bp.route("/inbound/postmark", methods=["GET", "POST"])
 def inbound_postmark():

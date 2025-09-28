@@ -1,6 +1,6 @@
 # lock.py
-import os
 import contextlib
+import os
 import time
 
 LOCK_PATH = os.environ.get("AGENT_LOCK_PATH", "instance/agent.lock")
@@ -8,12 +8,15 @@ LOCK_PATH = os.environ.get("AGENT_LOCK_PATH", "instance/agent.lock")
 # fcntl = Unix-Datei-Lock (Render läuft auf Linux). Für Windows-Lokalentwicklung fallback.
 try:
     import fcntl
+
     HAVE_FCNTL = True
 except Exception:
     HAVE_FCNTL = False
 
 from threading import Lock
+
 _process_lock = Lock()
+
 
 @contextlib.contextmanager
 def agent_lock(timeout=110):

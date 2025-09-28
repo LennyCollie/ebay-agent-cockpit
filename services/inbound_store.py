@@ -1,9 +1,10 @@
 # services/inbound_store.py
+import json
+import os
+import sqlite3
+import time
 from datetime import datetime
-import json, os
-import json, sqlite3, time
-
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 DB_PATH = "instance/app.db"  # falls du einen anderen Pfad nutzt, anpassen
 
@@ -20,14 +21,17 @@ CREATE TABLE IF NOT EXISTS inbound_events (
 );
 """
 
+
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def ensure_table() -> None:
     with _conn() as conn:
         conn.executescript(_SCHEMA)
+
 
 def store_event(src: str, payload: Dict[str, Any]) -> None:
     ensure_table()
@@ -46,6 +50,7 @@ def store_event(src: str, payload: Dict[str, Any]) -> None:
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (ts, src, from_email, to_email, subject, body, raw_json),
         )
+
 
 def store_event(source: str, payload: dict, summary: str | None = None):
     """Schreibt jedes Inbound-Event als JSONL-Zeile (append) – super zum Debuggen & Replays."""

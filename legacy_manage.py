@@ -1,6 +1,8 @@
-from flask.cli import AppGroup
-from app import app, db
 import click
+from flask.cli import AppGroup
+
+from app import app, db
+
 
 @app.cli.command("create")
 def create():

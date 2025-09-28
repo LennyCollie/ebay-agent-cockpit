@@ -4,6 +4,7 @@ import traceback
 print("== Diagnose: app.py importieren ==")
 try:
     import app  # dein app.py als Modul
+
     print("app.py gefunden:", getattr(app, "__file__", app))
     print("hat Variable 'app':", hasattr(app, "app"))
     print("hat Factory 'create_app':", hasattr(app, "create_app"))

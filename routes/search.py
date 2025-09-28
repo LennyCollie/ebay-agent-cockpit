@@ -1,10 +1,14 @@
 # routes/search.py
 from __future__ import annotations
+
 from typing import Dict, List, Optional
-from flask import Blueprint, request, render_template, flash, redirect, url_for
+
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+
 from services.ebay_api import ebay_search
 
 bp_search = Blueprint("search", __name__)
+
 
 def _to_view_items(payload: Dict) -> List[Dict]:
     out: List[Dict] = []
@@ -15,14 +19,17 @@ def _to_view_items(payload: Dict) -> List[Dict]:
             c = it["price"].get("currency")
             if v is not None:
                 price_txt = f"{v} {c}"
-        out.append({
-            "title": it.get("title", "Ohne Titel"),
-            "price": price_txt,
-            "url": it.get("itemWebUrl") or "#",
-            "img": (it.get("image") or {}).get("imageUrl") or "",
-            "term": "",
-        })
+        out.append(
+            {
+                "title": it.get("title", "Ohne Titel"),
+                "price": price_txt,
+                "url": it.get("itemWebUrl") or "#",
+                "img": (it.get("image") or {}).get("imageUrl") or "",
+                "term": "",
+            }
+        )
     return out
+
 
 def _parse_args() -> Dict[str, Optional[str]]:
     src = request.args if request.method == "GET" else request.form
@@ -62,6 +69,7 @@ def _parse_args() -> Dict[str, Optional[str]]:
         "filter_str": filter_str,
     }
 
+
 @bp_search.route("/search", methods=["GET", "POST"])
 def search_page():
     args = _parse_args()
@@ -76,7 +84,7 @@ def search_page():
 
     try:
         payload = ebay_search(
-            args["q"],                       # type: ignore[arg-type]
+            args["q"],  # type: ignore[arg-type]
             limit=24,
             sort=args["sort"] or "bestMatch",
             category_ids=args["category_ids"],

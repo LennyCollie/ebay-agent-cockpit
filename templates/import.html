@@ -1,0 +1,19 @@
+<!-- templates/import.html (upload form) -->
+<div class="container py-5">
+<h1 class="h3 mb-3">CSV‑Import: Such‑Agenten</h1>
+<p class="text-muted">CSV mit Spalten: <code>q1,q2,q3,price_min,price_max,sort,per_page,condition</code>. Mehrere <code>condition</code> mit Komma trennen (z. B. <code>USED,CERTIFIED_REFURBISHED</code>).</p>
+
+
+<div class="mb-3">
+<a class="btn btn-outline-secondary btn-sm" href="/import/sample.csv">Beispiel‑CSV herunterladen</a>
+</div>
+
+
+<form method="post" enctype="multipart/form-data" class="border rounded p-3 bg-body-tertiary">
+<div class="mb-3">
+<label class="form-label">CSV‑Datei</label>
+<input type="file" class="form-control" name="csv" accept=".csv" required>
+</div>
+<button class="btn btn-primary" type="submit">Hochladen & Vorschau anzeigen</button>
+</form>
+</div>

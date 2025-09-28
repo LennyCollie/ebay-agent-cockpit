@@ -1,39 +1,41 @@
-import os
-import json
-import time
-import math
 import base64
-import sqlite3
+import csv
 import hashlib
-from pathlib import Path
-from typing import Optional, List, Dict, Tuple
-from urllib.parse import urlencode
-from mailer import send_mail
+import io
+import json
+import math
+import os
+import sqlite3
+import time
+import urllib.parse
 from datetime import datetime
-
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlencode
 
 import requests
 from flask import (
+    Blueprint,
     Flask,
-    render_template,
-    request,
-    redirect,
-    url_for,
-    session,
-    flash,
-    jsonify,
     abort,
     current_app,
-    Blueprint,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
 )
 
-
 from mailer import send_mail
+
 # -------------------------------------------------------------------
 # .env laden
 # -------------------------------------------------------------------
 try:
     from dotenv import load_dotenv
+
     load_dotenv(".env.local", override=True)
     load_dotenv()
 except Exception:
@@ -46,13 +48,16 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
 
 from routes.inbound import bp as inbound_bp
+
 app.register_blueprint(inbound_bp)
 
 # Plausible (für base.html)
 PLAUSIBLE_DOMAIN = os.getenv("PLAUSIBLE_DOMAIN", "")
 
+
 def as_bool(val: Optional[str]) -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
+
 
 def getenv_any(*names: str, default: str = "") -> str:
     for n in names:
@@ -60,6 +65,7 @@ def getenv_any(*names: str, default: str = "") -> str:
         if v:
             return v
     return default
+
 
 # --- Security Headers (basic hardening) ---
 @app.after_request
@@ -74,10 +80,10 @@ def add_security_headers(resp):
 
 
 # Limits / Defaults
-FREE_SEARCH_LIMIT     = int(os.getenv("FREE_SEARCH_LIMIT", "3"))
-PREMIUM_SEARCH_LIMIT  = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
-PER_PAGE_DEFAULT      = int(os.getenv("PER_PAGE_DEFAULT", "20"))
-SEARCH_CACHE_TTL      = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
+FREE_SEARCH_LIMIT = int(os.getenv("FREE_SEARCH_LIMIT", "3"))
+PREMIUM_SEARCH_LIMIT = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
+PER_PAGE_DEFAULT = int(os.getenv("PER_PAGE_DEFAULT", "20"))
+SEARCH_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
 
 
 NOTIFY_COOLDOWN_MIN = int(os.getenv("NOTIFY_COOLDOWN_MINUTES", "120"))
@@ -91,43 +97,59 @@ CRON_TOKEN = os.getenv("CRON_TOKEN", "")
 
 # DB (SQLite Pfad auch für Render kompatibel)
 DB_URL = os.getenv("DB_PATH", "sqlite:///instance/db.sqlite3")
+
+
 def _sqlite_file_from_url(url: str) -> Path:
     if url.startswith("sqlite:///"):
         rel = url.replace("sqlite:///", "", 1)
         return Path(rel)
     return Path(url)
+
+
 DB_FILE = _sqlite_file_from_url(DB_URL)
 DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # -------------------------------------------------------------------
 # eBay – OAuth Client Credentials + Suche
 # -------------------------------------------------------------------
-EBAY_CLIENT_ID     = getenv_any("EBAY_CLIENT_ID", "EBAY_APP_ID")
+EBAY_CLIENT_ID = getenv_any("EBAY_CLIENT_ID", "EBAY_APP_ID")
 EBAY_CLIENT_SECRET = getenv_any("EBAY_CLIENT_SECRET", "EBAY_CERT_ID")
-EBAY_SCOPES        = os.getenv("EBAY_SCOPES", "https://api.ebay.com/oauth/api_scope")
-EBAY_GLOBAL_ID     = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")
-LIVE_SEARCH        = as_bool(os.getenv("LIVE_SEARCH", "0"))
+EBAY_SCOPES = os.getenv("EBAY_SCOPES", "https://api.ebay.com/oauth/api_scope")
+EBAY_GLOBAL_ID = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")
+LIVE_SEARCH = as_bool(os.getenv("LIVE_SEARCH", "0"))
+
 
 def _marketplace_from_global(gid: str) -> str:
     gid = (gid or "").upper()
-    if gid in {"EBAY-DE", "EBAY_DE"}: return "EBAY_DE"
-    if gid in {"EBAY-US", "EBAY_US"}: return "EBAY_US"
-    if gid in {"EBAY-GB", "EBAY_GB"}: return "EBAY_GB"
-    if gid in {"EBAY-FR", "EBAY_FR"}: return "EBAY_FR"
+    if gid in {"EBAY-DE", "EBAY_DE"}:
+        return "EBAY_DE"
+    if gid in {"EBAY-US", "EBAY_US"}:
+        return "EBAY_US"
+    if gid in {"EBAY-GB", "EBAY_GB"}:
+        return "EBAY_GB"
+    if gid in {"EBAY-FR", "EBAY_FR"}:
+        return "EBAY_FR"
     return "EBAY_DE"
+
 
 def _currency_for_marketplace(mkt: str) -> str:
     mkt = (mkt or "").upper()
-    if mkt == "EBAY_US": return "USD"
-    if mkt == "EBAY_GB": return "GBP"
-    if mkt == "EBAY_FR": return "EUR"
+    if mkt == "EBAY_US":
+        return "USD"
+    if mkt == "EBAY_GB":
+        return "GBP"
+    if mkt == "EBAY_FR":
+        return "EUR"
     return "EUR"
 
+
 EBAY_MARKETPLACE_ID = _marketplace_from_global(EBAY_GLOBAL_ID)
-EBAY_CURRENCY       = _currency_for_marketplace(EBAY_MARKETPLACE_ID)
+EBAY_CURRENCY = _currency_for_marketplace(EBAY_MARKETPLACE_ID)
 
 # Optional: Affiliate-Parameter (an itemWebUrl anhängen)
 AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # "campid=XXXX;customid=YOURTAG"
+
+
 def _append_affiliate(url: Optional[str]) -> Optional[str]:
     if not url or not AFFILIATE_PARAMS:
         return url
@@ -136,9 +158,11 @@ def _append_affiliate(url: Optional[str]) -> Optional[str]:
     sep = "&" if "?" in url else "?"
     return f"{url}{sep}{q}" if q else url
 
+
 # HTTP Session + Token Cache
 _http = requests.Session()
 _EBAY_TOKEN: Dict[str, object] = {"access_token": None, "expires_at": 0.0}
+
 
 def ebay_get_token() -> Optional[str]:
     tok = _EBAY_TOKEN.get("access_token")
@@ -151,20 +175,26 @@ def ebay_get_token() -> Optional[str]:
 
     token_url = "https://api.ebay.com/identity/v1/oauth2/token"
     basic = base64.b64encode(f"{EBAY_CLIENT_ID}:{EBAY_CLIENT_SECRET}".encode()).decode()
-    headers = {"Authorization": f"Basic {basic}", "Content-Type": "application/x-www-form-urlencoded"}
+    headers = {
+        "Authorization": f"Basic {basic}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
     data = {"grant_type": "client_credentials", "scope": EBAY_SCOPES}
     try:
         r = _http.post(token_url, headers=headers, data=data, timeout=15)
         r.raise_for_status()
         j = r.json() or {}
         _EBAY_TOKEN["access_token"] = j.get("access_token")
-        _EBAY_TOKEN["expires_at"]   = time.time() + int(j.get("expires_in", 7200)) - 60
+        _EBAY_TOKEN["expires_at"] = time.time() + int(j.get("expires_in", 7200)) - 60
         return str(_EBAY_TOKEN["access_token"])
     except Exception as e:
         print(f"[ebay_get_token] {e}")
         return None
 
-def _build_ebay_filters(price_min: str, price_max: str, conditions: List[str]) -> Optional[str]:
+
+def _build_ebay_filters(
+    price_min: str, price_max: str, conditions: List[str]
+) -> Optional[str]:
     parts: List[str] = []
     pmn = (price_min or "").strip()
     pmx = (price_max or "").strip()
@@ -177,70 +207,104 @@ def _build_ebay_filters(price_min: str, price_max: str, conditions: List[str]) -
         parts.append("conditions:{" + ",".join(conds) + "}")
     return ",".join(parts) if parts else None
 
+
 def _map_sort(ui_sort: str) -> Optional[str]:
     s = (ui_sort or "").strip()
     if not s or s == "best":  # Best Match
         return None
-    if s == "price_asc":  return "price"
-    if s == "price_desc": return "-price"
-    if s == "newly":      return "newlyListed"
+    if s == "price_asc":
+        return "price"
+    if s == "price_desc":
+        return "-price"
+    if s == "newly":
+        return "newlyListed"
     return None
 
-def ebay_search_one(term: str, limit: int, offset: int,
-                    filter_str: Optional[str], sort: Optional[str]) -> Tuple[List[Dict], Optional[int]]:
+
+def ebay_search_one(
+    term: str, limit: int, offset: int, filter_str: Optional[str], sort: Optional[str]
+) -> Tuple[List[Dict], Optional[int]]:
     token = ebay_get_token()
     if not token or not term:
         return [], None
 
     url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
     params = {"q": term, "limit": max(1, min(limit, 50)), "offset": max(0, offset)}
-    if filter_str: params["filter"] = filter_str
-    if sort:       params["sort"]   = sort
-    headers = {"Authorization": f"Bearer {token}", "X-EBAY-C-MARKETPLACE-ID": EBAY_MARKETPLACE_ID}
+    if filter_str:
+        params["filter"] = filter_str
+    if sort:
+        params["sort"] = sort
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-EBAY-C-MARKETPLACE-ID": EBAY_MARKETPLACE_ID,
+    }
 
     try:
         r = _http.get(url, headers=headers, params=params, timeout=15)
         r.raise_for_status()
         j = r.json() or {}
         items_raw = j.get("itemSummaries", []) or []
-        total     = j.get("total")
+        total = j.get("total")
         items: List[Dict] = []
         for it in items_raw:
             title = it.get("title") or "—"
-            web   = _append_affiliate(it.get("itemWebUrl"))
-            img   = (it.get("image") or {}).get("imageUrl")
+            web = _append_affiliate(it.get("itemWebUrl"))
+            img = (it.get("image") or {}).get("imageUrl")
             price = (it.get("price") or {}).get("value")
-            cur   = (it.get("price") or {}).get("currency")
+            cur = (it.get("price") or {}).get("currency")
             price_str = f"{price} {cur}" if price and cur else "–"
             # stabile ID (für De-Duping)
-            iid = it.get("itemId") or it.get("legacyItemId") or it.get("epid") or (web or "")[:200]
-            items.append({"id": iid, "title": title, "price": price_str, "url": web, "img": img, "term": term, "src": "ebay"})
+            iid = (
+                it.get("itemId")
+                or it.get("legacyItemId")
+                or it.get("epid")
+                or (web or "")[:200]
+            )
+            items.append(
+                {
+                    "id": iid,
+                    "title": title,
+                    "price": price_str,
+                    "url": web,
+                    "img": img,
+                    "term": term,
+                    "src": "ebay",
+                }
+            )
         return items, (int(total) if isinstance(total, int) else None)
     except Exception as e:
         print(f"[ebay_search_one] {e}")
         return [], None
 
+
 # Demo-Backend
-def _backend_search_demo(terms: List[str], page: int, per_page: int) -> Tuple[List[Dict], int]:
+def _backend_search_demo(
+    terms: List[str], page: int, per_page: int
+) -> Tuple[List[Dict], int]:
     total = max(30, len(terms) * 40)
     start = (page - 1) * per_page
-    stop  = min(total, start + per_page)
+    stop = min(total, start + per_page)
     items: List[Dict] = []
     for i in range(start, stop):
         t = terms[i % max(1, len(terms))] if terms else f"Artikel {i+1}"
-        items.append({
-            "id": f"demo-{i+1}",
-            "title": f"Demo-Ergebnis für „{t}“ #{i+1}",
-            "price": "9,99 €",
-            "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
-            "img": "https://via.placeholder.com/64x48?text=%20",
-            "term": t,
-            "src": "demo",
-        })
+        items.append(
+            {
+                "id": f"demo-{i+1}",
+                "title": f"Demo-Ergebnis für „{t}“ #{i+1}",
+                "price": "9,99 €",
+                "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
+                "img": "https://via.placeholder.com/64x48?text=%20",
+                "term": t,
+                "src": "demo",
+            }
+        )
     return items, total
+
 
 # Mini-Cache
 _search_cache: dict = {}  # key -> (ts, (items, total_estimated))
+
+
 def _cache_get(key):
     row = _search_cache.get(key)
     if not row:
@@ -251,19 +315,27 @@ def _cache_get(key):
         return None
     return payload
 
+
 def _cache_set(key, payload):
     _search_cache[key] = (time.time(), payload)
 
-def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: int) -> Tuple[List[Dict], Optional[int]]:
+
+def _backend_search_ebay(
+    terms: List[str], filters: dict, page: int, per_page: int
+) -> Tuple[List[Dict], Optional[int]]:
     if not LIVE_SEARCH or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
         return _backend_search_demo(terms, page, per_page)
 
-    filter_str = _build_ebay_filters(filters.get("price_min",""), filters.get("price_max",""), filters.get("conditions") or [])
-    sort       = _map_sort(filters.get("sort", "best"))
+    filter_str = _build_ebay_filters(
+        filters.get("price_min", ""),
+        filters.get("price_max", ""),
+        filters.get("conditions") or [],
+    )
+    sort = _map_sort(filters.get("sort", "best"))
 
-    n        = max(1, len(terms))
+    n = max(1, len(terms))
     per_term = max(1, per_page // n)
-    offset   = (page - 1) * per_term
+    offset = (page - 1) * per_term
 
     items_all: List[Dict] = []
     totals: List[int] = []
@@ -281,20 +353,22 @@ def _backend_search_ebay(terms: List[str], filters: dict, page: int, per_page: i
     total_estimated = sum(totals) if totals else None
     return items_all[:per_page], total_estimated
 
+
 # -------------------------------------------------------------------
 # Amazon PA-API (optional + fail-safe)
 # -------------------------------------------------------------------
-AMZ_ENABLED  = os.getenv("AMZ_ENABLED", "0") in {"1", "true", "True", "yes", "on"}
-AMZ_ACCESS   = getenv_any("AMZ_ACCESS_KEY_ID", "AMZ_ACCESS_KEY")
-AMZ_SECRET   = getenv_any("AMZ_SECRET_ACCESS_KEY", "AMZ_SECRET")
-AMZ_TAG      = getenv_any("AMZ_PARTNER_TAG", "AMZ_ASSOC_TAG", "AMZ_TRACKING_ID")
-AMZ_COUNTRY  = os.getenv("AMZ_COUNTRY", "DE")
+AMZ_ENABLED = os.getenv("AMZ_ENABLED", "0") in {"1", "true", "True", "yes", "on"}
+AMZ_ACCESS = getenv_any("AMZ_ACCESS_KEY_ID", "AMZ_ACCESS_KEY")
+AMZ_SECRET = getenv_any("AMZ_SECRET_ACCESS_KEY", "AMZ_SECRET")
+AMZ_TAG = getenv_any("AMZ_PARTNER_TAG", "AMZ_ASSOC_TAG", "AMZ_TRACKING_ID")
+AMZ_COUNTRY = os.getenv("AMZ_COUNTRY", "DE")
 
 AMZ_OK = False
 amazon_client = None
 try:
     if AMZ_ENABLED:
         from amazon_paapi import AmazonApi
+
         if AMZ_ACCESS and AMZ_SECRET and AMZ_TAG:
             amazon_client = AmazonApi(AMZ_ACCESS, AMZ_SECRET, AMZ_TAG, AMZ_COUNTRY)
             AMZ_OK = True
@@ -303,8 +377,10 @@ except Exception as _e:
     AMZ_OK = False
     amazon_client = None
 
-def amazon_search_one(term: str, limit: int, page: int,
-                      price_min: str = "", price_max: str = "") -> Tuple[List[Dict], Optional[int]]:
+
+def amazon_search_one(
+    term: str, limit: int, page: int, price_min: str = "", price_max: str = ""
+) -> Tuple[List[Dict], Optional[int]]:
     if not (AMZ_OK and term and amazon_client):
         return [], None
     try:
@@ -322,8 +398,10 @@ def amazon_search_one(term: str, limit: int, page: int,
                 "DetailPageURL",
             ],
         }
-        if price_min: kwargs["min_price"] = int(float(price_min) * 100)
-        if price_max: kwargs["max_price"] = int(float(price_max) * 100)
+        if price_min:
+            kwargs["min_price"] = int(float(price_min) * 100)
+        if price_max:
+            kwargs["max_price"] = int(float(price_max) * 100)
 
         res = amazon_client.search_items(**kwargs)
 
@@ -343,16 +421,27 @@ def amazon_search_one(term: str, limit: int, page: int,
             try:
                 pr = p.offers.listings[0].price
                 price_val = getattr(pr, "amount", None)
-                currency  = getattr(pr, "currency", None)
+                currency = getattr(pr, "currency", None)
             except Exception:
                 pass
             price_str = f"{price_val} {currency}" if price_val and currency else "–"
             asin = getattr(p, "asin", url or title) or f"{term}-{page}-{len(items)+1}"
-            items.append({"id": asin, "title": title, "price": price_str, "img": img, "url": url, "term": term, "src": "amazon"})
+            items.append(
+                {
+                    "id": asin,
+                    "title": title,
+                    "price": price_str,
+                    "img": img,
+                    "url": url,
+                    "term": term,
+                    "src": "amazon",
+                }
+            )
         return items, None
     except Exception as e:
         print("[amazon] search error:", e)
         return [], None
+
 
 def _backend_search_amazon(terms: List[str], filters: dict, page: int, per_page: int):
     if not AMZ_OK:
@@ -361,12 +450,15 @@ def _backend_search_amazon(terms: List[str], filters: dict, page: int, per_page:
     all_items: List[Dict] = []
     for t in terms:
         part, _ = amazon_search_one(
-            t, per_term, page,
+            t,
+            per_term,
+            page,
             filters.get("price_min") or "",
             filters.get("price_max") or "",
         )
         all_items.extend(part)
     return all_items[:per_page], None
+
 
 def _backend_search_combined(terms: List[str], filters: dict, page: int, per_page: int):
     """eBay ist Leitquelle (liefert total), Amazon wird interleaved."""
@@ -377,11 +469,15 @@ def _backend_search_combined(terms: List[str], filters: dict, page: int, per_pag
     while len(out) < per_page and (i < len(ebay_items) or j < len(amz_items)):
         if i < len(ebay_items):
             ebay_items[i]["src"] = "ebay"
-            out.append(ebay_items[i]); i += 1
-        if len(out) >= per_page: break
+            out.append(ebay_items[i])
+            i += 1
+        if len(out) >= per_page:
+            break
         if j < len(amz_items):
-            out.append(amz_items[j]); j += 1
+            out.append(amz_items[j])
+            j += 1
     return out, ebay_total
+
 
 # -------------------------------------------------------------------
 # Suche + Cache Wrapper
@@ -394,7 +490,8 @@ def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int
         filters.get("price_max") or "",
         filters.get("sort") or "best",
         tuple(filters.get("conditions") or []),
-        page, per_page,
+        page,
+        per_page,
         "amz" if use_amazon else "ebay",
     )
     cached = _cache_get(key)
@@ -406,6 +503,7 @@ def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int
         items, total = _backend_search_ebay(terms, filters, page, per_page)
     _cache_set(key, (items, total))
     return items, total
+
 
 # -------------------------------------------------------------------
 # E-Mail: Versand + De-Duping
@@ -423,6 +521,7 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
         print(f"[email] send failed: {e}")
         return False
 
+
 def _make_search_hash(terms: List[str], filters: dict) -> str:
     payload = {
         "terms": [t.strip() for t in terms if t.strip()],
@@ -436,6 +535,7 @@ def _make_search_hash(terms: List[str], filters: dict) -> str:
     s = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
+
 def _render_items_html(title: str, items: List[Dict]) -> str:
     rows = []
     for it in items[:NOTIFY_MAX_ITEMS_PER_MAIL]:
@@ -443,8 +543,13 @@ def _render_items_html(title: str, items: List[Dict]) -> str:
         url = it.get("url") or "#"
         price = it.get("price") or "–"
         src = it.get("src") or ""
-        badge = f'<span style="background:#eef;padding:2px 6px;border-radius:4px;font-size:12px;margin-left:8px">{src}</span>' if src else ""
-        rows.append(f"""
+        badge = (
+            f'<span style="background:#eef;padding:2px 6px;border-radius:4px;font-size:12px;margin-left:8px">{src}</span>'
+            if src
+            else ""
+        )
+        rows.append(
+            f"""
         <tr>
             <td style="padding:8px 12px"><img src="{img}" alt="" width="96" style="border:1px solid #ddd;border-radius:4px"></td>
             <td style="padding:8px 12px">
@@ -452,7 +557,8 @@ def _render_items_html(title: str, items: List[Dict]) -> str:
               <div style="color:#333">{price}</div>
             </td>
         </tr>
-        """)
+        """
+        )
     more = ""
     if len(items) > NOTIFY_MAX_ITEMS_PER_MAIL:
         more = f"<p style='margin-top:8px'>+ {len(items) - NOTIFY_MAX_ITEMS_PER_MAIL} weitere Treffer …</p>"
@@ -465,7 +571,10 @@ def _render_items_html(title: str, items: List[Dict]) -> str:
     </div>
     """
 
-def _mark_and_filter_new(user_email: str, search_hash: str, src: str, items: List[Dict]) -> List[Dict]:
+
+def _mark_and_filter_new(
+    user_email: str, search_hash: str, src: str, items: List[Dict]
+) -> List[Dict]:
     """Nur Items zurückgeben, die für diese Suche/Person/Src noch nicht (oder nach Cooldown) gemailt wurden."""
     if not items:
         return []
@@ -475,17 +584,23 @@ def _mark_and_filter_new(user_email: str, search_hash: str, src: str, items: Lis
     new_items: List[Dict] = []
     for it in items:
         iid = str(it.get("id") or it.get("url") or it.get("title"))[:255]
-        cur.execute("""
+        cur.execute(
+            """
             SELECT last_sent FROM alert_seen
             WHERE user_email=? AND search_hash=? AND src=? AND item_id=?
-        """, (user_email, search_hash, src, iid))
+        """,
+            (user_email, search_hash, src, iid),
+        )
         row = cur.fetchone()
         if not row:
             new_items.append(it)
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO alert_seen (user_email, search_hash, src, item_id, first_seen, last_sent)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (user_email, search_hash, src, iid, now, 0))
+            """,
+                (user_email, search_hash, src, iid, now, 0),
+            )
         else:
             last_sent = int(row["last_sent"])
             if last_sent == 0:
@@ -497,12 +612,14 @@ def _mark_and_filter_new(user_email: str, search_hash: str, src: str, items: Lis
     conn.close()
     return new_items
 
+
 def _group_by_src(items: List[Dict]) -> Dict[str, List[Dict]]:
     groups: Dict[str, List[Dict]] = {}
     for it in items:
         src = (it.get("src") or "ebay").lower()
         groups.setdefault(src, []).append(it)
     return groups
+
 
 def _mark_sent(user_email: str, search_hash: str, src: str, items: List[Dict]) -> None:
     now = int(time.time())
@@ -512,13 +629,17 @@ def _mark_sent(user_email: str, search_hash: str, src: str, items: List[Dict]) -
     cur = conn.cursor()
     for it in items:
         iid = str(it.get("id") or it.get("url") or it.get("title"))[:255]
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE alert_seen
                SET last_sent=?
              WHERE user_email=? AND search_hash=? AND src=? AND item_id=?
-        """, (now, user_email, search_hash, src, iid))
+        """,
+            (now, user_email, search_hash, src, iid),
+        )
     conn.commit()
     conn.close()
+
 
 # -------------------------------------------------------------------
 # DB (Users + Alerts/Seen)
@@ -528,20 +649,24 @@ def get_db() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def init_db() -> None:
     conn = get_db()
     cur = conn.cursor()
     # users
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             is_premium INTEGER NOT NULL DEFAULT 0
         )
-    """)
+    """
+    )
     # items gesehen/versendet
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS alert_seen (
             user_email   TEXT    NOT NULL,
             search_hash  TEXT    NOT NULL,
@@ -551,9 +676,11 @@ def init_db() -> None:
             last_sent    INTEGER NOT NULL,
             PRIMARY KEY (user_email, search_hash, src, item_id)
         )
-    """)
+    """
+    )
     # gespeicherte Alerts (für Cron)
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS search_alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_email   TEXT NOT NULL,
@@ -563,12 +690,17 @@ def init_db() -> None:
             is_active    INTEGER NOT NULL DEFAULT 1,
             last_run_ts  INTEGER NOT NULL DEFAULT 0
         )
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_active ON search_alerts(is_active)")
+    """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alerts_active ON search_alerts(is_active)"
+    )
     conn.commit()
     conn.close()
 
+
 init_db()
+
 
 # -------------------------------------------------------------------
 # Template-Fallback
@@ -578,7 +710,7 @@ def safe_render(template_name: str, **ctx):
         return render_template(template_name, **ctx)
     except Exception:
         title = ctx.get("title", "ebay-agent-cockpit")
-        body  = ctx.get("body", "")
+        body = ctx.get("body", "")
         try:
             home = url_for("public_home")
         except Exception:
@@ -594,6 +726,7 @@ def safe_render(template_name: str, **ctx):
 <div class="mb-3">{body}</div>
 <p><a class="btn btn-primary" href="{home}">Zur Startseite</a></p>
 </body></html>"""
+
 
 # -------------------------------------------------------------------
 # Context-Processor
@@ -612,6 +745,7 @@ def _build_query(existing: dict, **extra) -> str:
             pairs.append((k, str(v)))
     return urlencode(pairs)
 
+
 @app.context_processor
 def inject_globals():
     return {
@@ -623,6 +757,7 @@ def inject_globals():
         "AMZ_COUNTRY": os.getenv("AMZ_COUNTRY", "DE"),
     }
 
+
 # -------------------------------------------------------------------
 # Session-Defaults + UTM
 # -------------------------------------------------------------------
@@ -633,13 +768,21 @@ def _ensure_session_defaults():
     session.setdefault("user_email", "guest")
     # UTM nur einmalig erfassen
     if not session.get("utm"):
-        utm_keys = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]
+        utm_keys = [
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "utm_term",
+            "utm_content",
+        ]
         utm = {k: request.args.get(k) for k in utm_keys if request.args.get(k)}
         if utm:
             session["utm"] = utm
 
+
 def _user_search_limit() -> int:
     return PREMIUM_SEARCH_LIMIT if session.get("is_premium") else FREE_SEARCH_LIMIT
+
 
 # -------------------------------------------------------------------
 # Auth (Demo)
@@ -657,7 +800,10 @@ def register():
 
     conn = get_db()
     try:
-        conn.execute("INSERT INTO users (email, password, is_premium) VALUES (?, ?, 0)", (email, password))
+        conn.execute(
+            "INSERT INTO users (email, password, is_premium) VALUES (?, ?, 0)",
+            (email, password),
+        )
         conn.commit()
     except sqlite3.IntegrityError:
         flash("Diese E-Mail ist bereits registriert.", "warning")
@@ -668,6 +814,7 @@ def register():
     flash("Registrierung erfolgreich. Bitte einloggen.", "success")
     return redirect(url_for("login"))
 
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
@@ -677,24 +824,28 @@ def login():
     password = (request.form.get("password") or "").strip()
 
     conn = get_db()
-    row = conn.execute("SELECT id, password, is_premium FROM users WHERE email = ?", (email,)).fetchone()
+    row = conn.execute(
+        "SELECT id, password, is_premium FROM users WHERE email = ?", (email,)
+    ).fetchone()
     conn.close()
 
     if not row or row["password"] != password:
         flash("E-Mail oder Passwort ist falsch.", "warning")
         return redirect(url_for("login"))
 
-    session["user_id"]    = int(row["id"])
+    session["user_id"] = int(row["id"])
     session["user_email"] = email
     session["is_premium"] = bool(row["is_premium"])
     flash("Login erfolgreich.", "success")
     return redirect(url_for("dashboard"))
+
 
 @app.route("/logout")
 def logout():
     session.clear()
     flash("Logout erfolgreich.", "info")
     return redirect(url_for("public_home"))
+
 
 # -------------------------------------------------------------------
 # Public / Dashboard / Free-Start
@@ -703,15 +854,21 @@ def logout():
 def root_redirect():
     return redirect(url_for("public_home"))
 
+
 @app.route("/public")
 def public_home():
     return safe_render("public_home.html", title="Start – ebay-agent-cockpit")
 
+
 @app.route("/pricing")
 def public_pricing():
     ev_free_limit_hit = bool(session.pop("ev_free_limit_hit", False))
-    return safe_render("public_pricing.html", title="Preise – ebay-agent-cockpit",
-                       ev_free_limit_hit=ev_free_limit_hit)
+    return safe_render(
+        "public_pricing.html",
+        title="Preise – ebay-agent-cockpit",
+        ev_free_limit_hit=ev_free_limit_hit,
+    )
+
 
 @app.route("/dashboard")
 def dashboard():
@@ -720,13 +877,15 @@ def dashboard():
         return redirect(url_for("login"))
     return safe_render("dashboard.html", title="Dashboard")
 
+
 @app.route("/start-free")
 @app.route("/free")
 def start_free():
-    session["is_premium"]        = False
+    session["is_premium"] = False
     session["free_search_count"] = 0
-    session["user_email"]        = "guest"
+    session["user_email"] = "guest"
     return redirect(url_for("search"))
+
 
 # -------------------------------------------------------------------
 # Suche – PRG + Pagination + Filter
@@ -750,7 +909,10 @@ def search():
             count = int(session.get("free_search_count", 0))
             if count >= FREE_SEARCH_LIMIT:
                 session["ev_free_limit_hit"] = True
-                flash(f"Kostenloses Limit ({FREE_SEARCH_LIMIT}) erreicht – bitte Upgrade buchen.", "info")
+                flash(
+                    f"Kostenloses Limit ({FREE_SEARCH_LIMIT}) erreicht – bitte Upgrade buchen.",
+                    "info",
+                )
                 return redirect(url_for("public_pricing"))
             session["free_search_count"] = count + 1
 
@@ -758,11 +920,15 @@ def search():
         return redirect(url_for("search", **params))
 
     # GET -> tatsächliche Suche
-    terms = [t for t in [
-        (request.args.get("q1") or "").strip(),
-        (request.args.get("q2") or "").strip(),
-        (request.args.get("q3") or "").strip(),
-    ] if t]
+    terms = [
+        t
+        for t in [
+            (request.args.get("q1") or "").strip(),
+            (request.args.get("q2") or "").strip(),
+            (request.args.get("q3") or "").strip(),
+        ]
+        if t
+    ]
 
     if not terms:
         return safe_render("search.html", title="Suche")
@@ -784,9 +950,13 @@ def search():
         per_page = PER_PAGE_DEFAULT
 
     items, total_estimated = _search_with_cache(terms, filters, page, per_page)
-    total_pages = math.ceil(total_estimated / per_page) if total_estimated is not None else None
+    total_pages = (
+        math.ceil(total_estimated / per_page) if total_estimated is not None else None
+    )
     has_prev = page > 1
-    has_next = (total_pages and page < total_pages) or (not total_pages and len(items) == per_page)
+    has_next = (total_pages and page < total_pages) or (
+        not total_pages and len(items) == per_page
+    )
 
     base_qs = {
         "q1": request.args.get("q1", ""),
@@ -816,6 +986,7 @@ def search():
         base_qs=base_qs,
     )
 
+
 @app.route("/", methods=["GET"])
 def index():
     try:
@@ -831,6 +1002,7 @@ def pilot_info():
     # Deinen internen Widget-Link NICHT direkt anzeigen (nur als Hinweis für das Team-Handout)
     return render_template("pilot_info.html", waitlist_url=waitlist_url)
 
+
 # -------------------------------------------------------------------
 # Alerts: Subscribe / Send-now / Cron (HTTP-Trigger-Variante siehe unten)
 # -------------------------------------------------------------------
@@ -842,11 +1014,15 @@ def alerts_subscribe():
         flash("Bitte einloggen, um Alarme zu speichern.", "warning")
         return redirect(url_for("login"))
 
-    terms = [t for t in [
-        (request.form.get("q1") or "").strip(),
-        (request.form.get("q2") or "").strip(),
-        (request.form.get("q3") or "").strip(),
-    ] if t]
+    terms = [
+        t
+        for t in [
+            (request.form.get("q1") or "").strip(),
+            (request.form.get("q2") or "").strip(),
+            (request.form.get("q3") or "").strip(),
+        ]
+        if t
+    ]
     if not terms:
         flash("Keine Suchbegriffe übergeben.", "warning")
         return redirect(url_for("search"))
@@ -865,15 +1041,27 @@ def alerts_subscribe():
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO search_alerts (user_email, terms_json, filters_json, per_page, is_active, last_run_ts)
         VALUES (?, ?, ?, ?, 1, 0)
-    """, (user_email, json.dumps(terms, ensure_ascii=False), json.dumps(filters, ensure_ascii=False), per_page))
+    """,
+        (
+            user_email,
+            json.dumps(terms, ensure_ascii=False),
+            json.dumps(filters, ensure_ascii=False),
+            per_page,
+        ),
+    )
     conn.commit()
     conn.close()
 
-    flash("Alarm gespeichert. Du erhältst eine E-Mail, wenn neue Treffer gefunden werden.", "success")
+    flash(
+        "Alarm gespeichert. Du erhältst eine E-Mail, wenn neue Treffer gefunden werden.",
+        "success",
+    )
     return redirect(url_for("search", **{**request.form}))
+
 
 @app.post("/alerts/send-now")
 def alerts_send_now():
@@ -883,11 +1071,15 @@ def alerts_send_now():
         flash("Gültige E-Mail erforderlich (einloggen oder E-Mail angeben).", "warning")
         return redirect(url_for("search"))
 
-    terms = [t for t in [
-        (request.form.get("q1") or "").strip(),
-        (request.form.get("q2") or "").strip(),
-        (request.form.get("q3") or "").strip(),
-    ] if t]
+    terms = [
+        t
+        for t in [
+            (request.form.get("q1") or "").strip(),
+            (request.form.get("q2") or "").strip(),
+            (request.form.get("q3") or "").strip(),
+        ]
+        if t
+    ]
     if not terms:
         flash("Keine Suchbegriffe übergeben.", "warning")
         return redirect(url_for("search"))
@@ -916,7 +1108,9 @@ def alerts_send_now():
         new_all.extend(new_items)
 
     if not new_all:
-        flash("Keine neuen Treffer (alles schon gemailt oder noch im Cooldown).", "info")
+        flash(
+            "Keine neuen Treffer (alles schon gemailt oder noch im Cooldown).", "info"
+        )
         return redirect(url_for("search", **{**request.form}))
 
     subject = f"Neue Treffer für „{', '.join(terms)}“ – {len(new_all)} neu"
@@ -925,13 +1119,19 @@ def alerts_send_now():
     if ok:
         for src, group in groups.items():
             # markiere nur die, die wir tatsächlich geschickt haben
-            sent_subset = [it for it in new_all if (it.get("src") or "ebay").lower() == src]
+            sent_subset = [
+                it for it in new_all if (it.get("src") or "ebay").lower() == src
+            ]
             _mark_sent(user_email, search_hash, src, sent_subset)
-        flash(f"E-Mail versendet an {user_email} mit {len(new_all)} neuen Treffern.", "success")
+        flash(
+            f"E-Mail versendet an {user_email} mit {len(new_all)} neuen Treffern.",
+            "success",
+        )
     else:
         flash("E-Mail-Versand fehlgeschlagen (SMTP prüfen).", "danger")
 
     return redirect(url_for("search", **{**request.form}))
+
 
 # ALT/Kompatibilität (deprecated): Query-basiertes Cron-Endpoint
 @app.get("/cron/run-alerts")
@@ -944,7 +1144,9 @@ def cron_run_alerts():
     now = int(time.time())
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, user_email, terms_json, filters_json, per_page FROM search_alerts WHERE is_active=1")
+    cur.execute(
+        "SELECT id, user_email, terms_json, filters_json, per_page FROM search_alerts WHERE is_active=1"
+    )
     alerts = cur.fetchall()
     conn.close()
 
@@ -974,18 +1176,25 @@ def cron_run_alerts():
             html = _render_items_html(subject, new_all)
             if _send_email(user_email, subject, html):
                 for src, _group in groups.items():
-                    sent_subset = [it for it in new_all if (it.get("src") or "ebay").lower() == src]
+                    sent_subset = [
+                        it for it in new_all if (it.get("src") or "ebay").lower() == src
+                    ]
                     _mark_sent(user_email, search_hash, src, sent_subset)
                 total_sent += 1
 
         # last_run_ts aktualisieren
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("UPDATE search_alerts SET last_run_ts=? WHERE id=?", (now, int(a["id"])))
+        cur.execute(
+            "UPDATE search_alerts SET last_run_ts=? WHERE id=?", (now, int(a["id"]))
+        )
         conn.commit()
         conn.close()
 
-    return jsonify({"ok": True, "alerts_checked": total_checked, "alerts_emailed": total_sent})
+    return jsonify(
+        {"ok": True, "alerts_checked": total_checked, "alerts_emailed": total_sent}
+    )
+
 
 @app.get("/pilot/info")
 def pilot_info_page():
@@ -1007,21 +1216,23 @@ def pilot_info_page():
     return render_template(
         "pilot_info.html",
         waitlist_url=waitlist_url,
-        widget_url=widget_url,     # None ⇒ Button wird versteckt
+        widget_url=widget_url,  # None ⇒ Button wird versteckt
         practice=practice,
         year=datetime.now().year,
     )
 
+
 # -------------------------------------------------------------------
 # Stripe (optional – fällt zurück, wenn nicht konfiguriert)
 # -------------------------------------------------------------------
-STRIPE_SECRET_KEY     = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_PRICE_PRO      = os.getenv("STRIPE_PRICE_PRO", "")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_PRICE_PRO = os.getenv("STRIPE_PRICE_PRO", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 STRIPE_OK = False
 try:
     import stripe as _stripe
+
     if STRIPE_SECRET_KEY:
         _stripe.api_key = STRIPE_SECRET_KEY
     STRIPE_OK = True
@@ -1029,6 +1240,7 @@ try:
 except Exception:
     STRIPE_OK = False
     stripe = None
+
 
 @app.post("/webhook")
 def stripe_webhook():
@@ -1047,25 +1259,28 @@ def stripe_webhook():
         return "invalid signature", 400
 
     etype = event.get("type")
-    data  = event.get("data", {}).get("object", {})
+    data = event.get("data", {}).get("object", {})
 
     if etype in ("checkout.session.completed", "customer.subscription.created"):
         user_id = data.get("client_reference_id")
-        email   = (
+        email = (
             (data.get("customer_details") or {}).get("email")
             or data.get("customer_email")
             or (data.get("metadata") or {}).get("email")
         )
         conn = get_db()
-        cur  = conn.cursor()
+        cur = conn.cursor()
         if user_id:
             cur.execute("UPDATE users SET is_premium=1 WHERE id=?", (user_id,))
         elif email:
-            cur.execute("UPDATE users SET is_premium=1 WHERE lower(email)=lower(?)", (email,))
+            cur.execute(
+                "UPDATE users SET is_premium=1 WHERE lower(email)=lower(?)", (email,)
+            )
         conn.commit()
         conn.close()
 
     return jsonify({"received": True})
+
 
 @app.route("/checkout", methods=["GET", "POST"])
 def checkout():
@@ -1075,7 +1290,7 @@ def checkout():
 
     try:
         success_url = url_for("checkout_success", _external=True)
-        cancel_url  = url_for("checkout_cancel",  _external=True)
+        cancel_url = url_for("checkout_cancel", _external=True)
 
         client_ref = str(session.get("user_id") or "")
         user_email = (session.get("user_email") or "").strip()
@@ -1098,10 +1313,12 @@ def checkout():
         flash(f"Stripe-Fehler: {e}", "danger")
         return redirect(url_for("public_pricing"))
 
+
 @app.route("/billing/portal")
 def billing_portal():
     flash("Abo-Verwaltung ist demnächst verfügbar.", "info")
     return redirect(url_for("public_pricing"))
+
 
 @app.route("/checkout/success")
 def checkout_success():
@@ -1109,40 +1326,52 @@ def checkout_success():
     flash("Dein Premium-Zugang ist jetzt freigeschaltet.", "success")
     return safe_render("success.html", title="Erfolg")
 
+
 @app.route("/checkout/cancel")
 def checkout_cancel():
     flash("Vorgang abgebrochen.", "info")
     return redirect(url_for("public_pricing"))
+
 
 # -------------------------------------------------------------------
 # Debug / Health
 # -------------------------------------------------------------------
 @app.route("/_debug/ebay")
 def debug_ebay():
-    return jsonify({
-        "configured": bool(EBAY_CLIENT_ID and EBAY_CLIENT_SECRET),
-        "marketplace": EBAY_MARKETPLACE_ID,
-        "currency": EBAY_CURRENCY,
-        "token_cached": bool(_EBAY_TOKEN["access_token"]),
-        "token_valid_for_s": max(0, int(float(_EBAY_TOKEN.get("expires_at", 0)) - time.time())),
-        "live_search": LIVE_SEARCH,
-    })
+    return jsonify(
+        {
+            "configured": bool(EBAY_CLIENT_ID and EBAY_CLIENT_SECRET),
+            "marketplace": EBAY_MARKETPLACE_ID,
+            "currency": EBAY_CURRENCY,
+            "token_cached": bool(_EBAY_TOKEN["access_token"]),
+            "token_valid_for_s": max(
+                0, int(float(_EBAY_TOKEN.get("expires_at", 0)) - time.time())
+            ),
+            "live_search": LIVE_SEARCH,
+        }
+    )
+
 
 @app.route("/_debug/amazon")
 def debug_amazon():
-    return jsonify({
-        "amz_enabled": AMZ_ENABLED,
-        "amz_ok": AMZ_OK,
-        "country": AMZ_COUNTRY,
-        "has_keys": bool(AMZ_ACCESS and AMZ_SECRET and AMZ_TAG),
-    })
+    return jsonify(
+        {
+            "amz_enabled": AMZ_ENABLED,
+            "amz_ok": AMZ_OK,
+            "country": AMZ_COUNTRY,
+            "has_keys": bool(AMZ_ACCESS and AMZ_SECRET and AMZ_TAG),
+        }
+    )
+
 
 @app.route("/debug")
 def debug_env():
     user_email = session.get("user_email") or ""
     if not user_email and session.get("user_id"):
         conn = get_db()
-        row = conn.execute("SELECT email FROM users WHERE id=?", (session["user_id"],)).fetchone()
+        row = conn.execute(
+            "SELECT email FROM users WHERE id=?", (session["user_id"],)
+        ).fetchone()
         conn.close()
         if row and row["email"]:
             user_email = row["email"]
@@ -1176,16 +1405,20 @@ def debug_env():
     }
     return jsonify(data)
 
+
 @app.route("/healthz")
 def healthz():
     return "ok", 200
+
 
 # (Optional) Amazon Direkt-Suche
 @app.route("/amazon/search")
 def amazon_search():
     q = (request.args.get("q") or "").strip()
     if not q:
-        return safe_render("search.html", title="Amazon-Suche", body="Bitte Suchbegriff angeben.")
+        return safe_render(
+            "search.html", title="Amazon-Suche", body="Bitte Suchbegriff angeben."
+        )
     if not AMZ_OK:
         flash("Amazon ist nicht konfiguriert.", "info")
         return redirect(url_for("public_home"))
@@ -1203,11 +1436,18 @@ def amazon_search():
         title=f"Amazon-Ergebnisse für „{q}“",
         terms=[q],
         results=items,
-        filters={"price_min":"", "price_max":"", "sort":"best", "conditions":[]},
-        pagination={"page":1, "per_page":len(items), "total_estimated":len(items),
-                    "total_pages":1, "has_prev":False, "has_next":False},
-        base_qs={"q1": q, "per_page": len(items)}
+        filters={"price_min": "", "price_max": "", "sort": "best", "conditions": []},
+        pagination={
+            "page": 1,
+            "per_page": len(items),
+            "total_estimated": len(items),
+            "total_pages": 1,
+            "has_prev": False,
+            "has_next": False,
+        },
+        base_qs={"q1": q, "per_page": len(items)},
     )
+
 
 # -------------------------------------------------------------------
 # PRIVATER Cron-Trigger (neu, empfohlen): /internal/run-agent  (POST + Bearer)
@@ -1218,7 +1458,9 @@ try:
 except Exception:
     from contextlib import contextmanager
     from threading import Lock as _TLock
+
     _fallback_lock = _TLock()
+
     @contextmanager
     def agent_lock(timeout: int = 110):
         ok = _fallback_lock.acquire(timeout=timeout if timeout else None)
@@ -1228,7 +1470,9 @@ except Exception:
             if ok:
                 _fallback_lock.release()
 
+
 internal_bp = Blueprint("internal", __name__)
+
 
 def require_agent_token():
     token = request.headers.get("Authorization", "")
@@ -1237,6 +1481,7 @@ def require_agent_token():
     env_tok = os.getenv("AGENT_TRIGGER_TOKEN", "")
     if token != os.getenv("AGENT_TRIGGER_TOKEN", ""):
         abort(401)
+
 
 @internal_bp.route("/mail-test", methods=["GET"])
 def internal_mail_test():
@@ -1256,6 +1501,8 @@ def internal_mail_test():
     except Exception as e:
         current_app.logger.exception("mail test failed")
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @internal_bp.route("/run-agent", methods=["POST"])
 def internal_run_agent():
     # Token prüfen (kleiner Helper – siehe unten)
@@ -1276,7 +1523,9 @@ def internal_run_agent():
 
     return jsonify({"ok": True}), 200
 
+
 # ========= INTERN: Helfer für Alerts / DB-Inspektion =========
+
 
 def _detect_alerts_table(conn):
     """
@@ -1288,14 +1537,20 @@ def _detect_alerts_table(conn):
     rows = cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     tables = [r[0] for r in rows]
     for t in tables:
-        cols = cur.execute(f"PRAGMA table_info({t})").fetchall()  # cid, name, type, notnull, dflt, pk
+        cols = cur.execute(
+            f"PRAGMA table_info({t})"
+        ).fetchall()  # cid, name, type, notnull, dflt, pk
         names = {c[1].lower(): c for c in cols}
         # Pflicht: email + irgendeine Aktiv-Spalte
         if "email" in names and ("active" in names or "is_active" in names):
             email_col = "email"
             active_col = "active" if "active" in names else "is_active"
             # ID-Spalte heuristisch
-            id_col = "id" if "id" in names else ( "alert_id" if "alert_id" in names else list(names.keys())[0] )
+            id_col = (
+                "id"
+                if "id" in names
+                else ("alert_id" if "alert_id" in names else list(names.keys())[0])
+            )
             return t, email_col, active_col, id_col
     return None, None, None, None
 
@@ -1306,7 +1561,9 @@ def internal_db_info():
     require_agent_token()  # denselben Token-Check nutzen wie bei deinen anderen /internal-Routen
     conn = get_db()
     cur = conn.cursor()
-    tables = cur.execute("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+    tables = cur.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name"
+    ).fetchall()
     found = _detect_alerts_table(conn)
     data = {
         "tables": [{"name": n, "create_sql": s} for (n, s) in tables],
@@ -1318,6 +1575,7 @@ def internal_db_info():
         },
     }
     from flask import jsonify
+
     return jsonify(data), 200
 
 
@@ -1335,7 +1593,9 @@ def internal_alerts_disable_all():
         return ("could not detect alerts table", 500)
 
     cur = conn.cursor()
-    cur.execute(f"UPDATE {table} SET {active_col}=0 WHERE lower({email_col})=?", (email,))
+    cur.execute(
+        f"UPDATE {table} SET {active_col}=0 WHERE lower({email_col})=?", (email,)
+    )
     conn.commit()
     return {"ok": True, "email": email, "updated": cur.rowcount}, 200
 
@@ -1367,7 +1627,9 @@ def internal_my_alerts():
     if not rows:
         html.append("<p>Keine Alarme gefunden.</p>")
     else:
-        html.append("<table border=1 cellpadding=6><tr><th>ID</th><th>Aktiv</th><th>Aktion</th></tr>")
+        html.append(
+            "<table border=1 cellpadding=6><tr><th>ID</th><th>Aktiv</th><th>Aktion</th></tr>"
+        )
         for r in rows:
             rid = r["id"] if isinstance(r, dict) else r[0]
             is_active = r["active"] if isinstance(r, dict) else r[2]
@@ -1386,9 +1648,11 @@ def internal_my_alerts():
                 f"</td></tr>"
             )
         html.append("</table>")
-        html.append("<p style='margin-top:12px'>Tipp: <form method='post' action='/internal/alerts/disable-all' style='display:inline;'>"
-                    f"<input type='hidden' name='email' value='{email}'/>"
-                    "<button>Alle für diese E-Mail deaktivieren</button></form></p>")
+        html.append(
+            "<p style='margin-top:12px'>Tipp: <form method='post' action='/internal/alerts/disable-all' style='display:inline;'>"
+            f"<input type='hidden' name='email' value='{email}'/>"
+            "<button>Alle für diese E-Mail deaktivieren</button></form></p>"
+        )
     return "\n".join(html), 200
 
 
@@ -1409,7 +1673,9 @@ def internal_alerts_toggle():
         return ("could not detect alerts table", 500)
 
     cur = conn.cursor()
-    cur.execute(f"UPDATE {table} SET {active_col}=? WHERE {id_col}=?", (int(target), rid))
+    cur.execute(
+        f"UPDATE {table} SET {active_col}=? WHERE {id_col}=?", (int(target), rid)
+    )
     conn.commit()
     # wieder zurück zur Liste für diese E-Mail
     return redirect(f"/internal/my-alerts?email={email}")
@@ -1418,6 +1684,7 @@ def internal_alerts_toggle():
 @app.route("/_routes")
 def _routes():
     return {"routes": [str(r) for r in app.url_map.iter_rules()]}
+
 
 def require_agent_token():
     auth = request.headers.get("Authorization", "")
@@ -1438,7 +1705,9 @@ app.register_blueprint(internal_bp, url_prefix="/internal")
 # ======= DEMO BLOCK: Storno-Radar (Begin) =======
 import os
 from datetime import datetime
-from flask import request, render_template_string, jsonify, abort
+
+from flask import abort, jsonify, render_template_string, request
+
 # nutzt deine existierende send_mail-Funktion:
 from mailer import send_mail
 
@@ -1447,12 +1716,14 @@ DEMO_ENABLED = os.getenv("DEMO_ENABLED", "1") == "1"
 PRACTICE_DEMO_SECRET = os.getenv("PRACTICE_DEMO_SECRET", "")  # optionaler Key
 
 # In-Memory Speicher (nur für Demo)
-DEMO_WAITLIST = []   # [{email, fach, plz, fenster, created}]
-DEMO_SLOTS    = []   # [{fach, until, link, created}]
+DEMO_WAITLIST = []  # [{email, fach, plz, fenster, created}]
+DEMO_SLOTS = []  # [{fach, until, link, created}]
+
 
 def _demo_guard():
     if not DEMO_ENABLED:
         abort(404)
+
 
 # --- Warteliste (Patient) ---
 @app.get("/pilot/waitlist")
@@ -1476,17 +1747,21 @@ def pilot_waitlist_form():
     """
     return render_template_string(html)
 
+
 @app.post("/pilot/waitlist")
 def pilot_waitlist_save():
     _demo_guard()
-    DEMO_WAITLIST.append({
-        "email": request.form.get("email","").strip(),
-        "fach": request.form.get("fach","").strip(),
-        "plz": request.form.get("plz","").strip(),
-        "fenster": request.form.get("fenster","").strip(),
-        "created": datetime.utcnow().isoformat()
-    })
+    DEMO_WAITLIST.append(
+        {
+            "email": request.form.get("email", "").strip(),
+            "fach": request.form.get("fach", "").strip(),
+            "plz": request.form.get("plz", "").strip(),
+            "fenster": request.form.get("fenster", "").strip(),
+            "created": datetime.utcnow().isoformat(),
+        }
+    )
     return "<p>✅ Eingetragen! <a href='/pilot/waitlist'>Zurück</a> • <a href='/pilot/widget'>Praxis-Widget</a></p>"
+
 
 # --- Praxis-Widget (Slot freigeben) ---
 @app.get("/pilot/widget")
@@ -1509,8 +1784,11 @@ def pilot_widget_form():
       </form>
       <p style="margin-top:1rem"><a href="/pilot/waitlist">→ Warteliste</a></p>
     </div>
-    """.format(qs=("?key="+PRACTICE_DEMO_SECRET) if PRACTICE_DEMO_SECRET else "")
+    """.format(
+        qs=("?key=" + PRACTICE_DEMO_SECRET) if PRACTICE_DEMO_SECRET else ""
+    )
     return render_template_string(html)
+
 
 @app.post("/pilot/widget")
 def pilot_widget_free():
@@ -1518,16 +1796,18 @@ def pilot_widget_free():
     if PRACTICE_DEMO_SECRET and request.args.get("key") != PRACTICE_DEMO_SECRET:
         return "401 demo key missing/invalid", 401
 
-    fach  = request.form.get("fach", "").strip()
+    fach = request.form.get("fach", "").strip()
     until = request.form.get("until", "").strip()
-    link  = request.form.get("link", "").strip() or "(Telefon: 01234/56789)"
+    link = request.form.get("link", "").strip() or "(Telefon: 01234/56789)"
 
-    DEMO_SLOTS.append({
-        "fach": fach,
-        "until": until,
-        "link": link,
-        "created": datetime.utcnow().isoformat()
-    })
+    DEMO_SLOTS.append(
+        {
+            "fach": fach,
+            "until": until,
+            "link": link,
+            "created": datetime.utcnow().isoformat(),
+        }
+    )
 
     # einfache Filterlogik: nur Fachgebiet matchen
     matches = [w for w in DEMO_WAITLIST if w["fach"] == fach]
@@ -1559,16 +1839,18 @@ def pilot_widget_free():
         f"<a href='/pilot/widget{qs}'>Zurück</a></p>"
     )
 
+
 # ======= DEMO BLOCK: Storno-Radar (End) =======
 
 # ========== ADMIN PANEL ==========
 
-@app.route('/admin')
+
+@app.route("/admin")
 def admin_login_form():
     """Admin Login Seite"""
-    if session.get('is_admin'):
-        return redirect('/admin/dashboard')
-    
+    if session.get("is_admin"):
+        return redirect("/admin/dashboard")
+
     return """
     <div style="max-width:400px;margin:50px auto;font-family:Arial">
         <h2>Admin Login</h2>
@@ -1588,51 +1870,56 @@ def admin_login_form():
     </div>
     """
 
-@app.route('/admin/login', methods=['POST'])
+
+@app.route("/admin/login", methods=["POST"])
 def admin_login():
     """Admin Login verarbeiten"""
-    username = request.form.get('username', '').strip()
-    password = request.form.get('password', '').strip()
-    
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "").strip()
+
     # Einfache Admin-Credentials (ändern Sie diese!)
-    ADMIN_USER = os.getenv('ADMIN_USERNAME', 'admin')
-    ADMIN_PASS = os.getenv('ADMIN_PASSWORD', 'change-me-123')
-    
+    ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+    ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "change-me-123")
+
     if username == ADMIN_USER and password == ADMIN_PASS:
-        session['is_admin'] = True
-        return redirect('/admin/dashboard')
+        session["is_admin"] = True
+        return redirect("/admin/dashboard")
     else:
         return 'Falscher Username oder Password. <a href="/admin">Zurück</a>'
 
-@app.route('/admin/logout')
+
+@app.route("/admin/logout")
 def admin_logout():
     """Admin Logout"""
-    session.pop('is_admin', None)
-    return redirect('/admin')
+    session.pop("is_admin", None)
+    return redirect("/admin")
 
-@app.route('/admin/dashboard')
+
+@app.route("/admin/dashboard")
 def admin_dashboard():
     """Admin Dashboard"""
-    if not session.get('is_admin'):
-        return redirect('/admin')
-    
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
     # Statistiken aus der Datenbank holen
     conn = get_db()
     cur = conn.cursor()
-    
-    user_count = cur.execute('SELECT COUNT(*) FROM users').fetchone()[0]
-    alert_count = cur.execute('SELECT COUNT(*) FROM search_alerts WHERE is_active=1').fetchone()[0]
-    total_alerts = cur.execute('SELECT COUNT(*) FROM search_alerts').fetchone()[0]
-    
+
+    user_count = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    alert_count = cur.execute(
+        "SELECT COUNT(*) FROM search_alerts WHERE is_active=1"
+    ).fetchone()[0]
+    total_alerts = cur.execute("SELECT COUNT(*) FROM search_alerts").fetchone()[0]
+
     conn.close()
-    
+
     return f"""
     <div style="font-family:Arial;max-width:1000px;margin:20px auto;padding:20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:30px">
             <h1>Admin Dashboard</h1>
             <a href="/admin/logout" style="color:#dc3545">Logout</a>
         </div>
-        
+
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:40px">
             <div style="background:#f8f9fa;padding:20px;border-radius:8px;text-align:center">
                 <h3 style="margin:0;color:#28a745">{user_count}</h3>
@@ -1647,7 +1934,7 @@ def admin_dashboard():
                 <p style="margin:5px 0 0 0">Alerts gesamt</p>
             </div>
         </div>
-        
+
         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:30px">
             <div>
                 <h3>Benutzerverwaltung</h3>
@@ -1662,7 +1949,7 @@ def admin_dashboard():
                 </a>
             </div>
         </div>
-        
+
         <div style="margin-top:40px">
             <h3>Bounce-Management</h3>
             <a href="/admin/bounces" style="background:#dc3545;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">
@@ -1672,17 +1959,20 @@ def admin_dashboard():
     </div>
     """
 
-@app.route('/admin/users')
+
+@app.route("/admin/users")
 def admin_users():
     """Benutzerverwaltung"""
-    if not session.get('is_admin'):
-        return redirect('/admin')
-    
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
     conn = get_db()
     cur = conn.cursor()
-    users = cur.execute('SELECT id, email, password, is_premium FROM users ORDER BY id DESC').fetchall()
+    users = cur.execute(
+        "SELECT id, email, password, is_premium FROM users ORDER BY id DESC"
+    ).fetchall()
     conn.close()
-    
+
     user_rows = ""
     for user in users:
         premium_badge = "🌟 Premium" if user[3] else "🆓 Free"
@@ -1697,13 +1987,13 @@ def admin_users():
             </td>
         </tr>
         """
-    
+
     return f"""
     <div style="font-family:Arial;max-width:1000px;margin:20px auto;padding:20px">
         <div style="margin-bottom:20px">
             <a href="/admin/dashboard">← Zurück zum Dashboard</a>
         </div>
-        
+
         <h2>Benutzerverwaltung</h2>
         <table style="width:100%;border-collapse:collapse;margin-top:20px">
             <tr style="background:#f8f9fa">
@@ -1717,22 +2007,25 @@ def admin_users():
     </div>
     """
 
-@app.route('/admin/alerts')
+
+@app.route("/admin/alerts")
 def admin_alerts():
     """Alert-Verwaltung"""
-    if not session.get('is_admin'):
-        return redirect('/admin')
-    
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
     conn = get_db()
     cur = conn.cursor()
-    alerts = cur.execute('''
-        SELECT id, user_email, terms_json, is_active, last_run_ts 
-        FROM search_alerts 
-        ORDER BY id DESC 
+    alerts = cur.execute(
+        """
+        SELECT id, user_email, terms_json, is_active, last_run_ts
+        FROM search_alerts
+        ORDER BY id DESC
         LIMIT 50
-    ''').fetchall()
+    """
+    ).fetchall()
     conn.close()
-    
+
     alert_rows = ""
     for alert in alerts:
         try:
@@ -1740,10 +2033,10 @@ def admin_alerts():
             terms_text = ", ".join(terms[:3])  # Erste 3 Begriffe
         except:
             terms_text = "Fehlerhafte Daten"
-        
+
         status = "🟢 Aktiv" if alert[3] else "🔴 Inaktiv"
         last_run = "Nie" if alert[4] == 0 else f"Zuletzt: {alert[4]}"
-        
+
         alert_rows += f"""
         <tr>
             <td style="padding:8px;border:1px solid #ddd">{alert[0]}</td>
@@ -1751,18 +2044,18 @@ def admin_alerts():
             <td style="padding:8px;border:1px solid #ddd">{terms_text}</td>
             <td style="padding:8px;border:1px solid #ddd">{status}</td>
             <td style="padding:8px;border:1px solid #ddd">
-                <a href="/admin/alert/{alert[0]}/toggle">Toggle</a> | 
+                <a href="/admin/alert/{alert[0]}/toggle">Toggle</a> |
                 <a href="/admin/alert/{alert[0]}/delete" style="color:red">Löschen</a>
             </td>
         </tr>
         """
-    
+
     return f"""
     <div style="font-family:Arial;max-width:1200px;margin:20px auto;padding:20px">
         <div style="margin-bottom:20px">
             <a href="/admin/dashboard">← Zurück zum Dashboard</a>
         </div>
-        
+
         <h2>Alert-Verwaltung</h2>
         <table style="width:100%;border-collapse:collapse;margin-top:20px">
             <tr style="background:#f8f9fa">
@@ -1777,47 +2070,56 @@ def admin_alerts():
     </div>
     """
 
-@app.route('/admin/alert/<int:alert_id>/toggle')
+
+@app.route("/admin/alert/<int:alert_id>/toggle")
 def admin_toggle_alert(alert_id):
     """Alert aktivieren/deaktivieren"""
-    if not session.get('is_admin'):
-        return redirect('/admin')
-    
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
     conn = get_db()
     cur = conn.cursor()
-    cur.execute('UPDATE search_alerts SET is_active = 1 - is_active WHERE id = ?', (alert_id,))
+    cur.execute(
+        "UPDATE search_alerts SET is_active = 1 - is_active WHERE id = ?", (alert_id,)
+    )
     conn.commit()
     conn.close()
-    
-    return redirect('/admin/alerts')
 
-@app.route('/admin/alert/<int:alert_id>/delete')
+    return redirect("/admin/alerts")
+
+
+@app.route("/admin/alert/<int:alert_id>/delete")
 def admin_delete_alert(alert_id):
     """Alert löschen"""
-    if not session.get('is_admin'):
-        return redirect('/admin')
-    
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
     conn = get_db()
     cur = conn.cursor()
-    cur.execute('DELETE FROM search_alerts WHERE id = ?', (alert_id,))
-    cur.execute('DELETE FROM alert_seen WHERE search_hash IN (SELECT search_hash FROM search_alerts WHERE id = ?)', (alert_id,))
+    cur.execute("DELETE FROM search_alerts WHERE id = ?", (alert_id,))
+    cur.execute(
+        "DELETE FROM alert_seen WHERE search_hash IN (SELECT search_hash FROM search_alerts WHERE id = ?)",
+        (alert_id,),
+    )
     conn.commit()
     conn.close()
-    
-    return redirect('/admin/alerts')
 
-@app.route('/admin/bounces')
+    return redirect("/admin/alerts")
+
+
+@app.route("/admin/bounces")
 def admin_bounces():
     """Bounce-Management"""
-    if not session.get('is_admin'):
-        return redirect('/admin')
-    
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
     # Bounce-Liste laden
     from mailer import get_bounce_stats
+
     stats = get_bounce_stats()
-    
+
     bounce_rows = ""
-    for email in stats['bounced_emails']:
+    for email in stats["bounced_emails"]:
         bounce_rows += f"""
         <tr>
             <td style="padding:8px;border:1px solid #ddd">{email}</td>
@@ -1826,24 +2128,24 @@ def admin_bounces():
             </td>
         </tr>
         """
-    
+
     return f"""
     <div style="font-family:Arial;max-width:800px;margin:20px auto;padding:20px">
         <div style="margin-bottom:20px">
             <a href="/admin/dashboard">← Zurück zum Dashboard</a>
         </div>
-        
+
         <h2>Bounce-Management</h2>
         <p>Gesamt: {stats['total_bounced']} gebounce E-Mail-Adressen</p>
-        
+
         <div style="margin:20px 0">
-            <a href="/admin/bounces/clear" 
+            <a href="/admin/bounces/clear"
                onclick="return confirm('Alle Bounces löschen?')"
                style="background:#dc3545;color:white;padding:10px 20px;text-decoration:none;border-radius:4px">
                 Alle Bounces löschen
             </a>
         </div>
-        
+
         <table style="width:100%;border-collapse:collapse;margin-top:20px">
             <tr style="background:#f8f9fa">
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">E-Mail-Adresse</th>
@@ -1854,19 +2156,21 @@ def admin_bounces():
     </div>
     """
 
-@app.route('/admin/bounces/clear')
+
+@app.route("/admin/bounces/clear")
 def admin_clear_bounces():
     """Alle Bounces löschen"""
-    if not session.get('is_admin'):
-        return redirect('/admin')
-    
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
     from mailer import clear_bounce_list
+
     clear_bounce_list()
-    
-    return redirect('/admin/bounces')
+
+    return redirect("/admin/bounces")
+
 
 if __name__ == "__main__":
-    port  = int(os.getenv("PORT", "5000"))
+    port = int(os.getenv("PORT", "5000"))
     debug = as_bool(os.getenv("FLASK_DEBUG", "1"))
     app.run(host="0.0.0.0", port=port, debug=debug)
-
