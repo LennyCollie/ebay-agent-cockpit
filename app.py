@@ -1449,6 +1449,56 @@ def amazon_search():
     )
 
 
+@app.route("/robots.txt")
+def robots_txt():
+    body = f"User-agent: *\nAllow: /\nSitemap: {request.url_root.rstrip('/')}/sitemap.xml\n"
+    return app.response_class(body, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    from datetime import date
+
+    # Liste deiner öffentlichen Seiten (nur vorhandene Endpoints eintragen)
+    endpoints = [
+        "public_home",
+        "public_pricing",
+        "public_imprint",
+        "public_privacy",
+    ]
+    urls = []
+    for ep in endpoints:
+        try:
+            urls.append(url_for(ep, _external=True))
+        except Exception:
+            pass  # Endpoint existiert (noch) nicht – einfach überspringen
+
+    today = date.today().isoformat()
+    xml = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    xml += [f"<url><loc>{u}</loc><lastmod>{today}</lastmod></url>" for u in urls]
+    xml.append("</urlset>")
+
+    return app.response_class("\n".join(xml), mimetype="application/xml")
+
+
+@app.after_request
+def add_security_and_cache_headers(resp):
+    # Security
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    resp.headers["X-Frame-Options"] = "DENY"
+
+    # Einfaches Caching für statische Assets
+    mt = resp.mimetype or ""
+    if any(x in mt for x in ["image/", "font/", "javascript", "css"]):
+        resp.headers["Cache-Control"] = "public, max-age=2592000"  # 30 Tage
+    return resp
+
+
 # -------------------------------------------------------------------
 # PRIVATER Cron-Trigger (neu, empfohlen): /internal/run-agent  (POST + Bearer)
 # -------------------------------------------------------------------

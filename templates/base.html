@@ -45,6 +45,36 @@ Html
         border-radius: .75rem;
     }
 </style>
+<title>{{ title or "Super-Agent – eBay-Schnäppchen in Echtzeit" }}</title>
+<meta name="description" content="{{ meta_desc or 'Erhalte E-Mails in Minuten, sobald neue eBay-Angebote erscheinen – inkl. Preis- & Zustands-Filtern.' }}">
+
+<link rel="icon" href="{{ url_for('static', filename='icons/favicon.ico') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+<link rel="canonical" href="{{ request.url }}">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ og_title or title or 'Super-Agent' }}">
+<meta property="og:description" content="{{ og_desc or meta_desc or 'Echtzeit-Alerts für neue eBay-Angebote.' }}">
+<meta property="og:url" content="{{ request.url }}">
+<meta property="og:image" content="{{ url_for('static', filename='og/cover.png', _external=True) }}">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ og_title or title or 'Super-Agent' }}">
+<meta name="twitter:description" content="{{ og_desc or meta_desc or 'Echtzeit-Alerts für neue eBay-Angebote.' }}">
+<meta name="twitter:image" content="{{ url_for('static', filename='og/cover.png', _external=True) }}">
+
+<!-- Strukturierte Daten -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Super-Agent",
+  "url": "{{ request.url_root }}",
+  "logo": "{{ url_for('static', filename='og/logo.png', _external=True) }}"
+}
+</script>
+
 </head>
 
 {% if AMZ_TAG %}
