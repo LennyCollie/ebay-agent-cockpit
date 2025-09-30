@@ -1138,6 +1138,98 @@ def alerts_send_now():
     return redirect(url_for("search", **{**request.form}))
 
 
+# Fügen Sie das NACH Zeile 1038 ein (nach den anderen alert-Routen):
+
+
+@app.route("/agents/create", methods=["POST"])
+def create_agent():
+    """Neue Suche/Agent erstellen mit Limit-Check"""
+
+    # Ihre Session-basierte Auth nutzen
+    user_id = session.get("user_id")
+    if not user_id:
+        flash("Bitte einloggen.", "warning")
+        return redirect(url_for("login"))
+
+    # User aus DB holen für Limit-Check
+    conn = get_db()
+    cur = conn.cursor()
+    user = cur.execute(
+        "SELECT email, is_premium FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+
+    if not user:
+        flash("User nicht gefunden.", "danger")
+        return redirect(url_for("login"))
+
+    # Aktive Agents zählen
+    active_count = cur.execute(
+        "SELECT COUNT(*) FROM search_alerts WHERE user_email = ? AND is_active = 1",
+        (user["email"],),
+    ).fetchone()[0]
+
+    # Limit bestimmen (basierend auf is_premium)
+    if user["is_premium"]:
+        limit = PREMIUM_SEARCH_LIMIT  # Sie haben das schon definiert (10)
+    else:
+        limit = FREE_SEARCH_LIMIT  # Sie haben das schon definiert (3)
+
+    # Limit Check
+    if active_count >= limit:
+        conn.close()
+        flash(
+            f"Limit erreicht! Sie haben bereits {active_count} aktive Suchagenten. "
+            f"{'Ihr Premium-Limit ist ' + str(limit) if user['is_premium'] else 'Bitte upgraden Sie auf Premium für mehr Suchagenten.'}",
+            "warning",
+        )
+        return redirect(url_for("public_pricing"))
+
+    # Agent erstellen (wie in Ihrer alerts_subscribe Funktion)
+    terms = [
+        t
+        for t in [
+            request.form.get("q1", "").strip(),
+            request.form.get("q2", "").strip(),
+            request.form.get("q3", "").strip(),
+        ]
+        if t
+    ]
+
+    if not terms:
+        conn.close()
+        flash("Keine Suchbegriffe angegeben.", "warning")
+        return redirect(url_for("search"))
+
+    filters = {
+        "price_min": request.form.get("price_min", "").strip(),
+        "price_max": request.form.get("price_max", "").strip(),
+        "sort": request.form.get("sort", "best").strip(),
+        "conditions": request.form.getlist("condition"),
+    }
+
+    # In DB speichern
+    cur.execute(
+        """
+        INSERT INTO search_alerts (user_email, terms_json, filters_json, per_page, is_active, last_run_ts)
+        VALUES (?, ?, ?, ?, 1, 0)
+        """,
+        (
+            user["email"],
+            json.dumps(terms, ensure_ascii=False),
+            json.dumps(filters, ensure_ascii=False),
+            30,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    flash(
+        f"Suchagent erfolgreich erstellt! ({active_count + 1}/{limit} verwendet)",
+        "success",
+    )
+    return redirect(url_for("dashboard"))
+
+
 # ALT/Kompatibilität (deprecated): Query-basiertes Cron-Endpoint
 @app.get("/cron/run-alerts")
 def cron_run_alerts():
