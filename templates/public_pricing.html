@@ -173,4 +173,88 @@
   </div>
 </div>
 
+<section class="container py-5">
+  <div class="text-center mb-4">
+    <h2 class="h2 fw-bold">Preise (Early Adopter)</h2>
+    <p class="text-muted">Jederzeit kündbar. Teste kostenlos mit 3 Suchen.</p>
+  </div>
+
+  <div class="row g-4 row-cols-1 row-cols-md-3">
+    <!-- Free -->
+    <div class="col">
+      <div class="card h-100 border-0 shadow-sm">
+        <div class="card-body">
+          <h3 class="h5">Free</h3>
+          <p class="display-6 fw-bold">0 €</p>
+          <ul class="text-muted small mb-4">
+            <li>3 Alerts</li>
+            <li>E-Mail Digest, Verzögerung</li>
+            <li>Basis-Filter</li>
+          </ul>
+          <a href="{{ url_for('search') }}" class="btn btn-outline-primary w-100">Kostenlos starten</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Basic -->
+    <div class="col">
+      <div class="card h-100 border-primary border-2">
+        <div class="card-body">
+          <h3 class="h5">Basic</h3>
+          <p class="display-6 fw-bold">9 € <span class="fs-6 text-muted">/ Monat</span></p>
+          <ul class="text-muted small mb-4">
+            <li>10 Alerts</li>
+            <li>Schnellere Zustellung</li>
+            <li>Telegram inkl.</li>
+          </ul>
+          <form method="post" action="{{ url_for('billing_checkout') }}">
+            <input type="hidden" name="price_id" value="{{ config.STRIPE_PRICE_BASIC }}">
+            <button class="btn btn-primary w-100" type="submit">Basic wählen</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pro -->
+    <div class="col">
+      <div class="card h-100 border-success border-2">
+        <div class="card-body">
+          <h3 class="h5">Pro</h3>
+          <p class="display-6 fw-bold">19 € <span class="fs-6 text-muted">/ Monat</span></p>
+          <ul class="text-muted small mb-4">
+            <li>30 Alerts</li>
+            <li>Nahezu Echtzeit</li>
+            <li>Telegram inkl., CSV-Export</li>
+          </ul>
+          <form method="post" action="{{ url_for('billing_checkout') }}">
+            <input type="hidden" name="price_id" value="{{ config.STRIPE_PRICE_PRO }}">
+            <button class="btn btn-success w-100" type="submit">Pro wählen</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Team-Row -->
+  <div class="row g-4 mt-3">
+    <div class="col-12 col-md-6">
+      <div class="card h-100 border-dark border-2">
+        <div class="card-body">
+          <h3 class="h5">Team</h3>
+          <p class="display-6 fw-bold">39 € <span class="fs-6 text-muted">/ Monat</span></p>
+          <ul class="text-muted small mb-4">
+            <li>100 Alerts</li>
+            <li>Priorisierte Abfragen</li>
+            <li>Mehrere Nutzer & Rollen</li>
+          </ul>
+          <form method="post" action="{{ url_for('billing_checkout') }}">
+            <input type="hidden" name="price_id" value="{{ config.STRIPE_PRICE_TEAM }}">
+            <button class="btn btn-dark w-100" type="submit">Team wählen</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 {% endblock %}

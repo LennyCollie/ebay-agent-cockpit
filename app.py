@@ -1339,44 +1339,71 @@ except Exception:
     stripe = None
 
 
-@app.post("/webhook")
-def stripe_webhook():
-    wh_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-    if not STRIPE_OK or not wh_secret:
-        return "webhook not configured", 400
+class Config:
+    STRIPE_PRICE_BASIC = os.getenv("STRIPE_PRICE_BASIC", "")
+    STRIPE_PRICE_PRO = os.getenv("STRIPE_PRICE_PRO", "")
+    STRIPE_PRICE_TEAM = os.getenv("STRIPE_PRICE_TEAM", "")
 
+
+app.config.from_object(Config)
+
+
+@app.post("/billing/stripe/webhook")
+def stripe_webhook():
     payload = request.data
-    sig_header = request.headers.get("Stripe-Signature", "")
+    sig = request.headers.get("Stripe-Signature")
+    endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
 
     try:
-        event = stripe.Webhook.construct_event(payload, sig_header, wh_secret)  # type: ignore
-    except ValueError:
-        return "invalid payload", 400
-    except stripe.error.SignatureVerificationError:  # type: ignore
-        return "invalid signature", 400
+        event = stripe.Webhook.construct_event(payload, sig, endpoint_secret)
+    except Exception:
+        return "Invalid signature", 400
 
-    etype = event.get("type")
-    data = event.get("data", {}).get("object", {})
+    etype = event["type"]
+    obj = event["data"]["object"]
 
-    if etype in ("checkout.session.completed", "customer.subscription.created"):
-        user_id = data.get("client_reference_id")
-        email = (
-            (data.get("customer_details") or {}).get("email")
-            or data.get("customer_email")
-            or (data.get("metadata") or {}).get("email")
-        )
-        conn = get_db()
-        cur = conn.cursor()
-        if user_id:
-            cur.execute("UPDATE users SET is_premium=1 WHERE id=?", (user_id,))
-        elif email:
-            cur.execute(
-                "UPDATE users SET is_premium=1 WHERE lower(email)=lower(?)", (email,)
-            )
-        conn.commit()
-        conn.close()
+    # Helper: E-Mail / user_id herausbekommen
+    user_id = obj.get("client_reference_id") or obj.get("metadata", {}).get("user_id")
+    customer_email = (obj.get("customer_details", {}) or {}).get("email") or obj.get(
+        "customer_email"
+    )
 
-    return jsonify({"received": True})
+    # price_id aus dem Event fischen (je nach Typ)
+    price_id = None
+    if "lines" in obj and obj["lines"]["data"]:
+        price_id = obj["lines"]["data"][0]["price"]["id"]
+    elif "items" in obj and obj["items"]["data"]:
+        price_id = obj["items"]["data"][0]["price"]["id"]
+    elif "plan" in obj and "id" in obj["plan"]:
+        price_id = obj["plan"]["id"]
+
+    plan = PRICE_TO_PLAN.get(price_id)
+
+    from models import User  # dein User-Model
+
+    user = None
+    if user_id:
+        user = User.query.get(int(user_id))
+    if not user and customer_email:
+        user = User.query.filter_by(email=customer_email).first()
+
+    if not user:
+        return "", 200  # unbekannt – still ignorieren
+
+    # Statuswechsel
+    if etype in (
+        "checkout.session.completed",
+        "customer.subscription.created",
+        "customer.subscription.updated",
+    ):
+        if plan:
+            user.plan = plan
+            db.session.commit()
+    elif etype in ("customer.subscription.deleted", "customer.subscription.canceled"):
+        user.plan = "free"
+        db.session.commit()
+
+    return "", 200
 
 
 @app.route("/checkout", methods=["GET", "POST"])
