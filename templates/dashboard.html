@@ -26,12 +26,4 @@
   </div>
 </div>
 
-<div class="alert alert-info">
-    Ihr Plan: <strong>{{ current_plan_name }}</strong><br>
-    Aktive Suchagenten: <strong>{{ active_agents }} / {{ agent_limit }}</strong>
-    {% if active_agents >= agent_limit %}
-        <a href="{{ url_for('public_pricing') }}" class="btn btn-warning btn-sm ms-2">Upgrade</a>
-    {% endif %}
-</div>
-
 {% endblock %}
