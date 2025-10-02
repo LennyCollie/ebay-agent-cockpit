@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import requests
+import stripe
 from flask import (
     Blueprint,
     Flask,
@@ -751,6 +752,9 @@ def inject_globals():
     return {
         "FREE_SEARCH_LIMIT": FREE_SEARCH_LIMIT,
         "PREMIUM_SEARCH_LIMIT": PREMIUM_SEARCH_LIMIT,
+        "STRIPE_PRICE_BASIC": STRIPE_PRICE_BASIC,  # NEU
+        "STRIPE_PRICE_PRO": STRIPE_PRICE_PRO,  # NEU
+        "STRIPE_PRICE_TEAM": STRIPE_PRICE_TEAM,  # NEU
         "qs": _build_query,
         "plausible_domain": PLAUSIBLE_DOMAIN,
         "AMZ_TAG": os.getenv("AMZ_ASSOC_TAG", ""),
@@ -1322,86 +1326,125 @@ def pilot_info_page():
 # -------------------------------------------------------------------
 # Stripe (optional – fällt zurück, wenn nicht konfiguriert)
 # -------------------------------------------------------------------
+# 1) ENV laden
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_PRICE_PRO = os.getenv("STRIPE_PRICE_PRO", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_BASIC = os.getenv("STRIPE_PRICE_BASIC", "")
+STRIPE_PRICE_PRO = os.getenv("STRIPE_PRICE_PRO", "")
+STRIPE_PRICE_TEAM = os.getenv("STRIPE_PRICE_TEAM", "")
 
-STRIPE_OK = False
-try:
-    import stripe as _stripe
+# 2) Stripe aktivieren (falls Key vorhanden)
+STRIPE_ENABLED = bool(STRIPE_SECRET_KEY)
+if STRIPE_ENABLED:
+    stripe.api_key = STRIPE_SECRET_KEY
 
-    if STRIPE_SECRET_KEY:
-        _stripe.api_key = STRIPE_SECRET_KEY
-    STRIPE_OK = True
-    stripe = _stripe
-except Exception:
-    STRIPE_OK = False
-    stripe = None
+# 3) In app.config spiegeln (falls du app.config nutzt)
+app.config.update(
+    STRIPE_SECRET_KEY=STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET,
+    STRIPE_PRICE_BASIC=STRIPE_PRICE_BASIC,
+    STRIPE_PRICE_PRO=STRIPE_PRICE_PRO,
+    STRIPE_PRICE_TEAM=STRIPE_PRICE_TEAM,
+)
+
+# 4) Mapping Price-ID → Plan (basic|pro|team)
+PRICE_TO_PLAN = {
+    STRIPE_PRICE_BASIC: "basic",
+    STRIPE_PRICE_PRO: "pro",
+    STRIPE_PRICE_TEAM: "team",
+}
+# Leere Einträge entfernen
+PRICE_TO_PLAN = {pid: plan for pid, plan in PRICE_TO_PLAN.items() if pid}
 
 
-class Config:
-    STRIPE_PRICE_BASIC = os.getenv("STRIPE_PRICE_BASIC", "")
-    STRIPE_PRICE_PRO = os.getenv("STRIPE_PRICE_PRO", "")
-    STRIPE_PRICE_TEAM = os.getenv("STRIPE_PRICE_TEAM", "")
-
-
-app.config.from_object(Config)
-
-
+# 5) Webhook-Route
 @app.post("/billing/stripe/webhook")
 def stripe_webhook():
-    payload = request.data
-    sig = request.headers.get("Stripe-Signature")
-    endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    # Wenn kein Secret konfiguriert ist: still ACK (kein Stripe aktiv)
+    if not app.config.get("STRIPE_WEBHOOK_SECRET"):
+        return "", 200
+
+    payload = request.get_data(as_text=True)
+    sig = request.headers.get("Stripe-Signature", "")
 
     try:
-        event = stripe.Webhook.construct_event(payload, sig, endpoint_secret)
+        event = stripe.Webhook.construct_event(
+            payload=payload,
+            sig_header=sig,
+            secret=app.config["STRIPE_WEBHOOK_SECRET"],
+        )
+    except stripe.error.SignatureVerificationError:
+        return "Bad signature", 400
     except Exception:
-        return "Invalid signature", 400
+        return "Invalid payload", 400
 
-    etype = event["type"]
-    obj = event["data"]["object"]
+    etype = event.get("type", "")
+    obj = event.get("data", {}).get("object", {}) or {}
 
-    # Helper: E-Mail / user_id herausbekommen
+    # --- price_id robust extrahieren (für verschiedene Event-Typen)
+    def _extract_price_id(o: dict) -> str | None:
+        if not isinstance(o, dict):
+            return None
+
+        # 1) checkout.session.completed (expand lines) => o["lines"]["data"][0]["price"]["id"]
+        lines = o.get("lines", {}).get("data", [])
+        if lines:
+            price = lines[0].get("price") or {}
+            if isinstance(price, dict):
+                return price.get("id")
+
+        # 2) subscription object => o["items"]["data"][0]["price"]["id"]
+        items = o.get("items", {}).get("data", [])
+        if items:
+            price = items[0].get("price") or {}
+            if isinstance(price, dict):
+                return price.get("id")
+
+        # 3) invoice.line_item (selten) => o["price"]["id"]
+        price = o.get("price")
+        if isinstance(price, dict):
+            return price.get("id")
+
+        return None
+
+    price_id = _extract_price_id(obj)
+    plan = PRICE_TO_PLAN.get(price_id)
+
+    # --- User identifizieren
+    from models import User, db  # db = SQLAlchemy Session
+
     user_id = obj.get("client_reference_id") or obj.get("metadata", {}).get("user_id")
     customer_email = (obj.get("customer_details", {}) or {}).get("email") or obj.get(
         "customer_email"
     )
 
-    # price_id aus dem Event fischen (je nach Typ)
-    price_id = None
-    if "lines" in obj and obj["lines"]["data"]:
-        price_id = obj["lines"]["data"][0]["price"]["id"]
-    elif "items" in obj and obj["items"]["data"]:
-        price_id = obj["items"]["data"][0]["price"]["id"]
-    elif "plan" in obj and "id" in obj["plan"]:
-        price_id = obj["plan"]["id"]
-
-    plan = PRICE_TO_PLAN.get(price_id)
-
-    from models import User  # dein User-Model
-
     user = None
     if user_id:
-        user = User.query.get(int(user_id))
+        try:
+            user = User.query.get(int(user_id))
+        except Exception:
+            user = None
     if not user and customer_email:
         user = User.query.filter_by(email=customer_email).first()
 
     if not user:
-        return "", 200  # unbekannt – still ignorieren
+        # unbekannter Kunde – still ACK, damit Stripe nicht retried
+        return "", 200
 
-    # Statuswechsel
+    # --- Statuswechsel
     if etype in (
         "checkout.session.completed",
         "customer.subscription.created",
         "customer.subscription.updated",
     ):
-        if plan:
+        if plan and getattr(user, "plan", None) != plan:
             user.plan = plan
             db.session.commit()
+
     elif etype in ("customer.subscription.deleted", "customer.subscription.canceled"):
-        user.plan = "free"
-        db.session.commit()
+        if getattr(user, "plan", None) != "free":
+            user.plan = "free"
+            db.session.commit()
 
     return "", 200
 

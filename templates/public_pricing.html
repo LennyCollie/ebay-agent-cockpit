@@ -2,7 +2,7 @@
 {% block content %}
 
 <style>
-  .pricing-hero{background:linear-gradient(135deg,#0b5ed7,#6f42c1);} /* Bootstrap primary → purple */
+  .pricing-hero{background:linear-gradient(135deg,#0b5ed7,#6f42c1);}
   .card-hover{transition:transform .15s ease, box-shadow .15s ease}
   .card-hover:hover{transform:translateY(-2px); box-shadow:0 .5rem 1rem rgba(0,0,0,.15)}
 </style>
@@ -16,52 +16,93 @@
 </section>
 
 <div class="container py-5">
-  {% if ev_free_limit_hit %}
+
+  {% if ev_free_limit_hit|default(false) %}
     <div class="alert alert-info" role="alert">
       Du hast das Limit der kostenlosen Suchen erreicht. Mit <strong>Premium</strong> erhältst du unbegrenzte Agenten und schnellere Intervalle.
     </div>
   {% endif %}
 
-  <!-- ============ PLANS ============ -->
-  <div class="row g-4 row-cols-1 row-cols-lg-2 align-items-stretch">
-    <!-- Free Plan -->
+  <!-- ============ PLANS (3-Spalten) ============ -->
+  <div class="row g-4 row-cols-1 row-cols-md-3 align-items-stretch">
+
+    <!-- Free -->
     <div class="col">
       <div class="card h-100 shadow-sm card-hover">
         <div class="card-body p-4 d-flex flex-column">
-          <h3 class="h4 mb-1">Free</h3>
-          <p class="text-muted">Ideal zum Ausprobieren</p>
+          <h3 class="h5 mb-1">Free</h3>
+          <p class="text-muted mb-1">Ideal zum Ausprobieren</p>
           <div class="display-6 fw-bold mb-2">0 € <span class="fs-6 fw-normal text-muted">/ immer</span></div>
           <ul class="list-unstyled small my-3 flex-grow-1">
             <li class="mb-1">✔ 3 Suchen gratis</li>
             <li class="mb-1">✔ Basisfunktionen</li>
-            <li class="mb-1">✔ Teilen‑Links</li>
+            <li class="mb-1">✔ Teilen-Links</li>
           </ul>
           <a href="{{ url_for('search') }}" class="btn btn-outline-primary mt-auto">Kostenlos starten</a>
         </div>
       </div>
     </div>
 
-    <!-- Premium Plan -->
+    <!-- Basic -->
     <div class="col">
-      <div class="card h-100 shadow-sm border-0 card-hover" style="background:linear-gradient(135deg,#0d6efd,#6610f2);">
-        <div class="card-body p-4 text-white d-flex flex-column">
-          <div class="d-flex justify-content-between align-items-start">
-            <h3 class="h4 mb-1">Premium</h3>
-            <span class="badge text-bg-light text-dark">Beliebtester Plan</span>
-          </div>
-          <div class="display-6 fw-bold">9,99 € <span class="fs-6 fw-normal text-white-50">/ Monat</span></div>
+      <div class="card h-100 border-primary border-2 card-hover">
+        <div class="card-body p-4 d-flex flex-column">
+          <h3 class="h5 mb-1">Basic</h3>
+          <p class="text-muted mb-1">Mehr Alerts, schneller</p>
+          <div class="display-6 fw-bold mb-2">7 € <span class="fs-6 fw-normal text-muted">/ Monat</span></div>
           <ul class="list-unstyled small my-3 flex-grow-1">
-            <li class="mb-1">✔ Unbegrenzte Suchagenten</li>
+            <li class="mb-1">✔ 10 Alerts</li>
             <li class="mb-1">✔ Schnellere Intervalle</li>
-            <li class="mb-1">✔ Erweiterte Filter</li>
-            <li class="mb-1">✔ E‑Mail‑Benachrichtigungen (& bald Push)</li>
-            <li class="mb-1">✔ Priorisierte Verarbeitung</li>
+            <li class="mb-1">✔ Telegram inkl.</li>
           </ul>
-          <!-- Wenn dein Checkout eine Route hat, nimm url_for('public_checkout'). Fallback: /checkout -->
-          <div class="d-grid gap-2">
-            <a href="/checkout" class="btn btn-light btn-lg">Abo starten</a>
-            <a href="#faq" class="btn btn-outline-light">Fragen? Sieh dir die FAQ an</a>
+          <form method="post" action="/billing/checkout" class="mt-auto">
+            <input type="hidden" name="price" value="basic">
+            <button class="btn btn-primary w-100" type="submit">Basic wählen</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pro -->
+    <div class="col">
+      <div class="card h-100 border-success border-2 card-hover">
+        <div class="card-body p-4 d-flex flex-column">
+          <div class="d-flex justify-content-between align-items-start">
+            <h3 class="h5 mb-1">Pro</h3>
+            <span class="badge text-bg-success">Beliebtester Plan</span>
           </div>
+          <div class="display-6 fw-bold mb-2">15 € <span class="fs-6 fw-normal text-muted">/ Monat</span></div>
+          <ul class="list-unstyled small my-3 flex-grow-1">
+            <li class="mb-1">✔ 30 Alerts</li>
+            <li class="mb-1">✔ Nahezu Echtzeit</li>
+            <li class="mb-1">✔ Telegram inkl., CSV-Export</li>
+          </ul>
+          <form method="post" action="/billing/checkout" class="mt-auto">
+            <input type="hidden" name="price" value="pro">
+            <button class="btn btn-success w-100" type="submit">Pro wählen</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Team (eigene Reihe) -->
+  <div class="row g-4 mt-3">
+    <div class="col-12 col-md-6">
+      <div class="card h-100 border-dark border-2 card-hover">
+        <div class="card-body p-4 d-flex flex-column">
+          <h3 class="h5 mb-1">Team</h3>
+          <div class="display-6 fw-bold mb-2">29 € <span class="fs-6 fw-normal text-muted">/ Monat</span></div>
+          <ul class="list-unstyled small my-3 flex-grow-1">
+            <li class="mb-1">✔ 100 Alerts</li>
+            <li class="mb-1">✔ Priorisierte Abfragen</li>
+            <li class="mb-1">✔ Mehrere Nutzer & Rollen</li>
+          </ul>
+          <form method="post" action="/billing/checkout" class="mt-auto">
+            <input type="hidden" name="price" value="team">
+            <button class="btn btn-dark w-100" type="submit">Team wählen</button>
+          </form>
         </div>
       </div>
     </div>
@@ -74,32 +115,44 @@
         <tr>
           <th>Funktion</th>
           <th>Free</th>
-          <th>Premium</th>
+          <th>Basic</th>
+          <th>Pro</th>
+          <th>Team</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>Suchagenten</td>
           <td>3</td>
-          <td>Unbegrenzt</td>
+          <td>10</td>
+          <td>30</td>
+          <td>100</td>
         </tr>
         <tr>
           <td>Intervall</td>
           <td>Regelmäßig</td>
-          <td><span class="badge text-bg-success">Schneller</span></td>
+          <td><span class="badge text-bg-primary">Schneller</span></td>
+          <td><span class="badge text-bg-success">Sehr schnell</span></td>
+          <td><span class="badge text-bg-dark">Priorisiert</span></td>
         </tr>
         <tr>
-          <td>E‑Mail‑Benachrichtigungen</td>
+          <td>E-Mail-Benachrichtigungen</td>
           <td>—</td>
+          <td>✔</td>
+          <td>✔</td>
           <td>✔</td>
         </tr>
         <tr>
-          <td>Erweiterte Filter</td>
+          <td>Telegram Alerts</td>
           <td>—</td>
+          <td>✔</td>
+          <td>✔</td>
           <td>✔</td>
         </tr>
         <tr>
-          <td>Teilen‑Links</td>
+          <td>CSV-Export</td>
+          <td>—</td>
+          <td>—</td>
           <td>✔</td>
           <td>✔</td>
         </tr>
@@ -115,12 +168,12 @@
       <div class="accordion-item">
         <h2 class="accordion-header" id="q1">
           <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#a1" aria-expanded="true" aria-controls="a1">
-            Wie funktionieren die E‑Mail‑Alerts?
+            Wie funktionieren die E-Mail-Alerts?
           </button>
         </h2>
         <div id="a1" class="accordion-collapse collapse show" aria-labelledby="q1" data-bs-parent="#faqAccordion">
           <div class="accordion-body">
-            Du speicherst eine Suche (Begriffe + Filter). Sobald neue passende eBay‑Angebote online gehen, senden wir dir eine E‑Mail.
+            Du speicherst eine Suche (Begriffe + Filter). Sobald neue passende eBay-Angebote online gehen, senden wir dir eine E-Mail.
           </div>
         </div>
       </div>
@@ -128,12 +181,12 @@
       <div class="accordion-item">
         <h2 class="accordion-header" id="q2">
           <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a2" aria-expanded="false" aria-controls="a2">
-            Was ist der Unterschied zwischen Free und Premium?
+            Was ist der Unterschied zwischen Free, Basic, Pro und Team?
           </button>
         </h2>
         <div id="a2" class="accordion-collapse collapse" aria-labelledby="q2" data-bs-parent="#faqAccordion">
           <div class="accordion-body">
-            Free eignet sich zum Testen mit 3 Agenten. Premium schaltet unbegrenzte Agenten, schnellere Intervalle und Alerts frei.
+            Free eignet sich zum Testen (3 Agenten). Basic/Pro erhöhen Limits & Tempo, Team bringt mehr Nutzer & Priorisierung.
           </div>
         </div>
       </div>
@@ -172,89 +225,5 @@
     <a href="/checkout" class="btn btn-primary btn-lg">Abo starten</a>
   </div>
 </div>
-
-<section class="container py-5">
-  <div class="text-center mb-4">
-    <h2 class="h2 fw-bold">Preise (Early Adopter)</h2>
-    <p class="text-muted">Jederzeit kündbar. Teste kostenlos mit 3 Suchen.</p>
-  </div>
-
-  <div class="row g-4 row-cols-1 row-cols-md-3">
-    <!-- Free -->
-    <div class="col">
-      <div class="card h-100 border-0 shadow-sm">
-        <div class="card-body">
-          <h3 class="h5">Free</h3>
-          <p class="display-6 fw-bold">0 €</p>
-          <ul class="text-muted small mb-4">
-            <li>3 Alerts</li>
-            <li>E-Mail Digest, Verzögerung</li>
-            <li>Basis-Filter</li>
-          </ul>
-          <a href="{{ url_for('search') }}" class="btn btn-outline-primary w-100">Kostenlos starten</a>
-        </div>
-      </div>
-    </div>
-
-    <!-- Basic -->
-    <div class="col">
-      <div class="card h-100 border-primary border-2">
-        <div class="card-body">
-          <h3 class="h5">Basic</h3>
-          <p class="display-6 fw-bold">9 € <span class="fs-6 text-muted">/ Monat</span></p>
-          <ul class="text-muted small mb-4">
-            <li>10 Alerts</li>
-            <li>Schnellere Zustellung</li>
-            <li>Telegram inkl.</li>
-          </ul>
-          <form method="post" action="{{ url_for('billing_checkout') }}">
-            <input type="hidden" name="price_id" value="{{ config.STRIPE_PRICE_BASIC }}">
-            <button class="btn btn-primary w-100" type="submit">Basic wählen</button>
-          </form>
-        </div>
-      </div>
-    </div>
-
-    <!-- Pro -->
-    <div class="col">
-      <div class="card h-100 border-success border-2">
-        <div class="card-body">
-          <h3 class="h5">Pro</h3>
-          <p class="display-6 fw-bold">19 € <span class="fs-6 text-muted">/ Monat</span></p>
-          <ul class="text-muted small mb-4">
-            <li>30 Alerts</li>
-            <li>Nahezu Echtzeit</li>
-            <li>Telegram inkl., CSV-Export</li>
-          </ul>
-          <form method="post" action="{{ url_for('billing_checkout') }}">
-            <input type="hidden" name="price_id" value="{{ config.STRIPE_PRICE_PRO }}">
-            <button class="btn btn-success w-100" type="submit">Pro wählen</button>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Team-Row -->
-  <div class="row g-4 mt-3">
-    <div class="col-12 col-md-6">
-      <div class="card h-100 border-dark border-2">
-        <div class="card-body">
-          <h3 class="h5">Team</h3>
-          <p class="display-6 fw-bold">39 € <span class="fs-6 text-muted">/ Monat</span></p>
-          <ul class="text-muted small mb-4">
-            <li>100 Alerts</li>
-            <li>Priorisierte Abfragen</li>
-            <li>Mehrere Nutzer & Rollen</li>
-          </ul>
-          <form method="post" action="{{ url_for('billing_checkout') }}">
-            <input type="hidden" name="price_id" value="{{ config.STRIPE_PRICE_TEAM }}">
-            <button class="btn btn-dark w-100" type="submit">Team wählen</button>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
 
 {% endblock %}
