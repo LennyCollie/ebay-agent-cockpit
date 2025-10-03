@@ -1,230 +1,186 @@
 # init_db.py
-import hashlib
 import json
+import os
 import sqlite3
 from datetime import datetime
 
-# Datenbankverbindung
-DB_PATH = "instance/db.sqlite3"  # Gleicher Pfad wie in Ihrer app.py
+DB_PATH = "instance/db.sqlite3"
 
 
-def init_database():
-    """Initialisiert alle Tabellen für die eBay Agent App"""
+def add_column_if_missing(cur, table: str, column: str, type_sql: str) -> None:
+    """Fügt eine Spalte hinzu, falls sie noch nicht existiert."""
+    cur.execute(f"PRAGMA table_info({table})")
+    cols = [r[1] for r in cur.fetchall()]
+    if column not in cols:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {type_sql}")
 
-    # Ordner erstellen falls nicht vorhanden
-    import os
 
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+def init_database(reset: bool = False):
+    os.makedirs("instance", exist_ok=True)
+    if reset and os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
 
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    conn.execute("PRAGMA foreign_keys = ON")
+    cur = conn.cursor()
 
-    print("📦 Erstelle Datenbank-Schema...")
-
-    # ==========================================
-    # 1. USERS TABELLE (mit Preismodell)
-    # ==========================================
-    cursor.execute(
+    # ==========================
+    # 1) USERS
+    # ==========================
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-
-            -- Preismodell
-            plan TEXT DEFAULT 'free',  -- free, basic, pro, dealer
-            is_premium INTEGER DEFAULT 0,  -- Legacy Support
-
-            -- Stripe Integration
-            stripe_customer_id TEXT,
-            stripe_subscription_id TEXT,
-
-            -- Tracking
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_login TIMESTAMP,
-
-            -- Limits
-            max_agents INTEGER DEFAULT 5,
-            max_email_alerts INTEGER DEFAULT 50
+            email       TEXT PRIMARY KEY,
+            password    TEXT,
+            plan        TEXT DEFAULT 'free',
+            is_premium  INTEGER DEFAULT 0,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """
     )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
 
-    # Index für schnelle E-Mail-Suche
-    cursor.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_users_email
-        ON users(email)
-    """
-    )
-
-    # ==========================================
-    # 2. SEARCH_ALERTS (Gespeicherte Suchen)
-    # ==========================================
-    cursor.execute(
+    # ==========================
+    # 2) SEARCH_ALERTS
+    # ==========================
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS search_alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT NOT NULL,
-
-            -- Suchparameter
-            terms_json TEXT NOT NULL,      -- ["Mercedes W113", "Pagode", etc.]
-            filters_json TEXT NOT NULL,    -- {"price_min": "", "price_max": "", etc.}
-
-            -- Konfiguration
-            per_page INTEGER DEFAULT 30,
-            is_active INTEGER DEFAULT 1,
-            notify_immediately INTEGER DEFAULT 0,  -- Sofort-Benachrichtigung?
-
-            -- Tracking
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_run_ts INTEGER DEFAULT 0,
-            last_found_ts INTEGER DEFAULT 0,
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email          TEXT NOT NULL,
+            terms_json          TEXT NOT NULL,
+            filters_json        TEXT NOT NULL,
+            per_page            INTEGER DEFAULT 30,
+            is_active           INTEGER DEFAULT 1,
+            notify_immediately  INTEGER DEFAULT 0,
+            created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_run_ts         INTEGER DEFAULT 0,
+            last_found_ts       INTEGER DEFAULT 0,
             total_notifications INTEGER DEFAULT 0,
-
-            -- Spezial für Oldtimer
-            category TEXT,  -- 'oldtimer', 'sneaker', 'lego', etc.
-            priority INTEGER DEFAULT 0,  -- 0=normal, 1=high, 2=urgent
-
+            category            TEXT,
+            priority            INTEGER DEFAULT 0,
             FOREIGN KEY (user_email) REFERENCES users(email) ON DELETE CASCADE
         )
     """
     )
-
-    # Indices für Performance
-    cursor.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_alerts_active
-        ON search_alerts(is_active)
-    """
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alerts_active ON search_alerts(is_active)"
     )
-    cursor.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_alerts_user
-        ON search_alerts(user_email)
-    """
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alerts_user ON search_alerts(user_email)"
     )
-    cursor.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_alerts_category
-        ON search_alerts(category)
-    """
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alerts_category ON search_alerts(category)"
     )
 
-    # ==========================================
-    # 3. ALERT_SEEN (De-Duping für E-Mails)
-    # ==========================================
-    cursor.execute(
+    # Für bestehende DBs: fehlende Spalten ergänzen (Migration)
+    add_column_if_missing(cur, "search_alerts", "category", "TEXT")
+    add_column_if_missing(cur, "search_alerts", "priority", "INTEGER DEFAULT 0")
+
+    # ==========================
+    # 3) ALERT_SEEN
+    # ==========================
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS alert_seen (
-            user_email TEXT NOT NULL,
-            search_hash TEXT NOT NULL,
-            src TEXT NOT NULL,          -- 'ebay' oder 'amazon'
-            item_id TEXT NOT NULL,
+            user_email   TEXT NOT NULL,
+            search_hash  TEXT NOT NULL,
+            src          TEXT NOT NULL,       -- 'ebay' / 'amazon'
+            item_id      TEXT NOT NULL,
 
-            first_seen INTEGER NOT NULL,
-            last_sent INTEGER NOT NULL,
-            times_seen INTEGER DEFAULT 1,
+            first_seen   INTEGER NOT NULL,
+            last_sent    INTEGER NOT NULL,
+            times_seen   INTEGER DEFAULT 1,
 
-            -- Zusätzliche Infos
-            price_first TEXT,           -- Erster gesehener Preis
-            price_current TEXT,          -- Aktueller Preis
-            price_lowest TEXT,           -- Niedrigster gesehener Preis
+            price_first   TEXT,
+            price_current TEXT,
+            price_lowest  TEXT,
 
             PRIMARY KEY (user_email, search_hash, src, item_id)
         )
     """
     )
 
-    # ==========================================
-    # 4. PRICE_HISTORY (Preisverlauf tracking)
-    # ==========================================
-    cursor.execute(
+    # ==========================
+    # 4) PRICE_HISTORY
+    # ==========================
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS price_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            item_id TEXT NOT NULL,
-            src TEXT NOT NULL,
-            price TEXT NOT NULL,
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id  TEXT NOT NULL,
+            src      TEXT NOT NULL,
+            price    TEXT NOT NULL,
             currency TEXT,
-            seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-            INDEX idx_price_item (item_id, src)
+            seen_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """
     )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_price_item ON price_history(item_id, src)"
+    )
 
-    # ==========================================
-    # 5. USER_STATS (Statistiken)
-    # ==========================================
-    cursor.execute(
+    # ==========================
+    # 5) USER_STATS
+    # ==========================
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS user_stats (
-            user_email TEXT PRIMARY KEY,
-
-            total_searches INTEGER DEFAULT 0,
-            total_alerts_created INTEGER DEFAULT 0,
-            total_emails_sent INTEGER DEFAULT 0,
-            total_items_found INTEGER DEFAULT 0,
-
-            best_deal_saved REAL DEFAULT 0,  -- Beste Ersparnis in EUR
-            best_deal_item TEXT,
-
-            last_activity TIMESTAMP,
-
+            user_email            TEXT PRIMARY KEY,
+            total_searches        INTEGER DEFAULT 0,
+            total_alerts_created  INTEGER DEFAULT 0,
+            total_emails_sent     INTEGER DEFAULT 0,
+            total_items_found     INTEGER DEFAULT 0,
+            best_deal_saved       REAL DEFAULT 0,
+            best_deal_item        TEXT,
+            last_activity         TIMESTAMP,
             FOREIGN KEY (user_email) REFERENCES users(email) ON DELETE CASCADE
         )
     """
     )
 
-    # ==========================================
-    # 6. BOUNCE_LIST (E-Mail Bounces)
-    # ==========================================
-    cursor.execute(
+    # ==========================
+    # 6) BOUNCE_LIST
+    # ==========================
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS bounce_list (
-            email TEXT PRIMARY KEY,
-            bounce_type TEXT,  -- 'hard', 'soft', 'complaint'
-            bounced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            retry_after TIMESTAMP,
+            email        TEXT PRIMARY KEY,
+            bounce_type  TEXT,  -- 'hard', 'soft', 'complaint'
+            bounced_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            retry_after  TIMESTAMP,
             bounce_count INTEGER DEFAULT 1
         )
     """
     )
 
-    # ==========================================
-    # 7. PLANS (Preismodell-Definitionen)
-    # ==========================================
-    cursor.execute(
+    # ==========================
+    # 7) PLANS
+    # ==========================
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS plans (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            price REAL NOT NULL,
-
-            max_agents INTEGER NOT NULL,
+            id               TEXT PRIMARY KEY,
+            name             TEXT NOT NULL,
+            price            REAL NOT NULL,
+            max_agents       INTEGER NOT NULL,
             max_email_alerts INTEGER NOT NULL,
-
-            features_json TEXT,  -- JSON mit Features
-            stripe_price_id TEXT,
-
-            is_active INTEGER DEFAULT 1,
-            sort_order INTEGER DEFAULT 0
+            features_json    TEXT,
+            stripe_price_id  TEXT,
+            is_active        INTEGER DEFAULT 1,
+            sort_order       INTEGER DEFAULT 0
         )
     """
     )
 
-    # ==========================================
-    # Standard-Preispläne einfügen
-    # ==========================================
     plans_data = [
         (
             "free",
             "Hobby-Schrauber",
-            0,
+            0.00,
             5,
             50,
-            '{"badge": "🆓", "features": ["5 Suchagenten", "50 E-Mails/Monat", "Basis-Support"]}',
+            '{"badge":"🆓","features":["5 Suchagenten","50 E-Mails/Monat","Basis-Support"]}',
             None,
             1,
             0,
@@ -232,10 +188,10 @@ def init_database():
         (
             "basic",
             "Teile-Jäger",
-            9.99,
+            7.00,
             15,
             200,
-            '{"badge": "⭐", "features": ["15 Suchagenten", "200 E-Mails/Monat", "Schreibfehler-Suche", "Priority-Support"]}',
+            '{"badge":"⭐","features":["15 Suchagenten","200 E-Mails/Monat","Schreibfehler-Suche"]}',
             "price_1234basic",
             1,
             1,
@@ -243,28 +199,27 @@ def init_database():
         (
             "pro",
             "Restaurations-Profi",
-            19.99,
+            15.00,
             50,
             1000,
-            '{"badge": "🏆", "features": ["50 Suchagenten", "1000 E-Mails/Monat", "Schreibfehler-Suche", "Synonym-Suche", "API-Zugang", "Priority-Support"]}',
+            '{"badge":"🏆","features":["50 Suchagenten","1000 E-Mails/Monat","Synonym-Suche"]}',
             "price_1234pro",
             1,
             2,
         ),
         (
-            "dealer",
+            "team",
             "Händler/Werkstatt",
-            39.99,
+            29.00,
             999,
             9999,
-            '{"badge": "💎", "features": ["Unbegrenzte Suchagenten", "Unbegrenzte E-Mails", "Alle Features", "Telefon-Support", "Custom-Integration"]}',
-            "price_1234dealer",
+            '{"badge":"💎","features":["Unbegrenzte Suchagenten","Unbegrenzte E-Mails","Alle Features"]}',
+            "price_1234team",
             1,
             3,
         ),
     ]
-
-    cursor.executemany(
+    cur.executemany(
         """
         INSERT OR REPLACE INTO plans
         (id, name, price, max_agents, max_email_alerts, features_json, stripe_price_id, is_active, sort_order)
@@ -273,31 +228,78 @@ def init_database():
         plans_data,
     )
 
-    # ==========================================
-    # Demo-Benutzer erstellen (für Tests)
-    # ==========================================
+    # ==========================
+    # 8) SYSTEM_STATS
+    # ==========================
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS system_stats (
+            id                   INTEGER PRIMARY KEY DEFAULT 1,
+            total_users          INTEGER DEFAULT 0,
+            total_premium_users  INTEGER DEFAULT 0,
+            total_alerts         INTEGER DEFAULT 0,
+            total_emails_sent    INTEGER DEFAULT 0,
+            last_cron_run        TIMESTAMP,
+            last_error           TEXT,
+            updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """
+    )
+    cur.execute("INSERT OR IGNORE INTO system_stats (id) VALUES (1)")
+
+    # ==========================
+    # 9) VIEWS
+    # ==========================
+    cur.execute(
+        """
+        CREATE VIEW IF NOT EXISTS v_active_users AS
+        SELECT
+            u.email,
+            u.plan,
+            COUNT(DISTINCT sa.id) as active_alerts,
+            MAX(sa.last_run_ts)  as last_activity
+        FROM users u
+        LEFT JOIN search_alerts sa
+            ON u.email = sa.user_email AND sa.is_active = 1
+        GROUP BY u.email
+    """
+    )
+
+    cur.execute(
+        """
+        CREATE VIEW IF NOT EXISTS v_plan_usage AS
+        SELECT
+            u.plan,
+            p.name as plan_name,
+            COUNT(DISTINCT u.email) as user_count,
+            COUNT(DISTINCT sa.id)   as total_alerts,
+            p.max_agents,
+            p.price
+        FROM users u
+        LEFT JOIN plans p ON u.plan = p.id
+        LEFT JOIN search_alerts sa
+            ON u.email = sa.user_email AND sa.is_active = 1
+        GROUP BY u.plan
+    """
+    )
+
+    # ==========================
+    # 10) DEMO-DATEN
+    # ==========================
     demo_users = [
         ("demo@example.com", "demo123", "free", 0),
         ("premium@example.com", "premium123", "pro", 1),
         ("oldtimer-fan@example.com", "pagode123", "basic", 1),
     ]
-
     for email, password, plan, is_premium in demo_users:
-        try:
-            cursor.execute(
-                """
-                INSERT INTO users (email, password, plan, is_premium)
-                VALUES (?, ?, ?, ?)
-            """,
-                (email, password, plan, is_premium),
-            )
-            print(f"✅ Demo-User erstellt: {email} (Plan: {plan})")
-        except sqlite3.IntegrityError:
-            print(f"ℹ️ User existiert bereits: {email}")
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO users (email, password, plan, is_premium)
+            VALUES (?, ?, ?, ?)
+        """,
+            (email, password, plan, is_premium),
+        )
 
-    # ==========================================
-    # Demo-Suchagenten für Oldtimer
-    # ==========================================
     demo_alerts = [
         {
             "email": "oldtimer-fan@example.com",
@@ -318,105 +320,42 @@ def init_database():
             "category": "oldtimer",
         },
     ]
-
-    for alert in demo_alerts:
-        try:
-            cursor.execute(
-                """
-                INSERT INTO search_alerts
-                (user_email, terms_json, filters_json, category, is_active)
-                VALUES (?, ?, ?, ?, 1)
-            """,
-                (
-                    alert["email"],
-                    json.dumps(alert["terms"], ensure_ascii=False),
-                    json.dumps(alert["filters"], ensure_ascii=False),
-                    alert["category"],
-                ),
-            )
-            print(f"✅ Demo-Suchagent erstellt: {alert['terms'][0]}")
-        except Exception as e:
-            print(f"ℹ️ Suchagent-Fehler: {e}")
-
-    # ==========================================
-    # Statistik-Tabelle für Admin-Dashboard
-    # ==========================================
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS system_stats (
-            id INTEGER PRIMARY KEY DEFAULT 1,
-
-            total_users INTEGER DEFAULT 0,
-            total_premium_users INTEGER DEFAULT 0,
-            total_alerts INTEGER DEFAULT 0,
-            total_emails_sent INTEGER DEFAULT 0,
-
-            last_cron_run TIMESTAMP,
-            last_error TEXT,
-
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    for a in demo_alerts:
+        cur.execute(
+            """
+            INSERT INTO search_alerts
+            (user_email, terms_json, filters_json, category, is_active)
+            VALUES (?, ?, ?, ?, 1)
+        """,
+            (
+                a["email"],
+                json.dumps(a["terms"], ensure_ascii=False),
+                json.dumps(a["filters"], ensure_ascii=False),
+                a["category"],
+            ),
         )
-    """
-    )
 
-    # Initial-Statistik
-    cursor.execute(
-        """
-        INSERT OR IGNORE INTO system_stats (id) VALUES (1)
-    """
-    )
-
-    # ==========================================
-    # Views für einfachere Abfragen
-    # ==========================================
-    cursor.execute(
-        """
-        CREATE VIEW IF NOT EXISTS v_active_users AS
-        SELECT
-            u.email,
-            u.plan,
-            COUNT(DISTINCT sa.id) as active_alerts,
-            MAX(sa.last_run_ts) as last_activity
-        FROM users u
-        LEFT JOIN search_alerts sa ON u.email = sa.user_email AND sa.is_active = 1
-        GROUP BY u.email
-    """
-    )
-
-    cursor.execute(
-        """
-        CREATE VIEW IF NOT EXISTS v_plan_usage AS
-        SELECT
-            u.plan,
-            p.name as plan_name,
-            COUNT(DISTINCT u.email) as user_count,
-            COUNT(DISTINCT sa.id) as total_alerts,
-            p.max_agents,
-            p.price
-        FROM users u
-        LEFT JOIN plans p ON u.plan = p.id
-        LEFT JOIN search_alerts sa ON u.email = sa.user_email AND sa.is_active = 1
-        GROUP BY u.plan
-    """
-    )
-
-    # Änderungen speichern
+    # ==========================
+    # Abschluss
+    # ==========================
     conn.commit()
 
-    # Statistiken ausgeben
-    user_count = cursor.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    alert_count = cursor.execute("SELECT COUNT(*) FROM search_alerts").fetchone()[0]
+    user_count = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    alert_count = cur.execute("SELECT COUNT(*) FROM search_alerts").fetchone()[0]
 
     print("\n" + "=" * 50)
     print("✅ Datenbank erfolgreich initialisiert!")
-    print(f"📊 Statistiken:")
-    print(f"   - Benutzer: {user_count}")
-    print(f"   - Suchagenten: {alert_count}")
-    print(f"   - Preispläne: 4")
+    print("📊 Statistiken")
+    print(f"   • Benutzer:      {user_count}")
+    print(f"   • Suchagenten:   {alert_count}")
+    print(
+        f"   • Preispläne:    {cur.execute('SELECT COUNT(*) FROM plans').fetchone()[0]}"
+    )
     print("=" * 50)
 
     conn.close()
 
 
 if __name__ == "__main__":
-    init_database()
+    reset = os.environ.get("RESET_DB") == "1"
+    init_database(reset=reset)

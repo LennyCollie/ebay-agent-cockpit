@@ -12,9 +12,9 @@ class Config:
 
     # 2) Abgeleitete Helfer (eine Quelle der Wahrheit)
     STRIPE_PRICE = {
-        "basic": STRIPE_PRICE_BASIC,
-        "pro": STRIPE_PRICE_PRO,
-        "team": STRIPE_PRICE_TEAM,
+        "basic": os.getenv("STRIPE_PRICE_BASIC", ""),
+        "pro": os.getenv("STRIPE_PRICE_PRO", ""),
+        "team": os.getenv("STRIPE_PRICE_TEAM", ""),
     }
     PRICE_TO_PLAN = {v: k for k, v in STRIPE_PRICE.items() if v}
     PLAN_LIMITS = {"basic": 5, "pro": 20, "team": 50}  # frei anpassen

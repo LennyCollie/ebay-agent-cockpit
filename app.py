@@ -15,20 +15,11 @@ from urllib.parse import urlencode
 
 import requests
 import stripe
-from flask import (
-    Blueprint,
-    Flask,
-    abort,
-    current_app,
-    flash,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    session,
-    url_for,
-)
+from flask import Blueprint, Flask, abort
+from flask import current_app as app
+from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
+from config import STRIPE_PRICE
 from mailer import send_mail
 
 # -------------------------------------------------------------------
@@ -46,16 +37,22 @@ except Exception:
 # App & Basis-Konfig
 # -------------------------------------------------------------------
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
+app.config.from_object(Config)
 
-from routes.inbound import bp as inbound_bp
+# 2) Secret Key (env hat Vorrang, sonst fallback)
+app.config["SECRET_KEY"] = os.getenv(
+    "SECRET_KEY", app.config.get("SECRET_KEY", "dev-secret-key-change-me")
+)
 
-app.register_blueprint(inbound_bp)
+# 3) Stripe-Preise/Mappings in die App-Config legen
+app.config["STRIPE_PRICE"] = STRIPE_PRICE
+app.config["PRICE_TO_PLAN"] = {v: k for k, v in STRIPE_PRICE.items()}
 
-# Plausible (für base.html)
-PLAUSIBLE_DOMAIN = os.getenv("PLAUSIBLE_DOMAIN", "")
+# 4) Plausible in die Config (praktisch für Templates: config.PLAUSIBLE_DOMAIN)
+app.config["PLAUSIBLE_DOMAIN"] = os.getenv("PLAUSIBLE_DOMAIN", "")
 
 
+# --- kleine Helfer ---
 def as_bool(val: Optional[str]) -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -66,6 +63,23 @@ def getenv_any(*names: str, default: str = "") -> str:
         if v:
             return v
     return default
+
+
+# 5) Blueprints registrieren (nachdem die Config steht)
+from routes.inbound import bp as inbound_bp
+
+app.register_blueprint(inbound_bp)
+
+
+# Falls du eine Config-Klasse nutzt, bleibt das so:
+app.config.from_object(Config)  # (nur falls bei dir vorhanden)
+
+# HIER EINFÜGEN:
+app.config["STRIPE_PRICE"] = (
+    STRIPE_PRICE  # <— die 3 Price-IDs im App-Config verfügbar machen
+)
+# (optional, aber praktisch)
+app.config["PRICE_TO_PLAN"] = {v: k for k, v in STRIPE_PRICE.items()}
 
 
 # --- Security Headers (basic hardening) ---
@@ -1451,28 +1465,55 @@ def stripe_webhook():
 
 @app.route("/checkout", methods=["GET", "POST"])
 def checkout():
-    if not STRIPE_OK or not STRIPE_SECRET_KEY or not STRIPE_PRICE_PRO:
+    # 1) Stripe verfügbar?
+    if not STRIPE_OK or not STRIPE_SECRET_KEY:
         flash("Stripe ist nicht konfiguriert.", "warning")
         return redirect(url_for("public_pricing"))
 
+    # 2) Plan/Preis aus Form oder Query lesen (basic|pro|team ODER direkte price_... ID)
+    plan = (
+        request.form.get("price")
+        or request.args.get("price")
+        or request.values.get("price_id")
+        or "pro"
+    ).strip()  # Default: pro
+
+    stripe_prices = app.config.get(
+        "STRIPE_PRICE", {}
+    )  # {"basic": "...", "pro": "...", "team": "..."}
+    price_id = stripe_prices.get(
+        plan, plan
+    )  # wenn 'plan' schon eine price_... ID ist, bleibt sie so
+
+    if not price_id:
+        flash("Ungültiger Plan/Preis.", "warning")
+        return redirect(url_for("public_pricing"))
+
+    # 3) URLs & Kundendaten
+    success_url = url_for("checkout_success", _external=True)
+    cancel_url = url_for("checkout_cancel", _external=True)
+
+    client_ref = str(
+        session.get("user_id") or ""
+    )  # <— hier war bei dir ein extra Anführungszeichen am Ende
+    user_email = (session.get("user_email") or "").strip()
+    if user_email.lower() == "guest" or "@" not in user_email:
+        user_email = None
+
+    # 4) Checkout-Session anlegen
     try:
-        success_url = url_for("checkout_success", _external=True)
-        cancel_url = url_for("checkout_cancel", _external=True)
-
-        client_ref = str(session.get("user_id") or "")
-        user_email = (session.get("user_email") or "").strip()
-        if user_email.lower() == "guest" or "@" not in user_email:
-            user_email = None
-
         session_stripe = stripe.checkout.Session.create(  # type: ignore
             mode="subscription",
-            line_items=[{"price": STRIPE_PRICE_PRO, "quantity": 1}],
+            line_items=[{"price": price_id, "quantity": 1}],
             success_url=success_url,
             cancel_url=cancel_url,
             allow_promotion_codes=True,
-            client_reference_id=client_ref if client_ref else None,
-            customer_email=user_email if user_email else None,
-            metadata={"email": user_email} if user_email else None,
+            client_reference_id=client_ref or None,
+            customer_email=user_email or None,
+            metadata={
+                "user_id": session.get("user_id"),
+                "plan": plan,
+            },  # nützlich für Webhook
         )
         return redirect(session_stripe.url, code=303)
 
@@ -2385,6 +2426,122 @@ def admin_clear_bounces():
     clear_bounce_list()
 
     return redirect("/admin/bounces")
+
+
+# --- Admin Blueprint: simple stats view --------------------------------------
+import sqlite3
+
+from flask import Blueprint, abort, render_template, request
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")  # in Render als ENV setzen
+DB_PATH = "instance/db.sqlite3"
+
+admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+def _db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _is_admin() -> bool:
+    if not ADMIN_TOKEN:
+        # Wenn kein Token gesetzt ist, nur lokal erlauben
+        return request.host.startswith("127.0.0.1") or request.host.startswith(
+            "localhost"
+        )
+    return request.args.get("token") == ADMIN_TOKEN
+
+
+@admin_bp.route("/stats")
+def admin_stats():
+    if not _is_admin():
+        abort(403)
+
+    with _db() as conn:
+        cur = conn.cursor()
+
+        # Live-Kennzahlen
+        users_total = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        premium_total = cur.execute(
+            "SELECT COUNT(*) FROM users WHERE is_premium=1"
+        ).fetchone()[0]
+        alerts_total = cur.execute("SELECT COUNT(*) FROM search_alerts").fetchone()[0]
+        alerts_active = cur.execute(
+            "SELECT COUNT(*) FROM search_alerts WHERE is_active=1"
+        ).fetchone()[0]
+
+        plans = cur.execute(
+            """
+            SELECT id, name, price, max_agents, max_email_alerts
+            FROM plans WHERE is_active=1 ORDER BY sort_order
+        """
+        ).fetchall()
+
+        # System-Statistik (eine Zeile, id=1)
+        sys = cur.execute("SELECT * FROM system_stats WHERE id=1").fetchone()
+
+        # Plan-Usage (aus View; existiert durch init_db.py)
+        plan_usage = cur.execute(
+            """
+            SELECT plan, plan_name, user_count, total_alerts, max_agents, price
+            FROM v_plan_usage
+            ORDER BY price
+        """
+        ).fetchall()
+
+    data = {
+        "users_total": users_total,
+        "premium_total": premium_total,
+        "alerts_total": alerts_total,
+        "alerts_active": alerts_active,
+        "plans": plans,
+        "sys": sys,
+        "plan_usage": plan_usage,
+    }
+    return render_template("admin_stats.html", **data)
+
+
+@admin_bp.route("/stats/recalc", methods=["POST"])
+def admin_stats_recalc():
+    if not _is_admin():
+        abort(403)
+
+    with _db() as conn:
+        cur = conn.cursor()
+        # einfache Aggregation – passe nach Bedarf an
+        users_total = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        premium_total = cur.execute(
+            "SELECT COUNT(*) FROM users WHERE is_premium=1"
+        ).fetchone()[0]
+        alerts_total = cur.execute("SELECT COUNT(*) FROM search_alerts").fetchone()[0]
+        emails_sent = cur.execute(
+            "SELECT COALESCE(SUM(total_emails_sent),0) FROM user_stats"
+        ).fetchone()[0]
+
+        cur.execute(
+            """
+            UPDATE system_stats
+               SET total_users=?,
+                   total_premium_users=?,
+                   total_alerts=?,
+                   total_emails_sent=?,
+                   last_cron_run=CURRENT_TIMESTAMP,
+                   updated_at=CURRENT_TIMESTAMP
+             WHERE id=1
+        """,
+            (users_total, premium_total, alerts_total, emails_sent),
+        )
+        conn.commit()
+
+    # nach Recalc wieder zur Übersicht
+    q = f"?token={ADMIN_TOKEN}" if ADMIN_TOKEN else ""
+    return (
+        "",
+        204,
+        {"HX-Redirect": f"/admin/stats{q}"},
+    )  # funktioniert normal & mit HTMX
 
 
 if __name__ == "__main__":
