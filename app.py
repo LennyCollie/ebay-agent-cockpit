@@ -19,7 +19,7 @@ from flask import Blueprint, Flask, abort
 from flask import current_app as app
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
-from config import STRIPE_PRICE
+from config import PRICE_TO_PLAN, STRIPE_PRICE, STRIPE_SECRET_KEY
 from mailer import send_mail
 
 # -------------------------------------------------------------------
