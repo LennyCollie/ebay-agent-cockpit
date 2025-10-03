@@ -1,9 +1,9 @@
-# heartbeat.py – sendet einen einfachen Gesundheitscheck via Postmark
+# heartbeat.py – verschickt Healthcheck via Postmark (keine SMTP-Variablen mehr)
 import os
 import socket
 from datetime import datetime, timezone
 
-from mailer import get_bounce_stats, send_mail  # <– nutzt deinen Postmark-Mailer
+from mailer import get_bounce_stats, send_mail  # nutzt deinen Postmark-Mailer
 
 TO = [a.strip() for a in os.getenv("EMAIL_TO", "").split(",") if a.strip()]
 if not TO:
