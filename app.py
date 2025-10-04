@@ -15,11 +15,21 @@ from urllib.parse import urlencode
 
 import requests
 import stripe
-from flask import Blueprint, Flask, abort
-from flask import current_app as app
-from flask import jsonify, redirect, render_template, request, session, url_for
+from flask import current_app  # <- wichtig, damit z.B. current_app.logger funktioniert
+from flask import (
+    Blueprint,
+    Flask,
+    abort,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
-from config import PRICE_TO_PLAN, STRIPE_PRICE, Config
+from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from mailer import send_mail
 
 # -------------------------------------------------------------------
@@ -33,19 +43,25 @@ try:
 except Exception:
     pass
 
+
 # -------------------------------------------------------------------
 # App & Basis-Konfig
 # -------------------------------------------------------------------
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates", static_folder="static")
 
 app.config.from_object(Config)
 
 
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
 app.config["PRICE_TO_PLAN"] = PRICE_TO_PLAN
-
-# 4) Plausible in die Config (praktisch für Templates: config.PLAUSIBLE_DOMAIN)
 app.config["PLAUSIBLE_DOMAIN"] = os.getenv("PLAUSIBLE_DOMAIN", "")
+
+import stripe
+
+stripe.api_key = (
+    Config.STRIPE_SECRET_KEY or os.getenv("STRIPE_SECRET_KEY", "")
+).strip()
+STRIPE_OK = bool(stripe.api_key and len(stripe.api_key) > 10)
 
 
 # --- kleine Helfer ---
