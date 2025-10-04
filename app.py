@@ -19,7 +19,7 @@ from flask import Blueprint, Flask, abort
 from flask import current_app as app
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
-from config import PRICE_TO_PLAN, STRIPE_PRICE, STRIPE_SECRET_KEY
+from config import PRICE_TO_PLAN, STRIPE_PRICE, Config
 from mailer import send_mail
 
 # -------------------------------------------------------------------
@@ -37,16 +37,12 @@ except Exception:
 # App & Basis-Konfig
 # -------------------------------------------------------------------
 app = Flask(__name__)
+
 app.config.from_object(Config)
 
-# 2) Secret Key (env hat Vorrang, sonst fallback)
-app.config["SECRET_KEY"] = os.getenv(
-    "SECRET_KEY", app.config.get("SECRET_KEY", "dev-secret-key-change-me")
-)
 
-# 3) Stripe-Preise/Mappings in die App-Config legen
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
-app.config["PRICE_TO_PLAN"] = {v: k for k, v in STRIPE_PRICE.items()}
+app.config["PRICE_TO_PLAN"] = PRICE_TO_PLAN
 
 # 4) Plausible in die Config (praktisch für Templates: config.PLAUSIBLE_DOMAIN)
 app.config["PLAUSIBLE_DOMAIN"] = os.getenv("PLAUSIBLE_DOMAIN", "")
