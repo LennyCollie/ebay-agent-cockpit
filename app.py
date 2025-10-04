@@ -17,7 +17,7 @@ import requests
 import stripe
 from flask import Blueprint, Flask, abort
 from flask import current_app as app
-from flask import jsonify, redirect, render_template, request, session, url_for
+from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
 from config import PRICE_TO_PLAN, STRIPE_PRICE, Config
 from mailer import send_mail
