@@ -2,6 +2,7 @@
 # - Liest Alerts aus search_alerts (is_active=1)
 # - De-Dup über alert_seen(user_email, search_hash, src, item_id, first_seen, last_sent)
 # - SMTP-Patch: unterstützt SMTP_* und EMAIL_*
+# - NEU: Telegram-Integration
 # - Aufruf: run_agent_once() (von /internal/run-agent) oder lokal via __main__
 
 from __future__ import annotations
@@ -17,6 +18,17 @@ from email.message import EmailMessage
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import requests
+
+# Telegram-Import (optional, falls noch nicht verfügbar)
+try:
+    from telegram_bot import send_new_item_alert
+
+    from models import SessionLocal, User
+
+    TELEGRAM_AVAILABLE = True
+except ImportError:
+    TELEGRAM_AVAILABLE = False
+    print("[agent] Telegram module not available - continuing without Telegram alerts")
 
 # -----------------------
 # Helpers & ENV
@@ -90,6 +102,7 @@ def get_smtp_settings() -> Dict[str, object]:
 
 
 NOTIFY_MAX_ITEMS_PER_MAIL = int(os.getenv("ALERT_MAX_ITEMS", "12"))
+NOTIFY_MAX_ITEMS_TELEGRAM = int(os.getenv("TELEGRAM_MAX_ITEMS", "3"))
 DEBUG_LOG = as_bool(os.getenv("ALERT_DEBUG", "0"))
 
 # -----------------------
@@ -485,6 +498,76 @@ def render_email_html(title: str, items: List[Dict]) -> str:
 
 
 # -----------------------
+# Telegram Alert
+# -----------------------
+
+
+def send_telegram_alert(user_email: str, items: List[Dict], terms: List[str]) -> bool:
+    """
+    Sendet Telegram-Alert für neue Items
+    Returns: True wenn erfolgreich
+    """
+    if not TELEGRAM_AVAILABLE:
+        return False
+
+    try:
+        db = SessionLocal()
+        user = db.query(User).filter_by(email=user_email).first()
+
+        if not user:
+            db.close()
+            if DEBUG_LOG:
+                print(f"[telegram] User not found: {user_email}")
+            return False
+
+        if not user.telegram_verified or not user.telegram_enabled:
+            db.close()
+            if DEBUG_LOG:
+                print(f"[telegram] Telegram not enabled for: {user_email}")
+            return False
+
+        # Nur die ersten N Items per Telegram (nicht überladen)
+        items_to_send = items[:NOTIFY_MAX_ITEMS_TELEGRAM]
+        sent_count = 0
+
+        for item in items_to_send:
+            try:
+                success = send_new_item_alert(
+                    chat_id=user.telegram_chat_id,
+                    item={
+                        "title": item.get("title", "Unbekannter Artikel"),
+                        "price": str(item.get("price", "")),
+                        "currency": item.get("cur", "EUR"),
+                        "url": item.get("url", ""),
+                        "image_url": item.get("img"),
+                        "condition": "",  # eBay API liefert das nicht immer
+                        "location": "",
+                    },
+                    agent_name=f"eBay Alert: {', '.join(terms[:2])}",
+                    with_image=bool(item.get("img")),
+                )
+                if success:
+                    sent_count += 1
+            except Exception as e:
+                print(f"[telegram] Error sending item {item.get('id')}: {e}")
+                continue
+
+        db.close()
+
+        if sent_count > 0:
+            print(
+                f"[telegram] Sent {sent_count}/{len(items_to_send)} items to {user_email}"
+            )
+            return True
+
+        return False
+
+    except Exception as e:
+        print(f"[telegram] Error sending alert to {user_email}: {e}")
+        return False
+
+
+# -----------------------
 # Orchestrator
 # -----------------------
 
@@ -496,6 +579,7 @@ def run_agent_once() -> None:
       - je Alert: eBay suchen
       - De-Dup (alert_seen)
       - E-Mail senden
+      - Telegram senden (NEU)
       - Versandte Items markieren
     """
     print(f"[agent] start run")
@@ -508,6 +592,7 @@ def run_agent_once() -> None:
 
     total_checked = 0
     total_mailed = 0
+    total_telegram = 0
 
     for a in alerts:
         total_checked += 1
@@ -549,9 +634,10 @@ def run_agent_once() -> None:
                 print(f"[agent] alert_id={a['id']} no new items or invalid email")
             continue
 
-        subject = f"Neue Treffer für „{', '.join(terms)}“ – {len(new_all)} neu"
+        subject = f"Neue Treffer für '{', '.join(terms)}' - {len(new_all)} neu"
         html = render_email_html(subject, new_all)
 
+        # E-Mail senden
         if send_mail(smtp, [a["user_email"]], subject, html):
             for src, group in groups.items():
                 sent_subset = [
@@ -559,6 +645,14 @@ def run_agent_once() -> None:
                 ]
                 mark_sent(a["user_email"], search_hash, src, sent_subset)
             total_mailed += 1
+
+            # Telegram senden (NEU)
+            if TELEGRAM_AVAILABLE:
+                try:
+                    if send_telegram_alert(a["user_email"], new_all, terms):
+                        total_telegram += 1
+                except Exception as e:
+                    print(f"[telegram] Failed for {a['user_email']}: {e}")
 
         # last_run_ts aktualisieren
         conn = get_db()
@@ -569,10 +663,9 @@ def run_agent_once() -> None:
         conn.commit()
         conn.close()
 
-    print(
-        f"[agent] summary: alerts_checked={total_checked} alerts_emailed={total_mailed}"
-    )
-    print(f"[agent] end run")
+    summary_msg = f"[agent] summary: alerts_checked={total_checked} alerts_emailed={total_mailed} alerts_telegram={total_telegram}"
+    print(summary_msg)
+    print("[agent] end run")
 
 
 # Für lokalen Test:
