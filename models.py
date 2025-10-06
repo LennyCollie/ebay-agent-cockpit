@@ -18,7 +18,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 # DB Connection
 DB_URL = os.getenv(
-    "DB_PATH",
+    "DATABASE_URL",
     "postgresql://agent_db_final_user:7FfbPfBywc3Xd0qCDWSwCT3cxl7NSMvt@dpg-d1ua2849c44c73cp4cag-a.oregon-postgres.render.com/agent_db_final",
 )
 engine = create_engine(DB_URL)
