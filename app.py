@@ -31,6 +31,7 @@ from flask import (
 
 from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from mailer import send_mail
+from routes.telegram import bp as telegram_bp
 
 # -------------------------------------------------------------------
 # .env laden
@@ -79,8 +80,10 @@ def getenv_any(*names: str, default: str = "") -> str:
 
 # 5) Blueprints registrieren (nachdem die Config steht)
 from routes.inbound import bp as inbound_bp
+from routes.telegram import bp as telegram_bp
 
 app.register_blueprint(inbound_bp)
+app.register_blueprint(telegram_bp)
 
 
 # Falls du eine Config-Klasse nutzt, bleibt das so:

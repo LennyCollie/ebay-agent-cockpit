@@ -93,6 +93,9 @@ Html
                     <a href="{{ url_for('logout') }}" class="btn btn-secondary">Logout</a>
                 {% else %}
                     <a href="{{ url_for('login') }}" class="btn btn-outline-light">Login / Registrieren</a>
+                    <a href="{{ url_for('telegram.settings') }}" class="nav-link">
+                      <svg>...</svg> Telegram
+                    </a>
                 {% endif %}
             </div>
         </div>

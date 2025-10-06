@@ -6,7 +6,7 @@ from pathlib import Path
 import requests
 
 # Telegram bleibt erhalten (wird unten nur optional in einer Beispiel-Funktion verwendet)
-from utils.telegram_bot import notify_new_listing, send_telegram
+# from utils.telegram_bot import notify_new_listing, send_telegram
 
 # Bounce-Liste Datei
 BOUNCE_FILE = Path("bounced_emails.txt")
