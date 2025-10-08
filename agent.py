@@ -21,14 +21,23 @@ import requests
 
 # Telegram-Import (optional, falls noch nicht verfügbar)
 try:
-    from telegram_bot import send_new_item_alert
-
     from models import SessionLocal, User
+    from telegram_bot import send_new_item_alert
 
     TELEGRAM_AVAILABLE = True
 except ImportError:
     TELEGRAM_AVAILABLE = False
     print("[agent] Telegram module not available - continuing without Telegram alerts")
+
+# In agent.py - nach Zeile 30 einfügen
+try:
+    from image_analyzer import check_item_damage
+
+    VISION_AVAILABLE = True
+except ImportError:
+    VISION_AVAILABLE = False
+    print("[agent] Image Analyzer nicht verfügbar")
+
 
 # -----------------------
 # Helpers & ENV
