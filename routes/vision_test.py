@@ -1,24 +1,32 @@
-# routes/vision_test.py
-
 from flask import Blueprint, current_app, jsonify, request
-
-from utils.vision_google import scan_google
-from utils.vision_openai import scan_openai  # NEU
 
 bp = Blueprint("visiontest", __name__)
 
 
-@bp.get("/public/vision-test")
-def vision_test():
+@bp.get("/public/vision-test/google")
+def vision_test_google():
     urls = request.args.getlist("img")
     if not urls:
-        return jsonify(error="usage: /public/vision-test?img=<url>&img=<url2>"), 400
+        return (
+            jsonify(error="usage: /public/vision-test/google?img=<url>&img=<url2>"),
+            400,
+        )
+    from utils.vision_google import scan_google  # lazy import
 
-    # Optional: provider parameter
-    provider = request.args.get("provider", "openai")  # Default zu OpenAI
     max_imgs = int(current_app.config.get("MAX_IMAGES_PER_ITEM", 2))
+    return jsonify(scan_google(urls, max_images=max_imgs))
 
-    if provider == "google":
-        return jsonify(scan_google(urls, max_images=max_imgs))
-    else:
-        return jsonify(scan_openai(urls, max_images=max_imgs))
+
+@bp.get("/public/vision-test/hybrid")
+def vision_test_hybrid():
+    urls = request.args.getlist("img")
+    if not urls:
+        return (
+            jsonify(error="usage: /public/vision-test/hybrid?img=<url>&img=<url2>"),
+            400,
+        )
+    try:
+        from utils.vision_openai import analyze_image_hybrid  # <— NICHT inspect!
+    except Exception as e:
+        return jsonify(error="openai/hybrid not available", detail=str(e)), 503
+    return jsonify(analyze_image_hybrid(urls))

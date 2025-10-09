@@ -83,9 +83,11 @@ def getenv_any(*names: str, default: str = "") -> str:
 # 5) Blueprints registrieren (nachdem die Config steht)
 from routes.inbound import bp as inbound_bp
 from routes.telegram import bp as telegram_bp
+from routes.vision_test import bp as vision_test_bp
 
 app.register_blueprint(inbound_bp)
 app.register_blueprint(telegram_bp)
+app.register_blueprint(vision_test_bp)
 
 
 # Falls du eine Config-Klasse nutzt, bleibt das so:
@@ -1974,6 +1976,22 @@ def require_agent_token():
 # Registrierung des internen Blueprints (jetzt, wo er existiert)
 
 app.register_blueprint(internal_bp, url_prefix="/internal")
+
+
+@app.route("/public/vision-test")
+def vision_test_quick():
+    from utils.vision_openai import scan_openai
+
+    urls = request.args.getlist("img")
+    if not urls:
+        return jsonify(error="usage: /public/vision-test?img=<url>"), 400
+
+    try:
+        result = scan_openai(urls, max_images=2)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e), "verdict": "error"}), 500
+
 
 # -------------------------------------------------------------------
 # Run (nur lokal)
