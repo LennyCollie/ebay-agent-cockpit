@@ -10,3 +10,6 @@ stripe>=10.0.0
 requests>=2.31
 google-cloud-vision>=3.7
 google-auth>=2.33
+opencv-python-headless==4.10.0.84
+numpy>=1.24
+Pillow>=10.3

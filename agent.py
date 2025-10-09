@@ -38,6 +38,14 @@ except ImportError:
     VISION_AVAILABLE = False
     print("[agent] Image Analyzer nicht verfügbar")
 
+# In agent.py nach Zeile 35
+try:
+    from smart_filters import apply_smart_filters
+
+    SMART_FILTERS_AVAILABLE = True
+except ImportError:
+    SMART_FILTERS_AVAILABLE = False
+
 
 # -----------------------
 # Helpers & ENV

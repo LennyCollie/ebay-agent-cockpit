@@ -15,11 +15,11 @@ from urllib.parse import urlencode
 
 import requests
 import stripe
-from flask import current_app  # <- wichtig, damit z.B. current_app.logger funktioniert
 from flask import (
     Blueprint,
     Flask,
     abort,
+    current_app,
     flash,
     jsonify,
     redirect,
@@ -50,6 +50,8 @@ except Exception:
 # -------------------------------------------------------------------
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
+
+# app.register_blueprint(visiontest_bp)
 app.config.from_object(Config)
 
 
@@ -820,6 +822,8 @@ def _user_search_limit() -> int:
 # -------------------------------------------------------------------
 # Auth (Demo)
 # -------------------------------------------------------------------
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "GET":

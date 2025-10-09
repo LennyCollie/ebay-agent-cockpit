@@ -38,3 +38,6 @@ app - Kopie*
 __pycache__/
 *.pyc
 Textdokument (neu)*.txt
+infinite-loader-*.json
+infinite-loader-*.json
+.env
