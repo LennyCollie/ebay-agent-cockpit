@@ -62,9 +62,13 @@ def vision_test_hybrid():
             jsonify(error="usage: /public/vision-test/hybrid?img=<url>&img=<url2>"),
             400,
         )
-    res = _scan_hybrid(urls)
-    # _scan_hybrid kann schon (dict, statuscode) zurückgeben
-    if isinstance(res, tuple):
-        body, code = res
-        return jsonify(body), code
-    return jsonify(res)
+    try:
+        res = _scan_hybrid(urls)
+        # _scan_hybrid kann (dict, statuscode) liefern
+        if isinstance(res, tuple):
+            body, code = res
+            return jsonify(body), code
+        return jsonify(res)
+    except Exception as e:
+        current_app.logger.exception("vision-test/hybrid crashed")
+        return jsonify(error="hybrid crashed", detail=str(e)), 500
