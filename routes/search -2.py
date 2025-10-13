@@ -13,27 +13,62 @@ from flask import (
     url_for,
 )
 
+# --- Deine Hilfsfunktionen/APIs (bitte ggf. anpassen, falls Pfade anders) ---
 from services.ebay_api import ebay_search
 from utils.ebay_browse import browse_search
 from utils.ebay_finding import finding_search
 from utils.ebay_normalize import normalize_browse, normalize_finding
 
-bp_search = Blueprint("search", __name__)
+# ---------------------------------------------------------------------------
+# Blueprint: MUSS vor allen @bp.route/@bp.get Dekoratoren stehen!
+# ---------------------------------------------------------------------------
+bp = Blueprint("search", __name__)
 
 
+# ---------------------------------------------------------------------------
+# Hilfsfunktionen
+# ---------------------------------------------------------------------------
+def _bool_param(name: str) -> bool:
+    val = (request.args.get(name) or "").strip().lower()
+    return val in {"1", "true", "yes", "on"}
+
+
+def _int_param(name: str) -> Optional[int]:
+    raw = (request.args.get(name) or "").strip()
+    try:
+        return int(raw)
+    except Exception:
+        return None
+
+
+def _filters_for_template() -> Dict:
+    """kleines Dict, das deine search_results.html als 'filters' anzeigen kann."""
+    # du kannst hier beliebig erweitern
+    return {
+        "price_min": request.args.get("price_min") or None,
+        "price_max": request.args.get("price_max") or None,
+        "conditions": request.args.getlist("condition") or None,
+        "sort": request.args.get("sort", "best"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Neue Ergebnis-Route (mit Browse/Finding + optional Vision)
+# ---------------------------------------------------------------------------
 @bp.get("/search/results")
 def search_results():
     q = (request.args.get("q") or "").strip()
-    auction = request.args.get("auction") == "1"
-    bin_buy = request.args.get("bin") == "1"
+
+    auction = _bool_param("auction")
+    bin_buy = _bool_param("bin")
     postal = (request.args.get("postal") or "").strip() or None
-    radius = int(request.args.get("radius_km") or 0) or None
+    radius_km = _int_param("radius_km")
     ship_to = (request.args.get("ship_to") or "").strip() or None
     located_in = (request.args.get("located_in") or "").strip() or None
 
-    # API-Auswahl: auto = Finding bei Radius, sonst Browse
+    # API-Auswahl: auto = Finding wenn Umkreissuche (Postleitzahl+Radius), sonst Browse
     mode = (current_app.config.get("EBAY_MODE") or "auto").lower()
-    use_finding = (mode == "finding") or (mode == "auto" and postal and radius)
+    use_finding = (mode == "finding") or (mode == "auto" and postal and radius_km)
 
     if use_finding:
         raw = finding_search(
@@ -41,14 +76,14 @@ def search_results():
             auction=auction,
             bin_buy=bin_buy,
             buyer_postal=postal,
-            max_distance_km=radius,
+            max_distance_km=radius_km,
             ship_to=ship_to,
             located_in=located_in,
             entries=50,
         )
         results = normalize_finding(raw)
     else:
-        # für EU-Region: located_in="EU" → wird in browse_search zu itemLocationRegion gemappt
+        # Tipp: Für EU-Region kannst du located_in="EU" geben (in browse_search entsprechend mappen)
         raw = browse_search(
             q,
             auction=auction,
@@ -56,36 +91,47 @@ def search_results():
             ship_to=ship_to,
             postal=postal,
             located_in=located_in,
-            located_region=None,
+            located_region=None,  # optional, je nach Implementierung
             price_min=None,
             price_max=None,
-            local_pickup_radius_km=None,
+            local_pickup_radius_km=None,  # oder radius_km, falls du Local Pickup nutzt
             pickup_country=None,
             limit=50,
         )
         results = normalize_browse(raw)
 
-    # (optional) KI-Bildcheck anhängen
+    # Optional: KI-Bildcheck
     try:
-        from utils.vision_dispatch import analyze_images
+        from utils.vision_dispatch import analyze_images  # lazy import
 
         for it in results:
             vis = analyze_images(it.get("images") or [])
-            it["verdict"] = vis["verdict"]
-            it["score"] = vis["score"]
+            # nur einfache Felder mappen, damit das Template sie anzeigen/filtern könnte
+            it["verdict"] = vis.get("verdict")
+            it["score"] = vis.get("score")
     except Exception:
+        # leise degradieren – Suche soll niemals daran scheitern
         pass
 
-    # (optional) harte Filterung
-    strict = current_app.config.get("VISION_FILTER_STRICT", True) in (True, "1", "true")
+    # Optional: harte Filterung von klar "defect/damaged" markierten Items
+    strict_default = current_app.config.get("VISION_FILTER_STRICT", True)
+    strict = strict_default in (True, "1", "true", "yes", "on")
     if strict:
-        results = [r for r in results if r.get("verdict") != "damaged"]
+        results = [r for r in results if (r.get("verdict") or "ok") != "damaged"]
 
     return render_template(
-        "search_results.html", results=results, q=q, params=request.args
+        "search_results.html",
+        results=results,
+        terms=[q] if q else [],
+        base_qs=request.args,  # für "Link kopieren" etc.
+        filters=_filters_for_template(),
+        pagination=None,  # kannst du später füllen, wenn du echtes Paging baust
     )
 
 
+# ---------------------------------------------------------------------------
+# Alte /search Route (Form + simple API – bleibt für Rückwärtskompatibilität)
+# ---------------------------------------------------------------------------
 def _to_view_items(payload: Dict) -> List[Dict]:
     out: List[Dict] = []
     for it in (payload or {}).get("itemSummaries", []) or []:
@@ -102,6 +148,7 @@ def _to_view_items(payload: Dict) -> List[Dict]:
                 "url": it.get("itemWebUrl") or "#",
                 "img": (it.get("image") or {}).get("imageUrl") or "",
                 "term": "",
+                "src": "ebay",
             }
         )
     return out
@@ -146,7 +193,7 @@ def _parse_args() -> Dict[str, Optional[str]]:
     }
 
 
-@bp_search.route("/search", methods=["GET", "POST"])
+@bp.route("/search", methods=["GET", "POST"])
 def search_page():
     args = _parse_args()
 
@@ -178,4 +225,7 @@ def search_page():
         title="Suchergebnisse",
         terms=[args["q"]],
         results=items,
+        base_qs=request.args,
+        filters=_filters_for_template(),
+        pagination=None,
     )
