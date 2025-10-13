@@ -86,6 +86,19 @@ class SearchAgent(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
+    # NEU: Erweiterte Filter
+    listing_type = Column(
+        String(20), default="all"
+    )  # all, auction, buy_it_now, auction_with_bin
+    location_country = Column(String(10), default="DE")  # DE, AT, CH, etc.
+    max_distance_km = Column(Integer, nullable=True)  # z.B. 50, 100, 200
+    zip_code = Column(String(10), nullable=True)  # Für Umkreissuche
+
+    free_shipping_only = Column(Boolean, default=False)
+    returns_accepted = Column(Boolean, default=False)
+    top_rated_seller_only = Column(Boolean, default=False)
+    exclude_international = Column(Boolean, default=False)
+
     # Suchparameter
     name = Column(String(255), nullable=False)  # User-defined Name
     keywords = Column(Text, nullable=False)

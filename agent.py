@@ -343,19 +343,59 @@ def ebay_get_token() -> Optional[str]:
         return None
 
 
+# In agent.py - ca. Zeile 340
+
+
 def _build_ebay_filter(
-    price_min: str, price_max: str, conditions: List[str]
+    price_min: str,
+    price_max: str,
+    conditions: List[str],
+    # NEU: Zusätzliche Parameter
+    listing_type: str = "all",
+    location_country: str = "DE",
+    free_shipping: bool = False,
+    returns_accepted: bool = False,
+    top_rated_only: bool = False,
 ) -> Optional[str]:
     parts: List[str] = []
+
+    # Preis (BESTEHT SCHON)
     pmn = (price_min or "").strip()
     pmx = (price_max or "").strip()
     if pmn or pmx:
         parts.append(f"price:[{pmn}..{pmx}]")
         if EBAY_CURRENCY:
             parts.append(f"priceCurrency:{EBAY_CURRENCY}")
+
+    # Zustand (BESTEHT SCHON)
     conds = [c.strip().upper() for c in (conditions or []) if c.strip()]
     if conds:
         parts.append("conditions:{" + ",".join(conds) + "}")
+
+    # NEU: Angebotsformat
+    if listing_type == "auction":
+        parts.append("buyingOptions:{AUCTION}")
+    elif listing_type == "buy_it_now":
+        parts.append("buyingOptions:{FIXED_PRICE}")
+    elif listing_type == "auction_with_bin":
+        parts.append("buyingOptions:{AUCTION,FIXED_PRICE}")
+
+    # NEU: Standort
+    if location_country:
+        parts.append(f"itemLocationCountry:{location_country}")
+
+    # NEU: Kostenloser Versand
+    if free_shipping:
+        parts.append("deliveryOptions:{FREE}")
+
+    # NEU: Rückgaberecht
+    if returns_accepted:
+        parts.append("returnsAccepted:true")
+
+    # NEU: Top-bewertete Verkäufer
+    if top_rated_only:
+        parts.append("sellerLevel:TOP_RATED")
+
     return ",".join(parts) if parts else None
 
 
@@ -380,6 +420,13 @@ def ebay_search(
     price_max: str,
     conditions: List[str],
     sort_ui: str,
+    listing_type: str = "all",
+    location_country: str = "DE",
+    max_distance_km: int = None,
+    zip_code: str = None,
+    free_shipping: bool = False,
+    returns_accepted: bool = False,
+    top_rated_only: bool = False,
 ) -> List[Dict]:
     tok = ebay_get_token()
     if not tok or not term:
@@ -387,8 +434,20 @@ def ebay_search(
     url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
     params = {"q": term, "limit": max(1, min(limit, 50)), "offset": max(0, offset)}
     filt = _build_ebay_filter(price_min, price_max, conditions)
+    listing_type: str = ("all",)
+    location_country: str = ("DE",)
+    max_distance_km: int = (None,)
+    zip_code: str = (None,)
+    free_shipping: bool = (False,)
+    returns_accepted: bool = (False,)
+    top_rated_only: bool = False
     if filt:
         params["filter"] = filt
+        if zip_code and max_distance_km:
+            params["filter"] = (
+                params.get("filter", "") + f",maxDistance:{max_distance_km}km"
+            )
+            params["fieldgroups"] = "EXTENDED"  # Nötig für Standort-Daten
     srt = _map_sort(sort_ui)
     if srt:
         params["sort"] = srt
