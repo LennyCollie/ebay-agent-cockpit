@@ -1,0 +1,401 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .telegram-card {
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+  }
+
+  .telegram-header {
+    background: linear-gradient(135deg, #0088cc, #229ED9);
+    color: white;
+    padding: 32px;
+    text-align: center;
+  }
+
+  .telegram-icon {
+    width: 80px;
+    height: 80px;
+    background: white;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .status-connected {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .status-disconnected {
+    background: #f8d7da;
+    color: #721c24;
+  }
+
+  .feature-item {
+    display: flex;
+    align-items: start;
+    gap: 12px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 12px;
+    margin-bottom: 12px;
+  }
+
+  .feature-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #0088cc, #229ED9);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 20px;
+  }
+
+  .btn-telegram {
+    background: linear-gradient(135deg, #0088cc, #229ED9);
+    border: none;
+    color: white;
+    padding: 14px 32px;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+  }
+
+  .btn-telegram:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 136, 204, 0.3);
+    color: white;
+  }
+
+  .instruction-step {
+    background: white;
+    border-left: 4px solid #0088cc;
+    padding: 16px;
+    margin-bottom: 16px;
+    border-radius: 8px;
+  }
+
+  .step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: #0088cc;
+    color: white;
+    border-radius: 50%;
+    font-weight: bold;
+    margin-right: 12px;
+  }
+</style>
+
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-10">
+
+      <!-- Header -->
+      <div class="telegram-card mb-4">
+        <div class="telegram-header">
+          <div class="telegram-icon">
+            <svg width="40" height="40" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M94.99 147.94l36.38 26.82c4.15 3.06 7.45 1.51 8.56-5.28l15.52-73.18c1.6-7.58-2.76-11.03-7.8-8.77l-107.95 41.6c-7.36 2.95-7.31 7.08-1.34 8.92l27.67 8.64 64.29-40.54c3.03-1.85 5.81-.86 3.53 1.17" fill="#0088cc"/>
+            </svg>
+          </div>
+          <h1 class="h3 mb-2 fw-bold">Telegram Einstellungen</h1>
+          <p class="mb-0 opacity-90">Erhalte Echtzeit-Benachrichtigungen direkt auf dein Handy</p>
+        </div>
+
+        <div class="card-body p-4">
+
+          <!-- Status -->
+          <div class="text-center mb-4 pb-4 border-bottom">
+            {% if user.telegram_verified %}
+              <div class="status-badge status-connected mb-3">
+                <span>✓</span>
+                <span>Verbunden</span>
+              </div>
+              <p class="text-muted mb-0">
+                <strong>@{{ user.telegram_username or 'User' }}</strong><br>
+                <small>Chat-ID: {{ user.telegram_chat_id }}</small>
+              </p>
+            {% else %}
+              <div class="status-badge status-disconnected mb-3">
+                <span>✗</span>
+                <span>Nicht verbunden</span>
+              </div>
+              <p class="text-muted mb-0">
+                Verbinde dein Telegram-Konto, um Push-Benachrichtigungen zu erhalten
+              </p>
+            {% endif %}
+          </div>
+
+          {% if not bot_configured %}
+            <div class="alert alert-warning" role="alert">
+              <strong>⚠️ Bot nicht konfiguriert</strong><br>
+              Der Telegram Bot ist noch nicht eingerichtet. Bitte kontaktiere den Administrator.
+            </div>
+          {% endif %}
+
+          <!-- Nicht verbunden: Anleitung -->
+          {% if not user.telegram_verified %}
+            <div class="mb-4">
+              <h4 class="h5 mb-3 fw-bold">🚀 So verbindest du Telegram:</h4>
+
+              <div class="instruction-step">
+                <span class="step-number">1</span>
+                <strong>Klicke auf "Mit Telegram verbinden"</strong>
+                <p class="text-muted mb-0 mt-2">Du wirst zu unserem Telegram Bot weitergeleitet</p>
+              </div>
+
+              <div class="instruction-step">
+                <span class="step-number">2</span>
+                <strong>Starte den Chat mit dem Bot</strong>
+                <p class="text-muted mb-0 mt-2">Drücke auf "Start" oder sende /start</p>
+              </div>
+
+              <div class="instruction-step">
+                <span class="step-number">3</span>
+                <strong>Fertig! 🎉</strong>
+                <p class="text-muted mb-0 mt-2">Dein Telegram ist jetzt verknüpft und du erhältst sofort Benachrichtigungen</p>
+              </div>
+
+              <div class="text-center mt-4">
+                <button id="connectBtn" class="btn btn-telegram btn-lg">
+                  <svg width="20" height="20" viewBox="0 0 240 240" fill="currentColor" style="margin-right: 8px;">
+                    <path d="M94.99 147.94l36.38 26.82c4.15 3.06 7.45 1.51 8.56-5.28l15.52-73.18c1.6-7.58-2.76-11.03-7.80-8.77l-107.95 41.6c-7.36 2.95-7.31 7.08-1.34 8.92l27.67 8.64 64.29-40.54c3.03-1.85 5.81-.86 3.53 1.17"/>
+                  </svg>
+                  Mit Telegram verbinden
+                </button>
+              </div>
+            </div>
+
+          {% else %}
+            <!-- Verbunden: Einstellungen -->
+            <div class="mb-4">
+              <h4 class="h5 mb-3 fw-bold">⚙️ Benachrichtigungen</h4>
+
+              <div class="form-check form-switch mb-3 p-3 bg-light rounded">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  id="telegramToggle"
+                  {% if user.telegram_enabled %}checked{% endif %}
+                >
+                <label class="form-check-label" for="telegramToggle">
+                  <strong>Telegram-Alerts aktiviert</strong><br>
+                  <small class="text-muted">Du erhältst Benachrichtigungen bei neuen Angeboten</small>
+                </label>
+              </div>
+
+              <div class="d-grid gap-2">
+                <button id="testBtn" class="btn btn-outline-primary">
+                  🧪 Test-Benachrichtigung senden
+                </button>
+                <button id="disconnectBtn" class="btn btn-outline-danger">
+                  🔌 Telegram trennen
+                </button>
+              </div>
+            </div>
+          {% endif %}
+
+          <!-- Features -->
+          <div class="mt-5 pt-4 border-top">
+            <h4 class="h5 mb-3 fw-bold">💡 Vorteile von Telegram-Alerts</h4>
+
+            <div class="feature-item">
+              <div class="feature-icon">⚡</div>
+              <div>
+                <strong>Echtzeit-Benachrichtigungen</strong>
+                <p class="text-muted mb-0 small">Erhalte Alerts sofort, wenn neue Artikel online gehen - schneller als E-Mail!</p>
+              </div>
+            </div>
+
+            <div class="feature-item">
+              <div class="feature-icon">📱</div>
+              <div>
+                <strong>Direkt auf dein Handy</strong>
+                <p class="text-muted mb-0 small">Push-Benachrichtigungen direkt aufs Smartphone, kein E-Mail-Postfach checken nötig</p>
+              </div>
+            </div>
+
+            <div class="feature-item">
+              <div class="feature-icon">🔗</div>
+              <div>
+                <strong>Schnellzugriff</strong>
+                <p class="text-muted mb-0 small">Klicke direkt in der Benachrichtigung auf den Link und gelange sofort zum eBay-Angebot</p>
+              </div>
+            </div>
+
+            <div class="feature-item">
+              <div class="feature-icon">🔕</div>
+              <div>
+                <strong>Flexible Steuerung</strong>
+                <p class="text-muted mb-0 small">Aktiviere oder deaktiviere Benachrichtigungen jederzeit mit einem Klick</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Zurück-Button -->
+      <div class="text-center">
+        <a href="{{ url_for('search') }}" class="btn btn-outline-secondary">
+          ← Zurück zum Dashboard
+        </a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// Connect Button
+document.getElementById('connectBtn')?.addEventListener('click', async function() {
+  const btn = this;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Verbinde...';
+
+  try {
+    const response = await fetch('/telegram/connect', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'}
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      // Öffne Telegram Deep Link
+      window.open(data.deep_link, '_blank');
+
+      // Zeige Hinweis
+      alert('Bitte drücke in Telegram auf "Start" um die Verbindung abzuschließen!');
+
+      // Reload nach 5 Sekunden
+      setTimeout(() => location.reload(), 5000);
+    } else {
+      alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
+      btn.disabled = false;
+      btn.innerHTML = 'Mit Telegram verbinden';
+    }
+  } catch (error) {
+    console.error(error);
+    alert('Verbindungsfehler. Bitte versuche es erneut.');
+    btn.disabled = false;
+    btn.innerHTML = 'Mit Telegram verbinden';
+  }
+});
+
+// Toggle Switch
+document.getElementById('telegramToggle')?.addEventListener('change', async function() {
+  const enabled = this.checked;
+
+  try {
+    const response = await fetch('/telegram/toggle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled: enabled})
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      // Zeige Toast oder Notification
+      const status = enabled ? 'aktiviert' : 'deaktiviert';
+      showNotification(`Telegram-Alerts ${status}`, 'success');
+    } else {
+      this.checked = !enabled; // Revert
+      alert('Fehler beim Ändern der Einstellung');
+    }
+  } catch (error) {
+    console.error(error);
+    this.checked = !enabled; // Revert
+    alert('Verbindungsfehler');
+  }
+});
+
+// Test Button
+document.getElementById('testBtn')?.addEventListener('click', async function() {
+  const btn = this;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sende Test...';
+
+  try {
+    const response = await fetch('/telegram/test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'}
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      showNotification('Test-Nachricht gesendet! Prüfe Telegram.', 'success');
+    } else {
+      alert('Fehler: ' + (data.message || 'Unbekannter Fehler'));
+    }
+  } catch (error) {
+    console.error(error);
+    alert('Verbindungsfehler');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🧪 Test-Benachrichtigung senden';
+  }
+});
+
+// Disconnect Button
+document.getElementById('disconnectBtn')?.addEventListener('click', async function() {
+  if (!confirm('Möchtest du Telegram wirklich trennen?')) return;
+
+  const btn = this;
+  btn.disabled = true;
+
+  try {
+    const response = await fetch('/telegram/disconnect', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'}
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      location.reload();
+    } else {
+      alert('Fehler beim Trennen');
+      btn.disabled = false;
+    }
+  } catch (error) {
+    console.error(error);
+    alert('Verbindungsfehler');
+    btn.disabled = false;
+  }
+});
+
+// Helper: Show Notification
+function showNotification(message, type = 'info') {
+  // Simple alert (kann durch Toast-Library ersetzt werden)
+  alert(message);
+}
+</script>
+
+{% endblock %}

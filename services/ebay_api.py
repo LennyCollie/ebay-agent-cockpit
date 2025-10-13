@@ -25,10 +25,21 @@ SCOPES = os.getenv(
 MARKETPLACE_ID = os.getenv("EBAY_MARKETPLACE_ID", "EBAY_DE")
 ACCEPT_LANGUAGE = os.getenv("EBAY_ACCEPT_LANGUAGE", "de-DE")
 
-AFFILIATE_ENABLE = os.getenv("AFFILIATE_ENABLE", "false").lower() in {"1", "true", "yes", "on"}
-AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # z.B. campid=XXXX;customid=YOURTAG
+AFFILIATE_ENABLE = os.getenv("AFFILIATE_ENABLE", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+AFFILIATE_PARAMS = os.getenv(
+    "AFFILIATE_PARAMS", ""
+)  # z.B. campid=XXXX;customid=YOURTAG
 
-BASE = "https://api.ebay.com" if EBAY_ENV == "production" else "https://api.sandbox.ebay.com"
+BASE = (
+    "https://api.ebay.com"
+    if EBAY_ENV == "production"
+    else "https://api.sandbox.ebay.com"
+)
 
 # ---------- Token Cache ----------
 _token_cache: Dict[str, Any] = {}
@@ -43,6 +54,7 @@ def _get_access_token() -> str:
         raise RuntimeError("EBAY_CLIENT_ID/EBAY_CLIENT_SECRET fehlen")
 
     scopes = os.getenv("EBAY_SCOPES", "https://api.ebay.com/oauth/api_scope")
+
     def _request_token(scope_str: str):
         resp = requests.post(
             f"{BASE}/identity/v1/oauth2/token",
@@ -57,26 +69,37 @@ def _get_access_token() -> str:
         tok = _request_token(scopes)
     except requests.HTTPError as e:
         text = getattr(e.response, "text", "")
-        if e.response is not None and e.response.status_code == 400 and "invalid_scope" in text:
+        if (
+            e.response is not None
+            and e.response.status_code == 400
+            and "invalid_scope" in text
+        ):
             log.warning("eBay OAuth: invalid_scope – fallback auf Basisscope")
             tok = _request_token("https://api.ebay.com/oauth/api_scope")
         else:
-            log.error("eBay OAuth Fehler: %s - %s", getattr(e.response, "status_code", "?"), text)
+            log.error(
+                "eBay OAuth Fehler: %s - %s",
+                getattr(e.response, "status_code", "?"),
+                text,
+            )
             raise
 
-    _token_cache.update({
-        "type": "app",
-        "token": tok["access_token"],
-        "exp": now + int(tok.get("expires_in", 7200)) - 60,
-    })
+    _token_cache.update(
+        {
+            "type": "app",
+            "token": tok["access_token"],
+            "exp": now + int(tok.get("expires_in", 7200)) - 60,
+        }
+    )
     return _token_cache["token"]
+
 
 def _attach_affiliate(url: str) -> str:
     """Hängt Affiliate-Parameter an itemWebUrl an (wenn aktiviert)."""
     if not (AFFILIATE_ENABLE and AFFILIATE_PARAMS and url and url.startswith("http")):
         return url
     try:
-        from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+        from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
         p = urlparse(url)
         params = dict(parse_qsl(p.query, keep_blank_values=True))
@@ -125,7 +148,7 @@ def ebay_search(
     offset: int = 0,
     sort: str = "bestMatch",
     category_ids: Optional[str] = None,
-    filter_str: Optional[str] = None,   # <— NEU
+    filter_str: Optional[str] = None,  # <— NEU
 ) -> Dict[str, Any]:
     ...
     params: Dict[str, Any] = {
@@ -136,7 +159,7 @@ def ebay_search(
     }
     if category_ids:
         params["category_ids"] = category_ids
-    if filter_str:                         # <— NEU
+    if filter_str:  # <— NEU
         params["filter"] = filter_str
     url = f"{BASE}/buy/browse/v1/item_summary/search"
 
@@ -183,4 +206,3 @@ def ebay_search(
 
     # Sollte praktisch nie erreicht werden:
     raise RuntimeError("eBay-Suche fehlgeschlagen (max. Retries erreicht)")
-

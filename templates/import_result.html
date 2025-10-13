@@ -1,0 +1,31 @@
+</div>
+<!-- templates/import_result.html (review + links) -->
+<div class="container py-5">
+<h1 class="h3 mb-3">Vorschau & 1‑Klick‑Links</h1>
+<p class="text-muted">Klicke einen Link, um die Suche mit allen Filtern zu öffnen und zu speichern.</p>
+
+
+<div class="table-responsive">
+<table class="table align-middle">
+<thead>
+<tr>
+<th>#</th>
+<th>CSV‑Zeile</th>
+<th>Link</th>
+</tr>
+</thead>
+<tbody>
+{% raw %}{% for i, row in enumerate(rows, start=1) %}{% endraw %}
+<tr>
+<td>{% raw %}{{ i }}{% endraw %}</td>
+<td><code class="small">{% raw %}{{ row.raw }}{% endraw %}</code></td>
+<td><a class="btn btn-outline-primary btn-sm" target="_blank" href="{% raw %}{{ row.link }}{% endraw %}">Öffnen</a></td>
+</tr>
+{% raw %}{% endfor %}{% endraw %}
+</tbody>
+</table>
+</div>
+
+
+<p class="small text-muted">Pro‑Tipp: Wenn du eine interne Funktion zum **Anlegen** von Agenten hast, kannst du im POST‑Handler statt der Link‑Vorschau direkt Agenten erzeugen.</p>
+</div>

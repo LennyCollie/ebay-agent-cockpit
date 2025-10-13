@@ -1,0 +1,12 @@
+# Python-Dateien immer mit LF im Repo
+*.py text eol=lf
+
+# Generell Textdateien normalisieren
+*.txt text
+*.md  text
+*.json text
+*.yml text
+*.yaml text
+*.html text
+*.css text
+*.js text

@@ -1,88 +1,400 @@
 {% extends "base.html" %}
-{% block title %}Preise – ebay-agent-cockpit{% endblock %}
-
 {% block content %}
-<section class="section">
-  <div class="mb-3">
-    <span class="kicker">Preise</span>
-    <h1 class="display-6 fw-semibold mb-2">Ebay Verkaufsagent <span class="text-secondary">Premium</span></h1>
-    <p class="text-secondary mb-0">Alles drin, was du fürs tägliche Arbeiten brauchst.</p>
-  </div>
 
-  <div class="row g-4">
-    <div class="col-12 col-lg-8">
-      <div class="card pricing-card border-0">
-        <div class="card-body p-4 p-lg-5">
-          <div class="d-flex align-items-center justify-content-between gap-3 mb-4">
-            <div class="d-flex align-items-center gap-2">
-              <span class="badge text-bg-primary">Beliebt</span>
-              <span class="badge badge-ghost">Monatlich</span>
-            </div>
-            <div class="text-end">
-              <div class="price">9,99 € <span class="period fs-6">/ Monat</span></div>
-            </div>
-          </div>
+<style>
+  .pricing-hero {
+    background: linear-gradient(135deg, #0b5ed7 0%, #6f42c1 100%);
+    position: relative;
+    overflow: hidden;
+  }
 
-          <ul class="list-unstyled vstack gap-2 mb-4 fs-5">
-            <li>💠 Sync-Jobs vorbereitet</li>
-            <li>📊 Dashboard &amp; Suche</li>
-            <li>🔒 Login, Sessions, Best Practices</li>
-            <li>🚀 Render-Deploy inklusive</li>
-            <li>💳 Rechnung via Stripe</li>
-          </ul>
+  .pricing-hero::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="1"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+    opacity: 0.3;
+  }
 
-          <div class="d-flex flex-wrap gap-2">
-            <form action="{{ url_for('public_checkout') }}" method="post" class="d-inline">
-              <input type="hidden" name="email" value="{{ session.get('user_email','') }}">
-              <button type="submit" class="btn btn-primary btn-lg px-4">
-                Abo starten
-              </button>
-            </form>
-            <a href="{{ url_for('public_home') }}" class="btn btn-outline-secondary btn-lg px-4">Zur Startseite</a>
-            <a href="{{ url_for('start_free') }}" class="btn btn-primary btn-lg">
-              Kostenlos starten
-            </a>
-          </div>
+  .pricing-card {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+  }
 
-          <hr class="hr-soft my-4">
+  .pricing-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15) !important;
+  }
 
-          <div class="d-flex flex-wrap align-items-center gap-3 small text-secondary">
-            <span>✅ Jederzeit kündbar</span>
-            <span>🛡️ Gesicherter Checkout via Stripe</span>
-            <span>⏱️ Aktivierung in Sekunden</span>
-          </div>
-        </div>
-      </div>
-    </div>
+  .pricing-card.featured {
+    border: 3px solid #198754 !important;
+    box-shadow: 0 8px 30px rgba(25, 135, 84, 0.3);
+  }
 
-    <!-- FAQ rechts -->
-    <div class="col-12 col-lg-4">
-      <div class="card border-0">
-        <div class="card-body p-4">
-          <h2 class="h6 mb-3">Häufige Fragen</h2>
-          <div class="accordion faq" id="faq">
-            <div class="accordion-item">
-              <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#q1">Kann ich kostenlos testen?</button></h2>
-              <div id="q1" class="accordion-collapse collapse" data-bs-parent="#faq">
-                <div class="accordion-body">Ja, du registrierst dich kostenlos und kannst das Cockpit direkt ausprobieren.</div>
-              </div>
-            </div>
-            <div class="accordion-item">
-              <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#q2">Wie funktioniert die Bezahlung?</button></h2>
-              <div id="q2" class="accordion-collapse collapse" data-bs-parent="#faq">
-                <div class="accordion-body">Über Stripe-Abo. Der Checkout ist integriert, Rechnungen kommen automatisch von Stripe.</div>
-              </div>
-            </div>
-            <div class="accordion-item">
-              <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#q3">Gibt es eine Mindestlaufzeit?</button></h2>
-              <div id="q3" class="accordion-collapse collapse" data-bs-parent="#faq">
-                <div class="accordion-body">Nein, du kannst jederzeit kündigen.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+  .pricing-card.featured::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    background: linear-gradient(90deg, #198754, #20c997);
+  }
+
+  .badge-popular {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: linear-gradient(135deg, #198754, #20c997);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(25, 135, 84, 0.3);
+  }
+
+  .price-amount {
+    font-size: 3.5rem;
+    font-weight: 700;
+    line-height: 1;
+    background: linear-gradient(135deg, #0b5ed7, #6f42c1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .price-period {
+    font-size: 1rem;
+    color: #6c757d;
+    font-weight: 400;
+  }
+
+  .feature-list {
+    list-style: none;
+    padding: 0;
+    margin: 24px 0;
+  }
+
+  .feature-list li {
+    padding: 10px 0;
+    display: flex;
+    align-items: center;
+    font-size: 0.95rem;
+  }
+
+  .feature-list li::before {
+    content: '✓';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    margin-right: 12px;
+    background: linear-gradient(135deg, #0b5ed7, #6f42c1);
+    color: white;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  .btn-pricing {
+    padding: 14px 32px;
+    font-weight: 600;
+    border-radius: 10px;
+    transition: all 0.3s ease;
+    border: none;
+    text-transform: none;
+  }
+
+  .btn-pricing:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  }
+
+  .comparison-table {
+    background: white;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  }
+
+  .comparison-table th {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    font-weight: 600;
+    padding: 20px 16px;
+    border: none;
+  }
+
+  .comparison-table td {
+    padding: 16px;
+    border-color: #f1f3f5;
+  }
+
+  .faq-section {
+    background: #f8f9fa;
+    border-radius: 16px;
+    padding: 40px;
+  }
+
+  .accordion-button:not(.collapsed) {
+    background-color: #e7f1ff;
+    color: #0b5ed7;
+  }
+
+  .accordion-button:focus {
+    box-shadow: none;
+    border-color: #dee2e6;
+  }
+
+  .cta-section {
+    background: linear-gradient(135deg, #0b5ed7, #6f42c1);
+    border-radius: 16px;
+    padding: 48px;
+    color: white;
+    text-align: center;
+    margin-top: 60px;
+  }
+</style>
+
+<!-- ============ HERO ============ -->
+<section class="pricing-hero text-white text-center py-5 border-bottom position-relative">
+  <div class="container py-4 position-relative">
+    <h1 class="display-4 fw-bold mb-3">Wähle deinen Plan</h1>
+    <p class="lead mb-0 opacity-90">Starte kostenlos – upgrade, wenn du mehr Power brauchst.</p>
   </div>
 </section>
+
+<div class="container py-5">
+
+  {% if ev_free_limit_hit|default(false) %}
+    <div class="alert alert-info border-0 shadow-sm" role="alert">
+      <strong>💡 Tipp:</strong> Du hast das Limit der kostenlosen Suchen erreicht. Mit <strong>Premium</strong> erhältst du unbegrenzte Agenten und schnellere Intervalle.
+    </div>
+  {% endif %}
+
+  <!-- ============ PLANS (3-Spalten) ============ -->
+  <div class="row g-4 row-cols-1 row-cols-md-3 align-items-stretch mb-4">
+
+    <!-- Free -->
+    <div class="col">
+      <div class="card pricing-card h-100 shadow-sm border-0">
+        <div class="card-body p-4 d-flex flex-column">
+          <h3 class="h4 mb-2 fw-bold">Free</h3>
+          <p class="text-muted mb-3">Ideal zum Ausprobieren</p>
+          <div class="mb-3">
+            <span class="price-amount">0 €</span>
+            <span class="price-period">/ immer</span>
+          </div>
+          <ul class="feature-list flex-grow-1">
+            <li>3 Suchen gratis</li>
+            <li>Basisfunktionen</li>
+            <li>Teilen-Links</li>
+          </ul>
+          <a href="{{ url_for('search') }}" class="btn btn-outline-primary btn-pricing w-100 mt-auto">Kostenlos starten</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Basic -->
+    <div class="col">
+      <div class="card pricing-card h-100 shadow border-0 border-primary border-2">
+        <div class="card-body p-4 d-flex flex-column">
+          <h3 class="h4 mb-2 fw-bold">Basic</h3>
+          <p class="text-muted mb-3">Mehr Alerts, schneller</p>
+          <div class="mb-3">
+            <span class="price-amount">7 €</span>
+            <span class="price-period">/ Monat</span>
+          </div>
+          <ul class="feature-list flex-grow-1">
+            <li>10 Alerts</li>
+            <li>Schnellere Intervalle</li>
+            <li>Telegram inkl.</li>
+          </ul>
+          <form method="post" action="/checkout" class="mt-auto">
+            <input type="hidden" name="price" value="basic">
+            <button class="btn btn-primary btn-pricing w-100" type="submit">Basic wählen</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pro -->
+    <div class="col">
+      <div class="card pricing-card featured h-100 shadow-lg border-0">
+        <span class="badge badge-popular text-white">⭐ Beliebtester Plan</span>
+        <div class="card-body p-4 d-flex flex-column pt-5">
+          <h3 class="h4 mb-2 fw-bold">Pro</h3>
+          <p class="text-muted mb-3">Für Power-User</p>
+          <div class="mb-3">
+            <span class="price-amount">15 €</span>
+            <span class="price-period">/ Monat</span>
+          </div>
+          <ul class="feature-list flex-grow-1">
+            <li>30 Alerts</li>
+            <li>Nahezu Echtzeit</li>
+            <li>Telegram inkl., CSV-Export</li>
+          </ul>
+          <form method="post" action="/checkout" class="mt-auto">
+            <input type="hidden" name="price" value="pro">
+            <button class="btn btn-success btn-pricing w-100" type="submit">Pro wählen</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Team (eigene Reihe, zentriert) -->
+  <div class="row g-4 justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+      <div class="card pricing-card h-100 shadow border-0 border-dark border-2">
+        <div class="card-body p-4 d-flex flex-column">
+          <h3 class="h4 mb-2 fw-bold">Team</h3>
+          <p class="text-muted mb-3">Für Profis & Teams</p>
+          <div class="mb-3">
+            <span class="price-amount">29 €</span>
+            <span class="price-period">/ Monat</span>
+          </div>
+          <ul class="feature-list flex-grow-1">
+            <li>100 Alerts</li>
+            <li>Priorisierte Abfragen</li>
+            <li>Mehrere Nutzer & Rollen</li>
+          </ul>
+          <form method="post" action="/checkout" class="mt-auto">
+            <input type="hidden" name="price" value="team">
+            <button class="btn btn-dark btn-pricing w-100" type="submit">Team wählen</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FEATURE COMPARISON ============ -->
+  <div class="mt-5 pt-4">
+    <h2 class="h3 mb-4 text-center fw-bold">Feature-Vergleich</h2>
+    <div class="table-responsive comparison-table">
+      <table class="table align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Funktion</th>
+            <th class="text-center">Free</th>
+            <th class="text-center">Basic</th>
+            <th class="text-center">Pro</th>
+            <th class="text-center">Team</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Suchagenten</strong></td>
+            <td class="text-center">3</td>
+            <td class="text-center">10</td>
+            <td class="text-center">30</td>
+            <td class="text-center">100</td>
+          </tr>
+          <tr>
+            <td><strong>Intervall</strong></td>
+            <td class="text-center">Standard</td>
+            <td class="text-center"><span class="badge bg-primary">Schneller</span></td>
+            <td class="text-center"><span class="badge bg-success">Sehr schnell</span></td>
+            <td class="text-center"><span class="badge bg-dark">Priorisiert</span></td>
+          </tr>
+          <tr>
+            <td><strong>E-Mail-Benachrichtigungen</strong></td>
+            <td class="text-center">—</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+          </tr>
+          <tr>
+            <td><strong>Telegram Alerts</strong></td>
+            <td class="text-center">—</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+          </tr>
+          <tr>
+            <td><strong>CSV-Export</strong></td>
+            <td class="text-center">—</td>
+            <td class="text-center">—</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============ FAQ ============ -->
+  <div class="faq-section mt-5" id="faq">
+    <h2 class="h3 mb-4 text-center fw-bold">Häufig gestellte Fragen</h2>
+
+    <div class="accordion" id="faqAccordion">
+      <div class="accordion-item border-0 mb-3 shadow-sm">
+        <h2 class="accordion-header" id="q1">
+          <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#a1" aria-expanded="true" aria-controls="a1">
+            <strong>Wie funktionieren die E-Mail-Alerts?</strong>
+          </button>
+        </h2>
+        <div id="a1" class="accordion-collapse collapse show" aria-labelledby="q1" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+            Du speicherst eine Suche (Begriffe + Filter). Sobald neue passende eBay-Angebote online gehen, senden wir dir eine E-Mail.
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item border-0 mb-3 shadow-sm">
+        <h2 class="accordion-header" id="q2">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a2" aria-expanded="false" aria-controls="a2">
+            <strong>Was ist der Unterschied zwischen den Plänen?</strong>
+          </button>
+        </h2>
+        <div id="a2" class="accordion-collapse collapse" aria-labelledby="q2" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+            Free eignet sich zum Testen (3 Agenten). Basic/Pro erhöhen Limits & Tempo, Team bringt mehr Nutzer & Priorisierung.
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item border-0 mb-3 shadow-sm">
+        <h2 class="accordion-header" id="q3">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a3" aria-expanded="false" aria-controls="a3">
+            <strong>Kann ich monatlich kündigen?</strong>
+          </button>
+        </h2>
+        <div id="a3" class="accordion-collapse collapse" aria-labelledby="q3" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+            Ja. Du kannst monatlich kündigen; dein Abo läuft dann zum Ende des bezahlten Zeitraums aus.
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item border-0 shadow-sm">
+        <h2 class="accordion-header" id="q4">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a4" aria-expanded="false" aria-controls="a4">
+            <strong>Bietet ihr einen Jahresplan an?</strong>
+          </button>
+        </h2>
+        <div id="a4" class="accordion-collapse collapse" aria-labelledby="q4" data-bs-parent="#faqAccordion">
+          <div class="accordion-body">
+            Auf Wunsch ja – typischerweise mit 20–30% Rabatt. Kontaktiere uns, wenn du wechseln möchtest.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FINAL CTA ============ -->
+  <div class="cta-section">
+    <h2 class="h3 fw-bold mb-3">Bereit durchzustarten?</h2>
+    <p class="lead mb-4 opacity-90">Sichere dir Premium und verpasse keine neuen Angebote mehr.</p>
+    <a href="/checkout" class="btn btn-light btn-lg px-5 py-3 fw-bold">Jetzt Abo starten</a>
+  </div>
+</div>
+
 {% endblock %}

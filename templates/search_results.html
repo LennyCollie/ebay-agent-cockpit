@@ -1,65 +1,206 @@
 {% extends "base.html" %}
-{% block title %}Suchergebnisse – ebay-agent-cockpit{% endblock %}
-
 {% block content %}
-<h1 class="h3 mb-3">Suchergebnisse</h1>
 
-{% if terms and terms|length > 0 %}
-  <p class="text-secondary mb-4">
-    Gesucht nach:
-    {% for t in terms %}
-      <span class="badge text-bg-secondary me-1">{{ t }}</span>
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+  <h1 class="h4 mb-0">
+    Suchergebnisse
+    {% if terms and terms|length > 0 %}
+      <small class="text-muted">für {{ terms|join(" · ") }}</small>
+    {% endif %}
+  </h1>
+
+  {# Teilbarer Link zur aktuellen Suche #}
+  <div class="d-flex align-items-center gap-2">
+    <input
+      id="share-url"
+      class="form-control form-control-sm"
+      style="min-width: 260px"
+      readonly
+      value="{{ (request.base_url ~ '?' ~ qs(base_qs)) if base_qs else request.base_url }}"
+    >
+    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="
+      const el=document.getElementById('share-url');
+      el.select(); el.setSelectionRange(0,99999);
+      document.execCommand('copy');
+      this.innerText='Kopiert!';
+      setTimeout(()=>this.innerText='Link kopieren',1200);
+    ">Link kopieren</button>
+  </div>
+</div>
+
+<div class="d-flex align-items-center gap-1 mb-1">
+  {% set src = (item.src or '')|lower %}
+  {% if src == 'ebay' %}<span class="badge rounded-pill text-bg-primary">eBay</span>{% endif %}
+
+  {% if item.verdict %}
+    {% if item.verdict == 'ok' %}
+      <span class="badge rounded-pill text-bg-success">KI-geprüft</span>
+    {% elif item.verdict == 'suspicious' %}
+      <span class="badge rounded-pill text-bg-warning text-dark">Verdacht</span>
+    {% elif item.verdict == 'damaged' %}
+      <span class="badge rounded-pill text-bg-danger">Beschädigt</span>
+    {% endif %}
+  {% endif %}
+</div>
+
+
+{# --- Alerts Toolbar (🔔 speichern / ✉️ Testmail) --- #}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-4">
+  <!-- 🔔 Alarm speichern -->
+  <form action="{{ url_for('alerts_subscribe') }}" method="post" class="d-flex align-items-center gap-2">
+    <input type="hidden" name="q1" value="{{ base_qs.get('q1','') }}">
+    <input type="hidden" name="q2" value="{{ base_qs.get('q2','') }}">
+    <input type="hidden" name="q3" value="{{ base_qs.get('q3','') }}">
+    <input type="hidden" name="price_min" value="{{ base_qs.get('price_min','') }}">
+    <input type="hidden" name="price_max" value="{{ base_qs.get('price_max','') }}">
+    <input type="hidden" name="sort"      value="{{ base_qs.get('sort','best') }}">
+    <input type="hidden" name="per_page"  value="{{ base_qs.get('per_page', 20) }}">
+    <input type="hidden" name="auction"   value="{{ base_qs.get('auction','0') }}">
+    <input type="hidden" name="bin"       value="{{ base_qs.get('bin','1') }}">
+    <input type="hidden" name="postal"    value="{{ base_qs.get('postal','') }}">
+    <input type="hidden" name="radius_km" value="{{ base_qs.get('radius_km','') }}">
+    <input type="hidden" name="ship_to"   value="{{ base_qs.get('ship_to','') }}">
+    <input type="hidden" name="located_in" value="{{ base_qs.get('located_in','') }}">
+
+    {% for c in (base_qs.get('condition') or []) %}
+      <input type="hidden" name="condition" value="{{ c }}">
     {% endfor %}
-  </p>
-{% endif %}
+    <button type="submit" class="btn btn-outline-primary">
+      🔔 Alarm speichern
+    </button>
+  </form>
 
-{% if results and results|length > 0 %}
-  <div class="table-responsive">
-    <table class="table align-middle">
-      <thead>
-        <tr>
-          <th style="width:72px;">Bild</th>
-          <th>Titel</th>
-          <th style="width:120px;">Preis</th>
-          <th style="width:140px;">Aktion</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in results %}
-        <tr>
-          <td>
-            {% if r.img %}
-              <img src="{{ r.img }}" alt="" class="img-thumbnail" style="max-width:64px;">
-            {% else %}
-              <div class="bg-body-secondary rounded" style="width:64px;height:48px;"></div>
-            {% endif %}
-          </td>
-          <td>
-            <div class="fw-semibold">{{ r.title }}</div>
-            {% if r.term %}
-              <div class="text-secondary small">Suchbegriff: „{{ r.term }}“</div>
-            {% endif %}
-          </td>
-          <td>{{ r.price or "–" }}</td>
-          <td>
-            {% if r.url %}
-              <a href="{{ r.url }}" target="_blank" class="btn btn-sm btn-outline-primary">Auf eBay öffnen</a>
-            {% else %}
-              <span class="text-secondary">–</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <!-- ✉️ Jetzt E-Mail testen -->
+  <form action="{{ url_for('alerts_send_now') }}" method="post" class="d-flex flex-wrap align-items-center gap-2">
+    <input type="hidden" name="q1" value="{{ base_qs.get('q1','') }}">
+    <input type="hidden" name="q2" value="{{ base_qs.get('q2','') }}">
+    <input type="hidden" name="q3" value="{{ base_qs.get('q3','') }}">
+    <input type="hidden" name="price_min" value="{{ base_qs.get('price_min','') }}">
+    <input type="hidden" name="price_max" value="{{ base_qs.get('price_max','') }}">
+    <input type="hidden" name="sort"      value="{{ base_qs.get('sort','best') }}">
+    <input type="hidden" name="per_page"  value="{{ base_qs.get('per_page', 20) }}">
+    <input type="hidden" name="auction"   value="{{ base_qs.get('auction','0') }}">
+    <input type="hidden" name="bin"       value="{{ base_qs.get('bin','1') }}">
+    <input type="hidden" name="postal"    value="{{ base_qs.get('postal','') }}">
+    <input type="hidden" name="radius_km" value="{{ base_qs.get('radius_km','') }}">
+    <input type="hidden" name="ship_to"   value="{{ base_qs.get('ship_to','') }}">
+    <input type="hidden" name="located_in" value="{{ base_qs.get('located_in','') }}">
+
+    {% for c in (base_qs.get('condition') or []) %}
+      <input type="hidden" name="condition" value="{{ c }}">
+    {% endfor %}
+
+    {% set _email = session.get('user_email') or 'guest' %}
+    {% if _email == 'guest' %}
+      <input type="email" name="email" class="form-control form-control-sm"
+             placeholder="E-Mail für Benachrichtigung" required>
+    {% endif %}
+
+    <button type="submit" class="btn btn-success">
+      ✉️ Jetzt E-Mail testen
+    </button>
+  </form>
+</div>
+
+{# --- Filter-Zeile / Meta --- #}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <div class="text-muted small">
+    {% if pagination.total_estimated %}
+      ~{{ pagination.total_estimated }} Treffer geschätzt
+      {% if pagination.total_pages %} · Seite {{ pagination.page }} von {{ pagination.total_pages }}{% endif %}
+    {% else %}
+      Seite {{ pagination.page }}
+    {% endif %}
+  </div>
+  <div class="small">
+    {% if filters.price_min or filters.price_max or (filters.conditions and filters.conditions|length) or filters.sort != 'best' %}
+      <span class="badge text-bg-light">Filter aktiv</span>
+      {% if filters.price_min %}<span class="badge text-bg-secondary">ab {{ filters.price_min }}</span>{% endif %}
+      {% if filters.price_max %}<span class="badge text-bg-secondary">bis {{ filters.price_max }}</span>{% endif %}
+      {% if filters.sort and filters.sort != 'best' %}
+        <span class="badge text-bg-secondary">Sort: {{ filters.sort }}</span>
+      {% endif %}
+      {% for c in (filters.conditions or []) %}
+        <span class="badge text-bg-secondary">{{ c }}</span>
+      {% endfor %}
+    {% endif %}
+  </div>
+</div>
+
+{# --- Ergebnisse --- #}
+{% if results and results|length %}
+  <div class="row g-3">
+    {% for item in results %}
+      <div class="col-12 col-md-6 col-lg-4">
+        <div class="card h-100 shadow-sm">
+          <div class="row g-0 h-100">
+            <div class="col-4 d-flex align-items-center justify-content-center p-2">
+              {% set img = item.img or 'https://via.placeholder.com/160x120?text=%20' %}
+              <img src="{{ img }}" class="img-fluid rounded" alt="Bild" loading="lazy" style="max-height:120px;">
+            </div>
+            <div class="col-8">
+              <div class="card-body d-flex flex-column">
+                <div class="d-flex align-items-center gap-1 mb-1">
+                  {% set src = (item.src or '')|lower %}
+                  {% if src == 'amazon' %}
+                    <span class="badge rounded-pill text-bg-warning text-dark">Amazon</span>
+                  {% elif src == 'ebay' %}
+                    <span class="badge rounded-pill text-bg-primary">eBay</span>
+                  {% elif src == 'demo' %}
+                    <span class="badge rounded-pill text-bg-secondary">Demo</span>
+                  {% endif %}
+                  {% if item.term %}
+                    <span class="badge text-bg-light">{{ item.term }}</span>
+                  {% endif %}
+                </div>
+
+                <h2 class="h6 card-title mb-1 text-truncate" title="{{ item.title }}">{{ item.title }}</h2>
+                <div class="mb-2 fw-semibold">
+                  {{ item.price or '–' }}
+                </div>
+
+                <div class="mt-auto">
+                  <a href="{{ item.url }}" target="_blank" rel="nofollow noopener"
+                     class="btn btn-sm btn-outline-dark w-100">
+                    Zum Angebot öffnen
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
   </div>
 {% else %}
-  <div class="alert alert-info">Keine Ergebnisse gefunden.</div>
+  <div class="alert alert-info mt-3">
+    Keine Treffer gefunden. Bitte Begriffe oder Filter anpassen.
+  </div>
 {% endif %}
 
-<div class="mt-3">
-  <!-- Wichtig: richtige Endpoints benutzen -->
-  <a href="{{ url_for('search') }}" class="btn btn-secondary">Neue Suche</a>
-  <a href="{{ url_for('public_home') }}" class="btn btn-link">Zur Startseite</a>
-</div>
+{# --- Pagination --- #}
+{% if pagination %}
+  <nav class="mt-4" aria-label="Seiten">
+    <ul class="pagination justify-content-center">
+      <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+        <a class="page-link"
+           href="{% if pagination.has_prev %}{{ url_for('search') }}?{{ qs(base_qs, page=pagination.page-1) }}{% else %}#{% endif %}">
+          ‹ Zurück
+        </a>
+      </li>
+
+      <li class="page-item active">
+        <span class="page-link">{{ pagination.page }}</span>
+      </li>
+
+      <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+        <a class="page-link"
+           href="{% if pagination.has_next %}{{ url_for('search') }}?{{ qs(base_qs, page=pagination.page+1) }}{% else %}#{% endif %}">
+          Weiter ›
+        </a>
+      </li>
+    </ul>
+  </nav>
+{% endif %}
+
 {% endblock %}

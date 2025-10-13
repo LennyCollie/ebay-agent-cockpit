@@ -17,3 +17,27 @@ __pycache__/
 
 /venv/
 .env
+# Python/venv
+.venv/
+__pycache__/
+*.pyc
+
+# lokale Sicherungskopien
+app - Kopie*
+*.bak.venv/
+__pycache__/
+*.pyc
+app - Kopie*
+*.bak
+
+.venv/, __pycache__/, *.pyc
+
+# .gitignore
+.vscode/
+*.log
+__pycache__/
+*.pyc
+Textdokument (neu)*.txt
+infinite-loader-*.json
+infinite-loader-*.json
+.env

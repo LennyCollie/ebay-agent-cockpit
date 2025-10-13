@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wartelisten-Pilot – Für Praxen</title>
+  <style>
+    :root { --bg:#0b1220; --card:#0f172a; --ink:#e2e8f0; --muted:#94a3b8; --primary:#22d3ee; --accent:#a78bfa; --ring:rgba(34,211,238,.25) }
+    *{box-sizing:border-box} html,body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:radial-gradient(1000px 600px at 20% 5%,#0b1220 0,#020617 60%);color:var(--ink)}
+    a{color:inherit;text-decoration:none}
+    .btn{display:inline-block;padding:12px 16px;border-radius:12px;background:linear-gradient(90deg,var(--primary),var(--accent));color:#021018;font-weight:700;box-shadow:0 10px 30px var(--ring)}
+    .container{max-width:1100px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:28px}
+    header .brand{font-weight:800;letter-spacing:.5px}
+    header nav a{margin-left:16px;color:var(--muted)}
+    .hero{display:grid;grid-template-columns:1.1fr .9fr;gap:24px;align-items:center;padding:28px 0 16px}
+    .hero h1{font-size:44px;line-height:1.1;margin:0 0 10px}
+    .hero p{color:var(--muted);margin-top:0}
+    .glass{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.06);border-radius:18px;padding:20px}
+    .stack{display:flex;flex-direction:column;gap:12px}
+    .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+    .kpi .card{background:var(--card);border-radius:14px;padding:14px;text-align:center}
+    .kpi .num{font-size:28px;font-weight:900;background:linear-gradient(90deg,var(--primary),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent}
+    .features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:26px 0}
+    .features .card{background:var(--card);border-radius:14px;padding:16px}
+    h2,h3{margin:8px 0}
+    .how{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .how .step{background:var(--card);border-radius:14px;padding:16px}
+    footer{color:var(--muted);text-align:center;padding:26px 0}
+    @media (max-width:960px){.hero{grid-template-columns:1fr}.features,.how{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">Wartelisten-Pilot</div>
+      <nav>
+        <a href="#was">Warum</a>
+        <a href="#wie">So funktioniert’s</a>
+        <a href="#pilot">Pilot starten</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div class="stack">
+        <h1>Weniger Leerlauf, glücklichere Patient:innen.</h1>
+        <p>Bei Absage einen Klick, und passende Wartelisten-Einträge bekommen automatisch eine E-Mail. Keine PVS-Integration nötig, in 10 Minuten startklar.</p>
+        <div>
+         <a class="btn" href="{{ waitlist_url }}" target="_blank" rel="noopener">Warteliste ansehen</a>
+         {% if widget_url %}
+           &nbsp;&nbsp;
+           <a class="btn" href="{{ widget_url }}" target="_blank" rel="noopener">Praxis-Widget (intern)</a>
+         {% else %}
+           <div style="margin-top:10px;color:#94a3b8;font-size:14px;">
+             Interner Praxis-Widget-Link wird dem Team separat bereitgestellt.
+           </div>
+         {% endif %}
+        </div>
+
+        <div class="kpi">
+          <div class="card"><div class="num">~60 s</div><div>bis Slot gemeldet</div></div>
+          <div class="card"><div class="num">30–70 %</div><div>wird besetzt</div></div>
+          <div class="card"><div class="num">0</div><div>PVS-Schnittstellen</div></div>
+        </div>
+      </div>
+      <div class="glass">
+        <h3>So sieht der Ablauf aus:</h3>
+        <ol>
+          <li>Patient:innen tragen sich über Warteliste ein.</li>
+          <li>Praxis meldet freien Slot im Widget.</li>
+          <li>Passende Personen erhalten automatisch eine Mail.</li>
+          <li>Buchung erfolgt direkt über Link/Telefon.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="was">
+      <div class="features">
+        <div class="card"><h3>Einfach</h3><p>Ein kleines Web-Formular. Keine IT-Umbauten, keine PVS-Anpassung.</p></div>
+        <div class="card"><h3>Smart</h3><p>Nur passende Personen (Fachgebiet/PLZ/Zeiten) werden informiert – ohne Spam.</p></div>
+        <div class="card"><h3>Schnell</h3><p>Slot melden dauert unter 1 Minute. Das Team bleibt handlungsfähig.</p></div>
+      </div>
+    </section>
+
+    <section id="wie">
+      <h2>So funktioniert’s</h2>
+      <div class="how">
+        <div class="step"><h3>1 · Warteliste</h3><p>Patient:innen tragen sich ein – freiwillig, datensparsam, mit E-Mail.</p><p><a class="btn" href="{{ waitlist_url }}" target="_blank" rel="noopener">Jetzt ansehen</a></p></div>
+        <div class="step"><h3>2 · Slot melden</h3><p>Bei Absage: Widget öffnen, Uhrzeit + Link/Telefon eintragen, Senden.</p><p><a class="btn" href="{{ widget_url }}" target="_blank" rel="noopener">Widget (Demo)</a></p></div>
+        <div class="step"><h3>3 · E-Mail & Buchung</h3><p>Nur passende Personen erhalten eine Mail und buchen direkt.</p></div>
+      </div>
+    </section>
+
+    <section id="pilot">
+      <h2>Pilot starten</h2>
+      <div class="glass">
+        <p><strong>In 10 Minuten startklar:</strong></p>
+        <ol>
+          <li>Wartelisten-Link auf Ihrer Website platzieren.</li>
+          <li>Widget-Link intern für das Team hinterlegen.</li>
+          <li>Optional: Poster im Wartebereich (QR zur Warteliste).</li>
+        </ol>
+        <p>Kontakt: <a href="mailto:admin@lennycolli.com">admin@lennycolli.com</a> · Telefon: 01234 / 56789</p>
+      </div>
+      <p style="margin-top:16px"><a class="btn" href="{{ waitlist_url }}" target="_blank" rel="noopener">Warteliste öffnen</a></p>
+    </section>
+
+    <footer>© {{ year }} Wartelisten-Pilot · Bitte IHRE-ID/IHR-TOKEN in den Demo-Links ersetzen.</footer>
+  </div>
+</body>
+</html>

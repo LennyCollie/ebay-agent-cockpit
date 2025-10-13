@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="h3 mb-4">Admin · System-Statistiken</h1>
+
+  <div class="row g-3">
+    <div class="col-md-3">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">Benutzer</div>
+          <div class="display-6 fw-bold">{{ users_total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">Premium</div>
+          <div class="display-6 fw-bold">{{ premium_total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">Suchagenten gesamt</div>
+          <div class="display-6 fw-bold">{{ alerts_total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">Aktive Agenten</div>
+          <div class="display-6 fw-bold">{{ alerts_active }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mt-4 shadow-sm">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="h5 mb-0">System-Status</h2>
+        <form method="post" action="{{ url_for('admin.admin_stats_recalc') }}{% if request.args.token %}?token={{ request.args.token }}{% endif %}">
+          <button class="btn btn-sm btn-primary">Recalculate</button>
+        </form>
+      </div>
+      {% if sys %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <tbody>
+            <tr><th class="w-25">Total Users</th><td>{{ sys["total_users"] }}</td></tr>
+            <tr><th>Total Premium</th><td>{{ sys["total_premium_users"] }}</td></tr>
+            <tr><th>Total Alerts</th><td>{{ sys["total_alerts"] }}</td></tr>
+            <tr><th>Total Emails sent</th><td>{{ sys["total_emails_sent"] }}</td></tr>
+            <tr><th>Last Cron Run</th><td>{{ sys["last_cron_run"] or "—" }}</td></tr>
+            <tr><th>Last Error</th><td><code>{{ sys["last_error"] or "—" }}</code></td></tr>
+            <tr><th>Updated</th><td>{{ sys["updated_at"] }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <p class="text-muted mb-0">Keine system_stats gefunden (id=1).</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card mt-4 shadow-sm">
+    <div class="card-body">
+      <h2 class="h5">Pläne (aktiv)</h2>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead><tr>
+            <th>ID</th><th>Name</th><th class="text-end">Preis</th>
+            <th class="text-end">Max Agents</th>
+            <th class="text-end">Max E-Mail Alerts</th>
+          </tr></thead>
+          <tbody>
+            {% for p in plans %}
+            <tr>
+              <td><code>{{ p["id"] }}</code></td>
+              <td>{{ p["name"] }}</td>
+              <td class="text-end">{{ "%.2f"|format(p["price"]) }} €</td>
+              <td class="text-end">{{ p["max_agents"] }}</td>
+              <td class="text-end">{{ p["max_email_alerts"] }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mt-4 shadow-sm">
+    <div class="card-body">
+      <h2 class="h5">Plan-Nutzung</h2>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Plan</th><th>Name</th>
+              <th class="text-end">User</th>
+              <th class="text-end">Alerts</th>
+              <th class="text-end">Max Agents</th>
+              <th class="text-end">Preis</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in plan_usage %}
+            <tr>
+              <td><code>{{ r["plan"] }}</code></td>
+              <td>{{ r["plan_name"] }}</td>
+              <td class="text-end">{{ r["user_count"] }}</td>
+              <td class="text-end">{{ r["total_alerts"] }}</td>
+              <td class="text-end">{{ r["max_agents"] }}</td>
+              <td class="text-end">{{ "%.2f"|format(r["price"]) }} €</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

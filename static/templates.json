@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "id": "allround",
+      "label": "Allround-Suche",
+      "q1": "preiswert gebraucht in gutem Zustand"
+    },
+    {
+      "id": "schnapper",
+      "label": "Schn\u00e4ppchen",
+      "q1": "unter Marktpreis, leichte Gebrauchsspuren"
+    },
+    {
+      "id": "wie_neu",
+      "label": "Wie neu",
+      "q1": "neuwertig OVP Rechnung"
+    }
+  ]
+}
