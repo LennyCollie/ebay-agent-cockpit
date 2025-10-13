@@ -37,6 +37,43 @@
   </div>
 </section>
 
+<form action="/search/results" method="get">
+  <input type="text" name="q" placeholder="z. B. iPhone 13 128GB" required>
+
+  <label><input type="checkbox" name="auction" value="1"> Auktion</label>
+  <label><input type="checkbox" name="bin" value="1" checked> Sofortkauf</label>
+
+  <div>
+    <label>PLZ <input type="text" name="postal" pattern="\d{4,5}" placeholder="10115"></label>
+    <label>Umkreis (km) <input type="number" name="radius_km" min="0" max="500" step="10" value="0"></label>
+  </div>
+
+  <div>
+    <label>Lieferbar nach (Ship-to):
+      <select name="ship_to">
+        <option value="">egal</option>
+        <option value="DE" selected>Deutschland</option>
+        <option value="AT">Österreich</option>
+        <option value="CH">Schweiz</option>
+        <option value="US">USA</option>
+      </select>
+    </label>
+
+    <label>Artikelstandort:
+      <select name="located_in">
+        <option value="">egal (weltweit)</option>
+        <option value="DE">nur Deutschland</option>
+        <option value="EU">nur EU</option>
+        <option value="GB">UK</option>
+        <option value="US">USA</option>
+      </select>
+    </label>
+  </div>
+
+  <button type="submit">Suchen</button>
+</form>
+
+
 <!-- ============ BELIEBTE SUCHEN / KACHELN ============ -->
 <section class="container py-5" id="popular-searches">
   <div class="text-center mb-4">

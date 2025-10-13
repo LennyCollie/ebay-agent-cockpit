@@ -31,6 +31,7 @@ from flask import (
 
 from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from mailer import send_mail
+from routes.search import bp as search_bp
 from routes.telegram import bp as telegram_bp
 
 # -------------------------------------------------------------------
@@ -88,6 +89,7 @@ from routes.vision_test import bp as vision_test_bp
 app.register_blueprint(inbound_bp)
 app.register_blueprint(telegram_bp)
 app.register_blueprint(vision_test_bp)
+app.register_blueprint(search_bp)
 
 
 # Falls du eine Config-Klasse nutzt, bleibt das so:
