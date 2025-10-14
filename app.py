@@ -31,7 +31,7 @@ from flask import (
 
 from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from mailer import send_mail
-from routes.search import bp as search_bp
+from routes.search import bp_search as search_bp
 from routes.telegram import bp as telegram_bp
 
 # -------------------------------------------------------------------
