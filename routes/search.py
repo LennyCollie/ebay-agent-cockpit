@@ -21,7 +21,7 @@ from utils.ebay_normalize import normalize_browse, normalize_finding
 bp_search = Blueprint("search", __name__)
 
 
-@bp.get("/search/results")
+@bp_search("/search/results")
 def search_results():
     q = (request.args.get("q") or "").strip()
     auction = request.args.get("auction") == "1"
