@@ -28,6 +28,22 @@
   </div>
 </div>
 
+<div class="d-flex align-items-center gap-1 mb-1">
+  {% set src = (item.src or '')|lower %}
+  {% if src == 'ebay' %}<span class="badge rounded-pill text-bg-primary">eBay</span>{% endif %}
+
+  {% if item.verdict %}
+    {% if item.verdict == 'ok' %}
+      <span class="badge rounded-pill text-bg-success">KI-geprüft</span>
+    {% elif item.verdict == 'suspicious' %}
+      <span class="badge rounded-pill text-bg-warning text-dark">Verdacht</span>
+    {% elif item.verdict == 'damaged' %}
+      <span class="badge rounded-pill text-bg-danger">Beschädigt</span>
+    {% endif %}
+  {% endif %}
+</div>
+
+
 {# --- Alerts Toolbar (🔔 speichern / ✉️ Testmail) --- #}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
   <!-- 🔔 Alarm speichern -->
@@ -39,6 +55,13 @@
     <input type="hidden" name="price_max" value="{{ base_qs.get('price_max','') }}">
     <input type="hidden" name="sort"      value="{{ base_qs.get('sort','best') }}">
     <input type="hidden" name="per_page"  value="{{ base_qs.get('per_page', 20) }}">
+    <input type="hidden" name="auction"   value="{{ base_qs.get('auction','0') }}">
+    <input type="hidden" name="bin"       value="{{ base_qs.get('bin','1') }}">
+    <input type="hidden" name="postal"    value="{{ base_qs.get('postal','') }}">
+    <input type="hidden" name="radius_km" value="{{ base_qs.get('radius_km','') }}">
+    <input type="hidden" name="ship_to"   value="{{ base_qs.get('ship_to','') }}">
+    <input type="hidden" name="located_in" value="{{ base_qs.get('located_in','') }}">
+
     {% for c in (base_qs.get('condition') or []) %}
       <input type="hidden" name="condition" value="{{ c }}">
     {% endfor %}
@@ -56,6 +79,13 @@
     <input type="hidden" name="price_max" value="{{ base_qs.get('price_max','') }}">
     <input type="hidden" name="sort"      value="{{ base_qs.get('sort','best') }}">
     <input type="hidden" name="per_page"  value="{{ base_qs.get('per_page', 20) }}">
+    <input type="hidden" name="auction"   value="{{ base_qs.get('auction','0') }}">
+    <input type="hidden" name="bin"       value="{{ base_qs.get('bin','1') }}">
+    <input type="hidden" name="postal"    value="{{ base_qs.get('postal','') }}">
+    <input type="hidden" name="radius_km" value="{{ base_qs.get('radius_km','') }}">
+    <input type="hidden" name="ship_to"   value="{{ base_qs.get('ship_to','') }}">
+    <input type="hidden" name="located_in" value="{{ base_qs.get('located_in','') }}">
+
     {% for c in (base_qs.get('condition') or []) %}
       <input type="hidden" name="condition" value="{{ c }}">
     {% endfor %}
