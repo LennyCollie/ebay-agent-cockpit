@@ -1,0 +1,26 @@
+{
+  "name": "ebay-agent-cockpit",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "features": {
+    "ghcr.io/devcontainers/features/pipx:1": {}
+  },
+  "remoteUser": "vscode",
+  "forwardPorts": [5000],
+  "postCreateCommand": "python -m pip install --upgrade pip && pip install -r requirements.txt",
+  "containerEnv": {
+    "FLASK_ENV": "development",
+    "PYTHONUNBUFFERED": "1"
+  },
+  "mounts": [
+    "source=${localWorkspaceFolder}/.env,target=${containerWorkspaceFolder}/.env,type=bind,consistency=cached"
+  ],
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.analysis.autoImportCompletions": true
+      },
+      "extensions": ["ms-python.python", "ms-python.vscode-pylance"]
+    }
+  }
+}

@@ -1,12 +1,4 @@
-{# templates/search_results.html #} {% extends "base.html" %} {% block content %} {# ---- Sichere
-Defaults, damit nichts "undefined" ist ---- #} {% set base_qs = base_qs|default({}) %} {% set
-filters = filters|default({}) %} {% set pagination = pagination|default({'page': 1, 'has_prev':
-False, 'has_next': False, 'total_estimated': None, 'total_pages': None}) %} {% set terms =
-terms|default([]) %} {% set results = results|default([]) %} {# Share-URL vorbereiten (mit
-qs(base_qs) falls vorhanden) #} {% set share_url = request.base_url %} {% if base_qs and
-base_qs|length %} {% if qs is defined %} {% set share_url = request.base_url ~ '?' ~ qs(base_qs) %}
-{% else %} {# Fallback: notfalls aktuelle URL verwenden #} {% set share_url = request.url %} {%
-endif %} {% endif %}
+{% extends "base.html" %} {% block content %}
 
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
   <h1 class="h4 mb-0">
@@ -15,13 +7,14 @@ endif %} {% endif %}
     {% endif %}
   </h1>
 
+  {# Teilbarer Link zur aktuellen Suche #}
   <div class="d-flex align-items-center gap-2">
     <input
       id="share-url"
       class="form-control form-control-sm"
       style="min-width: 260px"
       readonly
-      value="{{ share_url }}"
+      value="{{ (request.base_url ~ '?' ~ qs(base_qs)) if base_qs else request.base_url }}"
     />
     <button
       class="btn btn-sm btn-outline-secondary"
@@ -39,9 +32,21 @@ endif %} {% endif %}
   </div>
 </div>
 
-{# ---------- Alerts Toolbar (🔔 speichern / ✉️ Testmail) ---------- #}
+<div class="d-flex align-items-center gap-1 mb-1">
+  {% if items %} {% for item in items %} {% set src = (item.src or '')|lower %} {% if src == 'ebay'
+  %}<span class="badge rounded-pill text-bg-primary">eBay</span>{% endif %} {% if item.verdict %} {%
+  if item.verdict == 'ok' %}
+  <span class="badge rounded-pill text-bg-success">KI-geprüft</span>
+  {% elif item.verdict == 'suspicious' %}
+  <span class="badge rounded-pill text-bg-warning text-dark">Verdacht</span>
+  {% elif item.verdict == 'damaged' %}
+  <span class="badge rounded-pill text-bg-danger">Beschädigt</span>
+  {% endif %} {% endif %}
+</div>
+
+{# --- Alerts Toolbar (🔔 speichern / ✉️ Testmail) --- #}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
-  {# 🔔 Alarm speichern #}
+  <!-- 🔔 Alarm speichern -->
   <form
     action="{{ url_for('alerts_subscribe') }}"
     method="post"
@@ -60,13 +65,14 @@ endif %} {% endif %}
     <input type="hidden" name="radius_km" value="{{ base_qs.get('radius_km','') }}" />
     <input type="hidden" name="ship_to" value="{{ base_qs.get('ship_to','') }}" />
     <input type="hidden" name="located_in" value="{{ base_qs.get('located_in','') }}" />
+
     {% for c in (base_qs.get('condition') or []) %}
     <input type="hidden" name="condition" value="{{ c }}" />
     {% endfor %}
     <button type="submit" class="btn btn-outline-primary">🔔 Alarm speichern</button>
   </form>
 
-  {# ✉️ Jetzt E-Mail testen #}
+  <!-- ✉️ Jetzt E-Mail testen -->
   <form
     action="{{ url_for('alerts_send_now') }}"
     method="post"
@@ -85,10 +91,10 @@ endif %} {% endif %}
     <input type="hidden" name="radius_km" value="{{ base_qs.get('radius_km','') }}" />
     <input type="hidden" name="ship_to" value="{{ base_qs.get('ship_to','') }}" />
     <input type="hidden" name="located_in" value="{{ base_qs.get('located_in','') }}" />
+
     {% for c in (base_qs.get('condition') or []) %}
     <input type="hidden" name="condition" value="{{ c }}" />
-    {% endfor %} {% set _email = (session.get('user_email') if session is defined else None) or
-    'guest' %} {% if _email == 'guest' %}
+    {% endfor %} {% set _email = session.get('user_email') or 'guest' %} {% if _email == 'guest' %}
     <input
       type="email"
       name="email"
@@ -102,17 +108,16 @@ endif %} {% endif %}
   </form>
 </div>
 
-{# ---------- Meta / aktive Filter ---------- #}
+{# --- Filter-Zeile / Meta --- #}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
   <div class="text-muted small">
     {% if pagination.total_estimated %} ~{{ pagination.total_estimated }} Treffer geschätzt {% if
     pagination.total_pages %} · Seite {{ pagination.page }} von {{ pagination.total_pages }}{% endif
     %} {% else %} Seite {{ pagination.page }} {% endif %}
   </div>
-
   <div class="small">
-    {% set has_filters = (filters.price_min or filters.price_max or (filters.conditions and
-    filters.conditions|length) or (filters.sort and filters.sort != 'best')) %} {% if has_filters %}
+    {% if filters.price_min or filters.price_max or (filters.conditions and
+    filters.conditions|length) or filters.sort != 'best' %}
     <span class="badge text-bg-light">Filter aktiv</span>
     {% if filters.price_min %}<span class="badge text-bg-secondary">ab {{ filters.price_min }}</span
     >{% endif %} {% if filters.price_max %}<span class="badge text-bg-secondary"
@@ -125,7 +130,7 @@ endif %} {% endif %}
   </div>
 </div>
 
-{# ---------- Ergebnisse ---------- #} {% if results and results|length %}
+{# --- Ergebnisse --- #} {% if results and results|length %}
 <div class="row g-3">
   {% for item in results %}
   <div class="col-12 col-md-6 col-lg-4">
@@ -152,13 +157,7 @@ endif %} {% endif %}
               <span class="badge rounded-pill text-bg-secondary">Demo</span>
               {% endif %} {% if item.term %}
               <span class="badge text-bg-light">{{ item.term }}</span>
-              {% endif %} {% if item.verdict %} {% if item.verdict == 'ok' %}
-              <span class="badge rounded-pill text-bg-success">KI-geprüft</span>
-              {% elif item.verdict == 'suspicious' %}
-              <span class="badge rounded-pill text-bg-warning text-dark">Verdacht</span>
-              {% elif item.verdict == 'damaged' %}
-              <span class="badge rounded-pill text-bg-danger">Beschädigt</span>
-              {% endif %} {% endif %}
+              {% endif %}
             </div>
 
             <h2 class="h6 card-title mb-1 text-truncate" title="{{ item.title }}">
@@ -187,20 +186,29 @@ endif %} {% endif %}
 <div class="alert alert-info mt-3">
   Keine Treffer gefunden. Bitte Begriffe oder Filter anpassen.
 </div>
-{% endif %} {# ---------- Pagination ---------- #} {% set prev_url = '#' %} {% set next_url = '#' %}
-{% if pagination.has_prev %} {% if qs is defined %} {% set prev_url = url_for('search') ~ '?' ~
-qs(base_qs, page=pagination.page-1) %} {% else %} {% set prev_url = url_for('search') %} {% endif %}
-{% endif %} {% if pagination.has_next %} {% if qs is defined %} {% set next_url = url_for('search')
-~ '?' ~ qs(base_qs, page=pagination.page+1) %} {% else %} {% set next_url = url_for('search') %} {%
-endif %} {% endif %} {% if pagination %}
+{% endif %} {# --- Pagination --- #} {% if pagination %}
 <nav class="mt-4" aria-label="Seiten">
   <ul class="pagination justify-content-center">
     <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-      <a class="page-link" href="{{ prev_url }}">‹ Zurück</a>
+      <a
+        class="page-link"
+        href="{% if pagination.has_prev %}{{ url_for('search') }}?{{ qs(base_qs, page=pagination.page-1) }}{% else %}#{% endif %}"
+      >
+        ‹ Zurück
+      </a>
     </li>
-    <li class="page-item active"><span class="page-link">{{ pagination.page }}</span></li>
+
+    <li class="page-item active">
+      <span class="page-link">{{ pagination.page }}</span>
+    </li>
+
     <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-      <a class="page-link" href="{{ next_url }}">Weiter ›</a>
+      <a
+        class="page-link"
+        href="{% if pagination.has_next %}{{ url_for('search') }}?{{ qs(base_qs, page=pagination.page+1) }}{% else %}#{% endif %}"
+      >
+        Weiter ›
+      </a>
     </li>
   </ul>
 </nav>

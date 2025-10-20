@@ -82,7 +82,7 @@ def search_results():
         results = [r for r in results if r.get("verdict") != "damaged"]
 
     return render_template(
-        "search_results.html", results=results, q=q, params=request.args
+        "search_results.html", results=results, q=q, params=request.args, items=items or []
     )
 
 

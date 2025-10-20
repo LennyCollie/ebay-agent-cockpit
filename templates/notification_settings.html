@@ -1,0 +1,277 @@
+{% extends "base.html" %} {% block content %}
+
+<div class="container py-5">
+  <h1 class="h3 mb-4">🔔 Benachrichtigungs-Einstellungen</h1>
+
+  <form method="post">
+    <div class="row g-4">
+      <!-- Kanäle -->
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="mb-0">Kanäle</h5>
+          </div>
+          <div class="card-body">
+            <div class="form-check form-switch mb-3">
+              <input
+                type="checkbox"
+                name="email_enabled"
+                class="form-check-input"
+                id="emailEnabled"
+                {%
+                if
+                settings.email_enabled
+                %}checked{%
+                endif
+                %}
+              />
+              <label class="form-check-label" for="emailEnabled">
+                <strong>📧 E-Mail-Benachrichtigungen</strong>
+                <br /><small class="text-muted">Erhalte Alerts per E-Mail</small>
+              </label>
+            </div>
+
+            <div class="form-check form-switch mb-3">
+              <input
+                type="checkbox"
+                name="telegram_enabled"
+                class="form-check-input"
+                id="telegramEnabled"
+                {%
+                if
+                settings.telegram_enabled
+                %}checked{%
+                endif
+                %}
+              />
+              <label class="form-check-label" for="telegramEnabled">
+                <strong>✈️ Telegram-Benachrichtigungen</strong>
+                <br /><small class="text-muted">Erhalte Push-Notifications via Telegram</small>
+              </label>
+            </div>
+
+            <div class="form-check form-switch">
+              <input
+                type="checkbox"
+                name="sms_enabled"
+                class="form-check-input"
+                id="smsEnabled"
+                {%
+                if
+                settings.sms_enabled
+                %}checked{%
+                endif
+                %}
+                disabled
+              />
+              <label class="form-check-label" for="smsEnabled">
+                <strong>📱 SMS-Benachrichtigungen</strong>
+                <span class="badge bg-warning text-dark ms-2">Premium</span>
+                <br /><small class="text-muted">Kommt bald...</small>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ruhezeiten -->
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="mb-0">Ruhezeiten</h5>
+          </div>
+          <div class="card-body">
+            <div class="form-check form-switch mb-3">
+              <input
+                type="checkbox"
+                name="quiet_hours_enabled"
+                class="form-check-input"
+                id="quietEnabled"
+                {%
+                if
+                settings.quiet_hours_enabled
+                %}checked{%
+                endif
+                %}
+              />
+              <label class="form-check-label" for="quietEnabled">
+                <strong>Ruhezeiten aktivieren</strong>
+              </label>
+            </div>
+
+            <div class="row g-3">
+              <div class="col-6">
+                <label class="form-label small">Von</label>
+                <input
+                  type="time"
+                  name="quiet_hours_start"
+                  class="form-control"
+                  value="{{ settings.quiet_hours_start or '22:00' }}"
+                />
+              </div>
+              <div class="col-6">
+                <label class="form-label small">Bis</label>
+                <input
+                  type="time"
+                  name="quiet_hours_end"
+                  class="form-control"
+                  value="{{ settings.quiet_hours_end or '08:00' }}"
+                />
+              </div>
+            </div>
+
+            <small class="text-muted d-block mt-2">
+              Während der Ruhezeiten werden keine Benachrichtigungen gesendet.
+            </small>
+          </div>
+        </div>
+      </div>
+
+      <!-- Frequenz-Limits -->
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="mb-0">Frequenz</h5>
+          </div>
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label">Max. Benachrichtigungen pro Tag</label>
+              <input
+                type="number"
+                name="max_notifications_per_day"
+                class="form-control"
+                value="{{ settings.max_notifications_per_day or 50 }}"
+                min="1"
+                max="200"
+              />
+              <small class="text-muted">Standard: 50</small>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Max. Benachrichtigungen pro Stunde</label>
+              <input
+                type="number"
+                name="max_notifications_per_hour"
+                class="form-control"
+                value="{{ settings.max_notifications_per_hour or 10 }}"
+                min="1"
+                max="50"
+              />
+              <small class="text-muted">Standard: 10</small>
+            </div>
+
+            <div class="form-check form-switch">
+              <input
+                type="checkbox"
+                name="batch_notifications"
+                class="form-check-input"
+                id="batchEnabled"
+                {%
+                if
+                settings.batch_notifications
+                %}checked{%
+                endif
+                %}
+              />
+              <label class="form-check-label" for="batchEnabled">
+                <strong>Sammeln & zusammenfassen</strong>
+                <br /><small class="text-muted">Erhalte 1x täglich eine Zusammenfassung</small>
+              </label>
+            </div>
+
+            <div class="mt-2">
+              <label class="form-label small">Batch-Zeit</label>
+              <input
+                type="time"
+                name="batch_time"
+                class="form-control"
+                value="{{ settings.batch_time or '09:00' }}"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prioritäten -->
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="mb-0">Prioritäten</h5>
+          </div>
+          <div class="card-body">
+            <div class="form-check form-switch mb-3">
+              <input
+                type="checkbox"
+                name="only_high_priority"
+                class="form-check-input"
+                id="highPrioOnly"
+                {%
+                if
+                settings.only_high_priority
+                %}checked{%
+                endif
+                %}
+              />
+              <label class="form-check-label" for="highPrioOnly">
+                <strong>Nur wichtige Alerts</strong>
+                <br /><small class="text-muted">Filtert unwichtige Benachrichtigungen</small>
+              </label>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Min. Preissenkung für Alert</label>
+              <div class="input-group">
+                <input
+                  type="number"
+                  name="min_price_drop_percent"
+                  class="form-control"
+                  value="{{ settings.min_price_drop_percent or 5 }}"
+                  min="1"
+                  max="50"
+                />
+                <span class="input-group-text">%</span>
+              </div>
+              <small class="text-muted">Nur bei mind. X% Preissenkung benachrichtigen</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Statistiken -->
+    {% if stats %}
+    <div class="card mt-4">
+      <div class="card-header">
+        <h5 class="mb-0">📊 Statistiken (letzte {{ stats.days }} Tage)</h5>
+      </div>
+      <div class="card-body">
+        <div class="row text-center">
+          <div class="col-3">
+            <h3 class="mb-0">{{ stats.total }}</h3>
+            <small class="text-muted">Gesamt</small>
+          </div>
+          <div class="col-3">
+            <h3 class="mb-0 text-success">{{ stats.sent }}</h3>
+            <small class="text-muted">Gesendet</small>
+          </div>
+          <div class="col-3">
+            <h3 class="mb-0 text-warning">{{ stats.skipped }}</h3>
+            <small class="text-muted">Übersprungen</small>
+          </div>
+          <div class="col-3">
+            <h3 class="mb-0 text-danger">{{ stats.failed }}</h3>
+            <small class="text-muted">Fehlgeschlagen</small>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Submit -->
+    <div class="text-center mt-4">
+      <button type="submit" class="btn btn-primary btn-lg px-5">Einstellungen speichern</button>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
