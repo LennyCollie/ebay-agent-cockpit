@@ -1,0 +1,155 @@
+{% extends "base.html" %} {% block content %}
+
+<style>
+  .watchlist-card {
+    border-radius: 12px;
+    transition: all 0.3s ease;
+  }
+
+  .watchlist-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  }
+
+  .price-badge {
+    font-size: 1.25rem;
+    font-weight: 700;
+  }
+
+  .price-drop {
+    color: #28a745;
+  }
+
+  .price-rise {
+    color: #dc3545;
+  }
+</style>
+
+<div class="container py-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">📌 Meine Watchlist</h1>
+    <a href="{{ url_for('search') }}" class="btn btn-primary"> Neuen Alert erstellen </a>
+  </div>
+
+  {% if not items %}
+  <div class="alert alert-info" role="alert">
+    <h4 class="alert-heading">🔍 Watchlist leer</h4>
+    <p>Du beobachtest noch keine Artikel. Füge Artikel hinzu um:</p>
+    <ul>
+      <li>Preisänderungen zu verfolgen</li>
+      <li>Benachrichtigungen bei Preissenkungen zu erhalten</li>
+      <li>Auktionsenden nicht zu verpassen</li>
+    </ul>
+    <hr />
+    <p class="mb-0">
+      <a href="{{ url_for('search') }}" class="btn btn-sm btn-primary">Jetzt Suche starten</a>
+    </p>
+  </div>
+  {% else %}
+  <div class="row g-4">
+    {% for item in items %}
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card watchlist-card h-100 shadow-sm">
+        {% if item.image_url %}
+        <img
+          src="{{ item.image_url }}"
+          class="card-img-top"
+          alt="{{ item.item_title }}"
+          style="height: 200px; object-fit: cover"
+        />
+        {% endif %}
+
+        <div class="card-body">
+          <h5 class="card-title">
+            <a href="{{ item.item_url }}" target="_blank" class="text-decoration-none text-dark">
+              {{ item.item_title[:60] }}{% if item.item_title|length > 60 %}...{% endif %}
+            </a>
+          </h5>
+
+          <div class="mb-3">
+            <span class="price-badge">{{ item.current_price }} {{ item.currency }}</span>
+
+            {% if item.initial_price != item.current_price %} {% if item.current_price|float <
+            item.initial_price|float %}
+            <span class="badge bg-success price-drop ms-2">
+              ↓ {{ ((item.initial_price|float - item.current_price|float) / item.initial_price|float
+              * 100)|round(1) }}%
+            </span>
+            {% else %}
+            <span class="badge bg-danger price-rise ms-2">
+              ↑ {{ ((item.current_price|float - item.initial_price|float) / item.initial_price|float
+              * 100)|round(1) }}%
+            </span>
+            {% endif %} {% endif %}
+          </div>
+
+          <div class="small text-muted mb-3">
+            <div>Ursprungspreis: {{ item.initial_price }} {{ item.currency }}</div>
+            <div>Hinzugefügt: {{ item.created_at.strftime('%d.%m.%Y') }}</div>
+            <div>Zuletzt geprüft: {{ item.last_checked.strftime('%d.%m.%Y %H:%M') }}</div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <a
+              href="{{ item.item_url }}"
+              target="_blank"
+              class="btn btn-sm btn-primary flex-grow-1"
+            >
+              Zu eBay
+            </a>
+            <a
+              href="{{ url_for('watchlist.settings', item_id=item.id) }}"
+              class="btn btn-sm btn-outline-secondary"
+            >
+              ⚙️
+            </a>
+            <button class="btn btn-sm btn-outline-danger" onclick="removeItem({{ item.id }})">
+              🗑️
+            </button>
+          </div>
+        </div>
+
+        {% if item.notify_price_drop or item.notify_auction_ending %}
+        <div class="card-footer bg-light small">
+          {% if item.notify_price_drop %}
+          <span class="badge bg-info me-1">💰 Preis-Alert</span>
+          {% endif %} {% if item.notify_auction_ending %}
+          <span class="badge bg-warning">⏰ Auktions-Alert</span>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-4 text-center text-muted">
+    <small>{{ items|length }} Artikel auf deiner Watchlist</small>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  function removeItem(itemId) {
+    if (!confirm("Artikel von Watchlist entfernen?")) return;
+
+    fetch(`/watchlist/remove/${itemId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success) {
+          location.reload();
+        } else {
+          alert("Fehler: " + (data.error || "Unbekannter Fehler"));
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        alert("Verbindungsfehler");
+      });
+  }
+</script>
+
+{% endblock %}
