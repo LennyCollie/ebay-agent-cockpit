@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,  # <-- DIESER FEHLTE!
     ForeignKey,
     Integer,
     String,
@@ -161,6 +162,93 @@ class SearchResult(Base):
         return f"<SearchResult {self.item_id}: {self.title[:30]}>"
 
 
+class WatchedItem(Base):
+    __tablename__ = "watched_items"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    # eBay Item Info
+    ebay_item_id = Column(String(255), nullable=False, index=True)
+    item_title = Column(Text, nullable=False)
+    item_url = Column(Text, nullable=False)
+    image_url = Column(Text, nullable=True)
+
+    # Preis-Tracking
+    initial_price = Column(String(50))
+    current_price = Column(String(50))
+    currency = Column(String(10), default="EUR")
+    lowest_price = Column(String(50), nullable=True)
+
+    # Notification Settings
+    notify_price_drop = Column(Boolean, default=True)
+    notify_auction_ending = Column(Boolean, default=True)
+    price_drop_threshold = Column(Integer, default=5)  # % Preissenkung
+
+    # Status
+    is_active = Column(Boolean, default=True)
+    item_status = Column(String(20), default="active")  # active, ended, unavailable
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_checked = Column(DateTime, default=datetime.utcnow)
+    last_notified = Column(DateTime, nullable=True)
+
+    # Relationship
+    user = relationship("User", backref="watched_items")
+
+    def __repr__(self):
+        return f"<WatchedItem {self.ebay_item_id}: {self.item_title[:30]}>"
+
+
+class PriceHistory(Base):
+    __tablename__ = "price_history"
+
+    id = Column(Integer, primary_key=True)
+
+    # Suchbegriff
+    search_term = Column(String(255), nullable=False, index=True)
+    category = Column(String(100), nullable=True)
+
+    # Preis-Statistiken
+    avg_price = Column(Float, nullable=False)
+    min_price = Column(Float, nullable=False)
+    max_price = Column(Float, nullable=False)
+    median_price = Column(Float, nullable=True)
+
+    # Metadata
+    item_count = Column(Integer, default=0)
+    condition = Column(String(50), nullable=True)  # NEW, USED, etc.
+
+    # Zeitstempel
+    recorded_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    def __repr__(self):
+        return f"<PriceHistory '{self.search_term}' @ {self.recorded_at.strftime('%Y-%m-%d')}>"
+
+
+class ItemPriceTracking(Base):
+    __tablename__ = "item_price_tracking"
+
+    id = Column(Integer, primary_key=True)
+    watched_item_id = Column(Integer, ForeignKey("watched_items.id"), nullable=False)
+
+    price = Column(Float, nullable=False)
+    currency = Column(String(10), default="EUR")
+
+    # Status
+    item_available = Column(Boolean, default=True)
+    bid_count = Column(Integer, default=0)  # Bei Auktionen
+
+    recorded_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationship
+    watched_item = relationship("WatchedItem", backref="price_snapshots")
+
+    def __repr__(self):
+        return f"<ItemPriceTracking {self.watched_item_id}: {self.price} @ {self.recorded_at}>"
+
+
 # Erstelle alle Tabellen
 def init_db():
     """Initialisiert die Datenbank"""
@@ -176,6 +264,72 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+    # In models.py - am Ende einfügen
+
+class NotificationSettings(Base):
+    __tablename__ = "notification_settings"
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+
+    # Zeitfenster (Ruhezeiten)
+    quiet_hours_enabled = Column(Boolean, default=False)
+    quiet_hours_start = Column(String(5), default="22:00")  # HH:MM
+    quiet_hours_end = Column(String(5), default="08:00")
+
+    # Frequenz-Limits
+    max_notifications_per_day = Column(Integer, default=50)
+    max_notifications_per_hour = Column(Integer, default=10)
+    batch_notifications = Column(Boolean, default=False)  # Sammeln & 1x/Tag senden
+    batch_time = Column(String(5), default="09:00")  # Wann Batch senden
+
+    # Kanäle
+    email_enabled = Column(Boolean, default=True)
+    telegram_enabled = Column(Boolean, default=True)
+    sms_enabled = Column(Boolean, default=False)  # Premium-Feature
+
+    # Prioritäten
+    only_high_priority = Column(Boolean, default=False)  # Nur wichtige Alerts
+    min_price_drop_percent = Column(Integer, default=5)  # Min. X% Preissenkung
+
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationship
+    user = relationship("User", backref="notification_settings")
+
+
+class NotificationLog(Base):
+    __tablename__ = "notification_log"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    # Notification Details
+    notification_type = Column(String(50), nullable=False)  # price_drop, new_item, auction_ending, etc.
+    channel = Column(String(20), nullable=False)  # email, telegram, sms
+
+    subject = Column(String(255))
+    content = Column(Text)
+
+    # Item Reference (optional)
+    watched_item_id = Column(Integer, ForeignKey("watched_items.id"), nullable=True)
+    agent_id = Column(Integer, ForeignKey("search_agents.id"), nullable=True)
+
+    # Status
+    status = Column(String(20), default="pending")  # pending, sent, failed, skipped
+    sent_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    user = relationship("User")
+    watched_item = relationship("WatchedItem")
+    agent = relationship("SearchAgent")
 
 
 if __name__ == "__main__":
