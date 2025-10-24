@@ -48,10 +48,8 @@ content %}
       <div class="card-body">
         <h5 class="card-title">🔔 Benachrichtigungen</h5>
         <p class="display-6">{{ notifications_today }}</p>
-        <p class="text-muted">Heute gesendet</p>
-        <a href="{{ url_for('notifications.settings') }}" class="btn btn-sm btn-primary">
-          Einstellungen →
-        </a>
+        <p class="text-muted">Aktive Alerts</p>
+        <a href="{{ url_for('search') }}" class="btn btn-sm btn-primary"> Neue Suche → </a>
       </div>
     </div>
   </div>
@@ -63,12 +61,10 @@ content %}
         <h5 class="card-title">📊 Statistiken</h5>
         <p class="display-6">{{ avg_price_saved }}€</p>
         <p class="text-muted">Ø gespart</p>
-        <a href="{{ url_for('stats.price_trend') }}" class="btn btn-sm btn-primary">
-          Trends ansehen →
-        </a>
+        <a href="{{ url_for('search') }}" class="btn btn-sm btn-primary"> Suchen → </a>
       </div>
     </div>
   </div>
-</div>
 
-{% endblock %}
+  {% endblock %}
+</div>

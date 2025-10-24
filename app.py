@@ -30,10 +30,10 @@ from flask import (
 )
 
 from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
-from mailer import send_mail
 from routes.search import bp_search as search_bp
 from routes.telegram import bp as telegram_bp
 from routes.watchlist import bp as watchlist_bp
+from agent import get_mail_settings, send_mail
 
 
 
@@ -551,16 +551,15 @@ def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int
 # E-Mail: Versand + De-Duping
 # -------------------------------------------------------------------
 def _send_email(to_email: str, subject: str, html_body: str) -> bool:
-    """Use Postmark API via mailer.py"""
+    """Send email using agent.py mail settings (Postmark or SMTP)"""
     try:
-        success = send_mail(to_email, subject, "Email content", html_body)
-        if success:
-            print(f"[email] sent via Postmark API to {to_email}")
-        else:
-            print(f"[email] Postmark API failed for {to_email}")
+        mail_settings = get_mail_settings()
+        success = send_mail(mail_settings, [to_email], subject, html_body)
         return success
     except Exception as e:
-        print(f"[email] send failed: {e}")
+        print(f"[_send_email] ERROR: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -569,6 +568,7 @@ def _make_search_hash(terms: List[str], filters: dict) -> str:
         "terms": [t.strip() for t in terms if t.strip()],
         "filters": {
             "price_min": filters.get("price_min") or "",
+
             "price_max": filters.get("price_max") or "",
             "sort": filters.get("sort") or "best",
             "conditions": sorted(filters.get("conditions") or []),
@@ -922,7 +922,41 @@ def dashboard():
     if not session.get("user_id"):
         flash("Bitte einloggen.", "info")
         return redirect(url_for("login"))
-    return safe_render("dashboard.html", title="Dashboard")
+
+    # Dummy-Daten bis du die echten Features hast
+    context = {
+        "title": "Dashboard",
+        "watchlist_count": 0,
+        "notifications_today": 0,
+        "avg_price_saved": 0
+    }
+
+    # Optional: Echte Daten aus DB holen
+    try:
+        conn = get_db()
+        user_email = session.get("user_email")
+
+        # Watchlist zählen (falls Tabelle existiert)
+        try:
+            context["watchlist_count"] = conn.execute(
+                "SELECT COUNT(*) FROM watchlist WHERE user_email=?", (user_email,)
+            ).fetchone()[0]
+        except:
+            pass
+
+        # Alerts zählen
+        try:
+            context["notifications_today"] = conn.execute(
+                "SELECT COUNT(*) FROM search_alerts WHERE user_email=? AND is_active=1", (user_email,)
+            ).fetchone()[0]
+        except:
+            pass
+
+        conn.close()
+    except Exception as e:
+        print(f"[dashboard] Error loading stats: {e}")
+
+    return safe_render("dashboard.html", **context)
 
 
 @app.route("/start-free")
@@ -1053,6 +1087,30 @@ def pilot_info():
 @app.route("/favicon.ico")
 def legacy_favicon():
     return redirect(url_for("static", filename="icons/favicon.ico"), code=302)
+
+@app.route("/email/test", methods=["GET", "POST"])
+def email_test():
+    from agent import get_mail_settings, send_mail
+    from flask import flash, redirect, request
+    import os
+
+    settings = get_mail_settings()
+    recipient = request.args.get("to") or os.getenv("TEST_EMAIL", "admin@lennycolli.com")
+    subject = "✉️ Test-E-Mail vom eBay-Agent"
+    body_html = "<p>✅ Test-Mail erfolgreich gesendet!</p><p>Grüße vom eBay-Agent.</p>"
+
+    try:
+        ok = send_mail(settings, [recipient], subject, body_html)
+        if ok:
+            flash(f"Test-Mail an {recipient} gesendet ✅", "success")
+        else:
+            flash("Fehler beim Versand ❌", "error")
+    except Exception as e:
+        flash(f"Fehler: {e}", "error")
+
+    return redirect("/search")
+
+
 
 
 # -------------------------------------------------------------------

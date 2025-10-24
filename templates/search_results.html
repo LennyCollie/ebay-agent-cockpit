@@ -98,110 +98,142 @@ endif %} {% endif %}
     />
     {% endif %}
 
-    <button type="submit" class="btn btn-success">✉️ Jetzt E-Mail testen</button>
-  </form>
-</div>
+    <!-- Link: sendet GET /email/test?to=<email> -->
+    <a
+      class="btn btn-success"
+      href="{{ url_for('email_test') }}?to={{ (session.get('user_email') if session else '') | urlencode }}"
+      title="Test-Mail an Logged-in user senden"
+    >
+      ✉️ Jetzt E-Mail testen (Link)
+    </a>
 
-{# ---------- Meta / aktive Filter ---------- #}
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-  <div class="text-muted small">
-    {% if pagination.total_estimated %} ~{{ pagination.total_estimated }} Treffer geschätzt {% if
-    pagination.total_pages %} · Seite {{ pagination.page }} von {{ pagination.total_pages }}{% endif
-    %} {% else %} Seite {{ pagination.page }} {% endif %}
-  </div>
+    <form
+      action="{{ url_for('email_test') }}"
+      method="post"
+      class="d-flex flex-wrap align-items-center gap-2"
+    >
+      <!-- versteckte Felder mit deiner bestehenden base_qs -->
+      <input type="hidden" name="q1" value="{{ base_qs.get('q1','') }}" />
+      <!-- ... (alle anderen hidden inputs wie zuvor) ... -->
 
-  <div class="small">
-    {% set has_filters = (filters.price_min or filters.price_max or (filters.conditions and
-    filters.conditions|length) or (filters.sort and filters.sort != 'best')) %} {% if has_filters %}
-    <span class="badge text-bg-light">Filter aktiv</span>
-    {% if filters.price_min %}<span class="badge text-bg-secondary">ab {{ filters.price_min }}</span
-    >{% endif %} {% if filters.price_max %}<span class="badge text-bg-secondary"
-      >bis {{ filters.price_max }}</span
-    >{% endif %} {% if filters.sort and filters.sort != 'best' %}
-    <span class="badge text-bg-secondary">Sort: {{ filters.sort }}</span>
-    {% endif %} {% for c in (filters.conditions or []) %}
-    <span class="badge text-bg-secondary">{{ c }}</span>
-    {% endfor %} {% endif %}
-  </div>
-</div>
+      {% set _email = (session.get('user_email') if session is defined else None) or 'guest' %} {%
+      if _email == 'guest' %}
+      <input
+        type="email"
+        name="email"
+        class="form-control form-control-sm"
+        placeholder="E-Mail für Benachrichtigung"
+        required
+      />
+      {% endif %}
 
-{# ---------- Ergebnisse ---------- #} {% if results and results|length %}
-<div class="row g-3">
-  {% for item in results %}
-  <div class="col-12 col-md-6 col-lg-4">
-    <div class="card h-100 shadow-sm">
-      <div class="row g-0 h-100">
-        <div class="col-4 d-flex align-items-center justify-content-center p-2">
-          {% set img = item.img or 'https://via.placeholder.com/160x120?text=%20' %}
-          <img
-            src="{{ img }}"
-            class="img-fluid rounded"
-            alt="Bild"
-            loading="lazy"
-            style="max-height: 120px"
-          />
-        </div>
-        <div class="col-8">
-          <div class="card-body d-flex flex-column">
-            <div class="d-flex align-items-center gap-1 mb-1">
-              {% set src = (item.src or '')|lower %} {% if src == 'amazon' %}
-              <span class="badge rounded-pill text-bg-warning text-dark">Amazon</span>
-              {% elif src == 'ebay' %}
-              <span class="badge rounded-pill text-bg-primary">eBay</span>
-              {% elif src == 'demo' %}
-              <span class="badge rounded-pill text-bg-secondary">Demo</span>
-              {% endif %} {% if item.term %}
-              <span class="badge text-bg-light">{{ item.term }}</span>
-              {% endif %} {% if item.verdict %} {% if item.verdict == 'ok' %}
-              <span class="badge rounded-pill text-bg-success">KI-geprüft</span>
-              {% elif item.verdict == 'suspicious' %}
-              <span class="badge rounded-pill text-bg-warning text-dark">Verdacht</span>
-              {% elif item.verdict == 'damaged' %}
-              <span class="badge rounded-pill text-bg-danger">Beschädigt</span>
-              {% endif %} {% endif %}
+      <button type="submit" class="btn btn-success">✉️ Jetzt E-Mail testen (Form)</button>
+    </form>
+
+    {# ---------- Meta / aktive Filter ---------- #}
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div class="text-muted small">
+        {% if pagination.total_estimated %} ~{{ pagination.total_estimated }} Treffer geschätzt {%
+        if pagination.total_pages %} · Seite {{ pagination.page }} von {{ pagination.total_pages
+        }}{% endif %} {% else %} Seite {{ pagination.page }} {% endif %}
+      </div>
+
+      <div class="small">
+        {% set has_filters = (filters.price_min or filters.price_max or (filters.conditions and
+        filters.conditions|length) or (filters.sort and filters.sort != 'best')) %} {% if
+        has_filters %}
+        <span class="badge text-bg-light">Filter aktiv</span>
+        {% if filters.price_min %}<span class="badge text-bg-secondary"
+          >ab {{ filters.price_min }}</span
+        >{% endif %} {% if filters.price_max %}<span class="badge text-bg-secondary"
+          >bis {{ filters.price_max }}</span
+        >{% endif %} {% if filters.sort and filters.sort != 'best' %}
+        <span class="badge text-bg-secondary">Sort: {{ filters.sort }}</span>
+        {% endif %} {% for c in (filters.conditions or []) %}
+        <span class="badge text-bg-secondary">{{ c }}</span>
+        {% endfor %} {% endif %}
+      </div>
+    </div>
+
+    {# ---------- Ergebnisse ---------- #} {% if results and results|length %}
+    <div class="row g-3">
+      {% for item in results %}
+      <div class="col-12 col-md-6 col-lg-4">
+        <div class="card h-100 shadow-sm">
+          <div class="row g-0 h-100">
+            <div class="col-4 d-flex align-items-center justify-content-center p-2">
+              {% set img = item.img or 'https://via.placeholder.com/160x120?text=%20' %}
+              <img
+                src="{{ img }}"
+                class="img-fluid rounded"
+                alt="Bild"
+                loading="lazy"
+                style="max-height: 120px"
+              />
             </div>
+            <div class="col-8">
+              <div class="card-body d-flex flex-column">
+                <div class="d-flex align-items-center gap-1 mb-1">
+                  {% set src = (item.src or '')|lower %} {% if src == 'amazon' %}
+                  <span class="badge rounded-pill text-bg-warning text-dark">Amazon</span>
+                  {% elif src == 'ebay' %}
+                  <span class="badge rounded-pill text-bg-primary">eBay</span>
+                  {% elif src == 'demo' %}
+                  <span class="badge rounded-pill text-bg-secondary">Demo</span>
+                  {% endif %} {% if item.term %}
+                  <span class="badge text-bg-light">{{ item.term }}</span>
+                  {% endif %} {% if item.verdict %} {% if item.verdict == 'ok' %}
+                  <span class="badge rounded-pill text-bg-success">KI-geprüft</span>
+                  {% elif item.verdict == 'suspicious' %}
+                  <span class="badge rounded-pill text-bg-warning text-dark">Verdacht</span>
+                  {% elif item.verdict == 'damaged' %}
+                  <span class="badge rounded-pill text-bg-danger">Beschädigt</span>
+                  {% endif %} {% endif %}
+                </div>
 
-            <h2 class="h6 card-title mb-1 text-truncate" title="{{ item.title }}">
-              {{ item.title }}
-            </h2>
-            <div class="mb-2 fw-semibold">{{ item.price or '–' }}</div>
+                <h2 class="h6 card-title mb-1 text-truncate" title="{{ item.title }}">
+                  {{ item.title }}
+                </h2>
+                <div class="mb-2 fw-semibold">{{ item.price or '–' }}</div>
 
-            <div class="mt-auto">
-              <a
-                href="{{ item.url }}"
-                target="_blank"
-                rel="nofollow noopener"
-                class="btn btn-sm btn-outline-dark w-100"
-              >
-                Zum Angebot öffnen
-              </a>
+                <div class="mt-auto">
+                  <a
+                    href="{{ item.url }}"
+                    target="_blank"
+                    rel="nofollow noopener"
+                    class="btn btn-sm btn-outline-dark w-100"
+                  >
+                    Zum Angebot öffnen
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
+      {% endfor %}
     </div>
-  </div>
-  {% endfor %}
+    {% else %}
+    <div class="alert alert-info mt-3">
+      Keine Treffer gefunden. Bitte Begriffe oder Filter anpassen.
+    </div>
+    {% endif %} {# ---------- Pagination ---------- #} {% set prev_url = '#' %} {% set next_url =
+    '#' %} {% if pagination.has_prev %} {% if qs is defined %} {% set prev_url = url_for('search') ~
+    '?' ~ qs(base_qs, page=pagination.page-1) %} {% else %} {% set prev_url = url_for('search') %}
+    {% endif %} {% endif %} {% if pagination.has_next %} {% if qs is defined %} {% set next_url =
+    url_for('search') ~ '?' ~ qs(base_qs, page=pagination.page+1) %} {% else %} {% set next_url =
+    url_for('search') %} {% endif %} {% endif %} {% if pagination %}
+    <nav class="mt-4" aria-label="Seiten">
+      <ul class="pagination justify-content-center">
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+          <a class="page-link" href="{{ prev_url }}">‹ Zurück</a>
+        </li>
+        <li class="page-item active"><span class="page-link">{{ pagination.page }}</span></li>
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+          <a class="page-link" href="{{ next_url }}">Weiter ›</a>
+        </li>
+      </ul>
+    </nav>
+    {% endif %} {% endblock %}
+  </form>
 </div>
-{% else %}
-<div class="alert alert-info mt-3">
-  Keine Treffer gefunden. Bitte Begriffe oder Filter anpassen.
-</div>
-{% endif %} {# ---------- Pagination ---------- #} {% set prev_url = '#' %} {% set next_url = '#' %}
-{% if pagination.has_prev %} {% if qs is defined %} {% set prev_url = url_for('search') ~ '?' ~
-qs(base_qs, page=pagination.page-1) %} {% else %} {% set prev_url = url_for('search') %} {% endif %}
-{% endif %} {% if pagination.has_next %} {% if qs is defined %} {% set next_url = url_for('search')
-~ '?' ~ qs(base_qs, page=pagination.page+1) %} {% else %} {% set next_url = url_for('search') %} {%
-endif %} {% endif %} {% if pagination %}
-<nav class="mt-4" aria-label="Seiten">
-  <ul class="pagination justify-content-center">
-    <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-      <a class="page-link" href="{{ prev_url }}">‹ Zurück</a>
-    </li>
-    <li class="page-item active"><span class="page-link">{{ pagination.page }}</span></li>
-    <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-      <a class="page-link" href="{{ next_url }}">Weiter ›</a>
-    </li>
-  </ul>
-</nav>
-{% endif %} {% endblock %}
