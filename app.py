@@ -88,6 +88,7 @@ def getenv_any(*names: str, default: str = "") -> str:
 from routes.inbound import bp as inbound_bp
 from routes.telegram import bp as telegram_bp
 from routes.vision_test import bp as vision_test_bp
+from routes.watchlist import bp as watchlist_bp
 
 app.register_blueprint(inbound_bp)
 app.register_blueprint(telegram_bp)
@@ -1090,12 +1091,44 @@ def legacy_favicon():
 
 @app.route("/email/test", methods=["GET", "POST"])
 def email_test():
+    """
+    Test-Route:
+      - GET  /email/test?to=someone@example.com
+      - POST form field 'email' (guest input)
+      - Fallback: session.user_email or TEST_EMAIL / FROM_EMAIL env
+    Optional: Admin-check or PILOT_EMAILS whitelist (siehe weiter unten).
+    """
+    # lokale Imports hier, damit app import-agent zyklische Abhängigkeiten vermeidet
     from agent import get_mail_settings, send_mail
-    from flask import flash, redirect, request
-    import os
+
+    # optionaler Admin-Schutz (deaktiviere wenn nicht benötigt)
+    if os.getenv("EMAIL_TEST_ADMIN_ONLY", "0") == "1":
+        if not session.get("is_admin"):
+            abort(403)
+
+    # 1) Prioritäten: query param -> form -> session -> ENV
+    recipient = (
+        request.args.get("to")
+        or request.form.get("email")
+        or (session.get("user_email") if session is not None else None)
+        or os.getenv("TEST_EMAIL")
+        or os.getenv("FROM_EMAIL")
+    )
+
+    # einfache Validierung
+    if not recipient or "@" not in recipient:
+        flash("Keine gültige E-Mail-Adresse gefunden (query/form/session/ENV).", "danger")
+        return redirect(url_for("search"))
+
+    # optional: PILOT whitelist (nur zulässige Test-Adressen erlauben)
+    pilot_raw = os.getenv("PILOT_EMAILS", "")
+    if pilot_raw:
+        pilot_set = {e.strip().lower() for p in pilot_raw.split(",") for e in p.split(";") if e.strip()}
+        if pilot_set and recipient.lower() not in pilot_set:
+            flash("Diese E-Mail ist nicht für Testversand freigeschaltet.", "warning")
+            return redirect(url_for("search"))
 
     settings = get_mail_settings()
-    recipient = request.args.get("to") or os.getenv("TEST_EMAIL", "admin@lennycolli.com")
     subject = "✉️ Test-E-Mail vom eBay-Agent"
     body_html = "<p>✅ Test-Mail erfolgreich gesendet!</p><p>Grüße vom eBay-Agent.</p>"
 
@@ -1104,11 +1137,13 @@ def email_test():
         if ok:
             flash(f"Test-Mail an {recipient} gesendet ✅", "success")
         else:
-            flash("Fehler beim Versand ❌", "error")
+            flash("Fehler beim Versand (siehe Server-Log).", "warning")
     except Exception as e:
-        flash(f"Fehler: {e}", "error")
+        # Ausnahme anzeigen, aber nicht sensiblen Inhalt ins UI schreiben
+        flash(f"Fehler beim Versand: {str(e)}", "danger")
 
-    return redirect("/search")
+    return redirect(url_for("search"))
+
 
 
 
