@@ -13,5 +13,6 @@ services:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://agent_db_final_user:7FfbPfBywc3Xd0qCDWSwCT3cxl7NSMvt@dpg-d1ua2849c44c73cp4cag-a.oregon-postgres.render.com/agent_db_final
     env_file:
-      - .env
+      - ./.env
+
     command: python app.py

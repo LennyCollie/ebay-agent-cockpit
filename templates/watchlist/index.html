@@ -1,0 +1,39 @@
+{% extends "base.html" %} {% block content %}
+<div class="container py-4">
+  <h2>Meine Watchlist</h2>
+  <p>{{ item_count }} Artikel beobachtet</p>
+
+  {% for item in items %}
+  <div class="card mb-3">
+    <div class="row g-0">
+      <div class="col-md-2">
+        {% if item.image_url %}
+        <img src="{{ item.image_url }}" class="img-fluid rounded-start" />
+        {% endif %}
+      </div>
+      <div class="col-md-8">
+        <div class="card-body">
+          <h5 class="card-title">{{ item.item_title }}</h5>
+          <p class="card-text">
+            Aktuell: <strong>{{ item.current_price }}</strong>
+            {% if item.price_change_percent < 0 %}
+            <span class="text-success">↓ {{ "%.1f"|format(item.price_change_percent|abs) }}%</span>
+            {% elif item.price_change_percent > 0 %}
+            <span class="text-danger">↑ {{ "%.1f"|format(item.price_change_percent) }}%</span>
+            {% endif %}
+          </p>
+          <a href="{{ item.item_url }}" target="_blank" class="btn btn-sm btn-primary">Zu eBay</a>
+          <form
+            method="post"
+            action="{{ url_for('watchlist.remove', item_id=item.id) }}"
+            class="d-inline"
+          >
+            <button class="btn btn-sm btn-danger">Entfernen</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
