@@ -18,17 +18,17 @@ from sqlalchemy.orm import relationship, sessionmaker
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # DB Connection
-DB_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://agent_db_final_user:7FfbPfBywc3Xd0qCDWSwCT3cxl7NSMvt@dpg-d1ua2849c44c73cp4cag-a.oregon-postgres.render.com/agent_db_final",
-)
-engine = create_engine(DB_URL)
-SessionLocal = sessionmaker(bind=engine)
+from pathlib import Path
+DB_PATH = Path("instance/db.sqlite3")
+DB_PATH.parent.mkdir(exist_ok=True, parents=True)
+DB_URL = f"sqlite:///{DB_PATH}"
+engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
 
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "model_users"
 
     id = Column(Integer, primary_key=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
@@ -85,7 +85,7 @@ class SearchAgent(Base):
     __tablename__ = "search_agents"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False)
 
     # NEU: Erweiterte Filter
     listing_type = Column(
@@ -166,7 +166,7 @@ class WatchedItem(Base):
     __tablename__ = "watched_items"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False)
 
     # eBay Item Info
     ebay_item_id = Column(String(255), nullable=False, index=True)
@@ -271,7 +271,7 @@ def get_db():
 class NotificationSettings(Base):
     __tablename__ = "notification_settings"
 
-    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), primary_key=True)
 
     # Zeitfenster (Ruhezeiten)
     quiet_hours_enabled = Column(Boolean, default=False)
@@ -305,7 +305,7 @@ class NotificationLog(Base):
     __tablename__ = "notification_log"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False)
 
     # Notification Details
     notification_type = Column(String(50), nullable=False)  # price_drop, new_item, auction_ending, etc.
@@ -330,6 +330,52 @@ class NotificationLog(Base):
     user = relationship("User")
     watched_item = relationship("WatchedItem")
     agent = relationship("SearchAgent")
+
+
+    # --- safe fallback / stub für sync_user_from_app ---
+# Füge das am Ende von models.py ein, falls die Funktion fehlt.
+from typing import Optional
+
+def sync_user_from_app(session, app_user_id: Optional[int] = None, email: Optional[str] = None):
+    """
+    Minimaler Fallback: versucht, einen User anhand email/app_user_id zu finden.
+    - session: entweder SessionLocal() Factory oder eine bereits geöffnete Session
+    Gibt ein User-Objekt zurück oder ein Dummy-Objekt mit id/email Attributen.
+    Passe die Implementierung an dein User-Model an.
+    """
+    created_session = False
+    db = None
+    try:
+        # Wenn session eine Factory ist (SessionLocal), rufe sie auf
+        if callable(session):
+            db = session()
+            created_session = True
+        else:
+            db = session
+    except Exception:
+        db = None
+
+    try:
+        if db is not None and email:
+            # Versuche echten User aus DB zu holen — passe User-Attribute an
+            try:
+                user_obj = db.query(User).filter(User.email == email).first()
+                if user_obj:
+                    return user_obj
+            except Exception:
+                # falls ORM/Model anders ist, safe fallback
+                pass
+
+        # Wenn kein DB-User gefunden: gib ein einfaches Dummy-Objekt zurück
+        TmpUser = type("TmpUser", (), {"id": app_user_id or None, "email": email})
+        return TmpUser
+    finally:
+        if created_session and db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
 
 
 if __name__ == "__main__":
