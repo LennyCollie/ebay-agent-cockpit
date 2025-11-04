@@ -4,8 +4,7 @@ Flask-Migrate==4.0.5
 flask-compress>=1.15
 python-dotenv==1.0.1
 gunicorn==21.2.0
-Werkzeug==2.2.3
-psycopg2-binary
+Werkzeug>=2.2.0
 stripe>=10.0.0
 requests>=2.31
 google-cloud-vision>=3.7

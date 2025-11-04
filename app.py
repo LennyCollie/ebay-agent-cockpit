@@ -54,6 +54,15 @@ except Exception:
 # -------------------------------------------------------------------
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
+# DEBUG: Zeige alle Umgebungsvariablen
+print("\n" + "="*50)
+print("ENV VARS DEBUG:")
+print(f"LIVE_SEARCH = {os.getenv('LIVE_SEARCH')}")
+print(f"EBAY_CLIENT_ID = {os.getenv('EBAY_CLIENT_ID', 'MISSING')}")
+print(f"EBAY_CLIENT_SECRET = {os.getenv('EBAY_CLIENT_SECRET', 'MISSING')}")
+print(f"EBAY_MARKETPLACE_ID = {os.getenv('EBAY_MARKETPLACE_ID')}")
+print("="*50 + "\n")
+
 
 # app.register_blueprint(visiontest_bp)
 app.config.from_object(Config)
@@ -88,11 +97,12 @@ def getenv_any(*names: str, default: str = "") -> str:
 from routes.inbound import bp as inbound_bp
 from routes.telegram import bp as telegram_bp
 from routes.vision_test import bp as vision_test_bp
+from routes.watchlist import bp as watchlist_bp
 
 app.register_blueprint(inbound_bp)
 app.register_blueprint(telegram_bp)
 app.register_blueprint(vision_test_bp)
-app.register_blueprint(search_bp)
+#app.register_blueprint(search_bp)
 app.register_blueprint(watchlist_bp)
 
 
@@ -234,22 +244,6 @@ def ebay_get_token() -> Optional[str]:
         return None
 
 
-def _build_ebay_filters(
-    price_min: str, price_max: str, conditions: List[str]
-) -> Optional[str]:
-    parts: List[str] = []
-    pmn = (price_min or "").strip()
-    pmx = (price_max or "").strip()
-    if pmn or pmx:
-        parts.append(f"price:[{pmn}..{pmx}]")
-        if EBAY_CURRENCY:
-            parts.append(f"priceCurrency:{EBAY_CURRENCY}")
-    conds = [c.strip().upper() for c in (conditions or []) if c.strip()]
-    if conds:
-        parts.append("conditions:{" + ",".join(conds) + "}")
-    return ",".join(parts) if parts else None
-
-
 def _map_sort(ui_sort: str) -> Optional[str]:
     s = (ui_sort or "").strip()
     if not s or s == "best":  # Best Match
@@ -262,24 +256,38 @@ def _map_sort(ui_sort: str) -> Optional[str]:
         return "newlyListed"
     return None
 
-
 def ebay_search_one(
-    term: str, limit: int, offset: int, filter_str: Optional[str], sort: Optional[str]
+    term: str,
+    limit: int,
+    offset: int,
+    filter_str: Optional[str],
+    sort: Optional[str],
+    marketplace_id: Optional[str] = None,
 ) -> Tuple[List[Dict], Optional[int]]:
-    token = ebay_get_token()
+    """
+    Sucht ein Term via eBay Browse API. marketplace_id kann übergeben werden (z.B. 'EBAY_DE').
+    Debug-Log gibt die finalen params aus.
+    """
+    token = ebay_get_token()  # Deine Funktion
     if not token or not term:
         return [], None
-
     url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
     params = {"q": term, "limit": max(1, min(limit, 50)), "offset": max(0, offset)}
     if filter_str:
         params["filter"] = filter_str
     if sort:
         params["sort"] = sort
+    used_marketplace = marketplace_id or EBAY_MARKETPLACE_ID  # Deine Config
     headers = {
         "Authorization": f"Bearer {token}",
-        "X-EBAY-C-MARKETPLACE-ID": EBAY_MARKETPLACE_ID,
+        "X-EBAY-C-MARKETPLACE-ID": used_marketplace,
     }
+    # Debug: Log the final params we send to eBay (ohne Authorization)
+    msg = f"[ebay_search_one] url={url} marketplace={used_marketplace} params={params}"
+    try:
+        current_app.logger.debug(msg)
+    except Exception:
+        print(msg)  # Fallback
 
     try:
         r = _http.get(url, headers=headers, params=params, timeout=15)
@@ -295,7 +303,6 @@ def ebay_search_one(
             price = (it.get("price") or {}).get("value")
             cur = (it.get("price") or {}).get("currency")
             price_str = f"{price} {cur}" if price and cur else "–"
-            # stabile ID (für De-Duping)
             iid = (
                 it.get("itemId")
                 or it.get("legacyItemId")
@@ -315,85 +322,515 @@ def ebay_search_one(
             )
         return items, (int(total) if isinstance(total, int) else None)
     except Exception as e:
-        print(f"[ebay_search_one] {e}")
+        try:
+            current_app.logger.exception("[ebay_search_one] request failed")
+        except Exception:
+            print(f"[ebay_search_one] request failed: {e}")
         return [], None
 
-
-# Demo-Backend
 def _backend_search_demo(
-    terms: List[str], page: int, per_page: int
+    terms: List[str], filters: dict, page: int, per_page: int
 ) -> Tuple[List[Dict], int]:
-    total = max(30, len(terms) * 40)
-    start = (page - 1) * per_page
-    stop = min(total, start + per_page)
-    items: List[Dict] = []
-    for i in range(start, stop):
+    """
+    Simuliertes Demo-Backend, das einfache Filter (price range, condition, country, free_shipping)
+    berücksichtigt, damit die UI lokal getestet werden kann.
+    - Erzeugt deterministische Preise und Zustände (NEW/USED) pro Item.
+    - Filter werden angewendet bevor Paging berechnet wird.
+    """
+    # Parse filter values (sicher)
+    try:
+        pmin = float(filters.get("price_min") or 0) if (filters.get("price_min") or "") != "" else None
+    except Exception:
+        pmin = None
+    try:
+        pmax = float(filters.get("price_max") or 0) if (filters.get("price_max") or "") != "" else None
+    except Exception:
+        pmax = None
+
+    conds = [(c or "").strip().upper() for c in (filters.get("conditions") or []) if (c or "").strip()]
+    location_country = (filters.get("location_country") or "").upper()
+    free_shipping = bool(filters.get("free_shipping"))
+    # top_rated_only ignored in demo or simulated below
+
+    # Generate a larger pool of candidate items (deterministic)
+    pool: List[Dict] = []
+    pool_size = max(60, len(terms) * 40)
+    for i in range(pool_size):
+        # choose a term to include in title/url for deterministic matching
         t = terms[i % max(1, len(terms))] if terms else f"Artikel {i+1}"
+        # deterministic price (e.g. 20 + (i % 50) * 5)
+        price_val = 20 + (i % 50) * 5
+        # deterministic condition
+        condition = "USED" if (i % 2 == 0) else "NEW"
+        # deterministic free shipping for some items
+        item_free_shipping = (i % 3 == 0)
+        # deterministic country distribution
+        country = ["DE", "AT", "CH", "GB", "US"][i % 5]
+
+        item = {
+            "id": f"demo-{i+1}",
+            "title": f"Demo-Ergebnis für „{t}“ #{i+1} [{condition}]",
+            "price": f"{price_val:.2f} EUR",
+            "price_val": price_val,
+            "condition": condition,
+            "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
+            "img": "https://via.placeholder.com/64x48?text=%20",
+            "term": t,
+            "src": "demo",
+            "country": country,
+            "free_shipping": item_free_shipping,
+            "seller_top_rated": (i % 10 == 0),
+        }
+        pool.append(item)
+
+    # Apply filters to pool
+    def keep(it):
+        # term match (must contain first search term in title/url)
+        if terms:
+            # require at least one search term substring in title (case-insensitive)
+            t0 = (terms[0] or "").strip().lower()
+            if t0 and t0 not in (it["title"] or "").lower() and t0 not in (it["term"] or "").lower():
+                return False
+        # price range
+        if pmin is not None and it["price_val"] < pmin:
+            return False
+        if pmax is not None and it["price_val"] > pmax:
+            return False
+        # conditions (if provided)
+        if conds:
+            if it.get("condition", "").upper() not in conds:
+                return False
+        # country (if provided)
+        if location_country:
+            if it.get("country", "").upper() != location_country:
+                return False
+        # free shipping
+        if filters.get("free_shipping"):
+            if not it.get("free_shipping", False):
+                return False
+        # top rated
+        if filters.get("top_rated_only"):
+            if not it.get("seller_top_rated", False):
+                return False
+        return True
+
+    filtered = [it for it in pool if keep(it)]
+
+    total = len(filtered)
+    # pagination
+    start = (page - 1) * per_page
+    stop = start + per_page
+    page_items = filtered[start:stop]
+
+    # Map back to expected item shape (drop internal keys)
+    items: List[Dict] = []
+    for it in page_items:
         items.append(
             {
-                "id": f"demo-{i+1}",
-                "title": f"Demo-Ergebnis für „{t}“ #{i+1}",
-                "price": "9,99 €",
-                "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
-                "img": "https://via.placeholder.com/64x48?text=%20",
-                "term": t,
+                "id": it["id"],
+                "title": it["title"],
+                "price": f"{it['price_val']:.2f} EUR",
+                "url": it["url"],
+                "img": it["img"],
+                "term": it["term"],
                 "src": "demo",
             }
         )
+
     return items, total
 
 
 # Mini-Cache
 _search_cache: dict = {}  # key -> (ts, (items, total_estimated))
 
+# -------------------------
+# 1) Saubere _build_ebay_filters
+# -------------------------
+def _build_ebay_filters(filters: dict) -> Optional[str]:
+    """
+    Baut den 'filter' Query-Parameter für die eBay Browse API.
 
-def _cache_get(key):
-    row = _search_cache.get(key)
-    if not row:
+    KORRIGIERT: Alle Filter werden nun korrekt verarbeitet.
+    """
+    parts: List[str] = []
+
+    if not isinstance(filters, dict):
+        print("[DEBUG] _build_ebay_filters: filters ist kein dict!")
         return None
-    ts, payload = row
-    if (time.time() - ts) > SEARCH_CACHE_TTL:
-        _search_cache.pop(key, None)
-        return None
-    return payload
+
+    # ========== PREIS ==========
+    pmn = str(filters.get("price_min") or "").strip()
+    pmx = str(filters.get("price_max") or "").strip()
+    if pmn or pmx:
+        parts.append(f"price:[{pmn}..{pmx}]")
+        if EBAY_CURRENCY:
+            parts.append(f"priceCurrency:{EBAY_CURRENCY}")
+        print(f"[DEBUG] Filter: Preis [{pmn}..{pmx}] {EBAY_CURRENCY}")
+
+    # ========== ZUSTAND ==========
+    conds = [str(c).strip().upper() for c in (filters.get("conditions") or []) if c and str(c).strip()]
+    if conds:
+        parts.append("conditions:{" + ",".join(conds) + "}")
+        print(f"[DEBUG] Filter: Zustand {conds}")
+
+    # ========== ANGEBOTSFORMAT (buyingOptions) ==========
+    lt = str(filters.get("listing_type") or "").strip().lower()
+    if lt:
+        if lt in ("buy_it_now", "bin", "fixed_price", "fixedprice", "fixed"):
+            parts.append("buyingOptions:{FIXED_PRICE}")
+            print(f"[DEBUG] Filter: Nur Sofortkauf")
+        elif lt in ("auction", "auktion"):
+            parts.append("buyingOptions:{AUCTION}")
+            print(f"[DEBUG] Filter: Nur Auktion")
+
+    # ========== KOSTENLOSER VERSAND ==========
+    # WICHTIG: Prüfe explizit auf Boolean True oder String "1"
+    fs = filters.get("free_shipping")
+    if fs is True or str(fs).strip().lower() in ("1", "true", "yes", "on"):
+        parts.append("deliveryOptions:{FREE}")
+        print(f"[DEBUG] Filter: Kostenloser Versand aktiviert")
+
+    # ========== LIEFERLAND ==========
+    lc = str(filters.get("location_country") or "").strip().upper()
+    if lc and lc != "ALL":
+        parts.append(f"deliveryCountry:{lc}")
+        print(f"[DEBUG] Filter: Lieferland {lc}")
+
+    # ========== TOP-RATED SELLER ==========
+    tr = filters.get("top_rated_only")
+    if tr is True or str(tr).strip().lower() in ("1", "true", "yes", "on"):
+        parts.append("sellerTopRated:true")
+        print(f"[DEBUG] Filter: Nur Top-bewertete Verkäufer")
+
+    # ========== RÜCKGABERECHT ==========
+    ra = filters.get("returns_accepted")
+    if ra is True or str(ra).strip().lower() in ("1", "true", "yes", "on"):
+        parts.append("returnsAccepted:true")
+        print(f"[DEBUG] Filter: Nur mit Rückgaberecht")
+
+    if parts:
+        result = ",".join(parts)
+        print(f"[DEBUG] FINALER FILTER-STRING: {result}")
+        return result
+
+    print("[DEBUG] Keine Filter gesetzt")
+    return None
 
 
-def _cache_set(key, payload):
-    _search_cache[key] = (time.time(), payload)
+def _map_sort(ui_sort: str) -> Optional[str]:
+    """Mappt UI-Sortierung auf eBay API sort-Parameter."""
+    s = (ui_sort or "").strip()
+    if not s or s == "best":
+        return None  # Best Match (default)
+    if s == "price_asc":
+        return "price"
+    if s == "price_desc":
+        return "-price"
+    if s == "newly":
+        return "newlyListed"
+    return None
+
+
+def ebay_search_one(
+    term: str,
+    limit: int,
+    offset: int,
+    filter_str: Optional[str],
+    sort: Optional[str],
+    marketplace_id: Optional[str] = None,
+) -> Tuple[List[Dict], Optional[int]]:
+    """
+    Sucht einen Begriff via eBay Browse API.
+
+    KORRIGIERT: Debug-Logging zeigt alle Parameter.
+    """
+    import requests as _http
+    from flask import current_app
+
+    token = ebay_get_token()
+    if not token or not term:
+        print(f"[DEBUG] ebay_search_one: Kein Token oder Term! token={bool(token)}, term={term}")
+        return [], None
+
+    url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
+    params = {
+        "q": term,
+        "limit": max(1, min(limit, 50)),
+        "offset": max(0, offset)
+    }
+
+    if filter_str:
+        params["filter"] = filter_str
+
+    if sort:
+        params["sort"] = sort
+
+    used_marketplace = marketplace_id or EBAY_MARKETPLACE_ID
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-EBAY-C-MARKETPLACE-ID": used_marketplace,
+    }
+
+    # ========== DEBUG: ZEIGE ALLE PARAMETER ==========
+    print("=" * 60)
+    print(f"[eBay API Call] Term: {term}")
+    print(f"[eBay API Call] URL: {url}")
+    print(f"[eBay API Call] Marketplace: {used_marketplace}")
+    print(f"[eBay API Call] Params: {params}")
+    print(f"[eBay API Call] Headers: Authorization=Bearer *****, X-EBAY-C-MARKETPLACE-ID={used_marketplace}")
+    print("=" * 60)
+
+    try:
+        current_app.logger.debug(f"[ebay_search_one] Calling eBay API with params={params}")
+    except:
+        pass
+
+    try:
+        r = _http.get(url, headers=headers, params=params, timeout=15)
+        r.raise_for_status()
+        j = r.json() or {}
+
+        items_raw = j.get("itemSummaries", []) or []
+        total = j.get("total")
+
+        print(f"[eBay API Response] Total: {total}, Items returned: {len(items_raw)}")
+
+        items: List[Dict] = []
+        for it in items_raw:
+            title = it.get("title") or "—"
+            web = _append_affiliate(it.get("itemWebUrl"))
+            img = (it.get("image") or {}).get("imageUrl")
+            price = (it.get("price") or {}).get("value")
+            cur = (it.get("price") or {}).get("currency")
+            price_str = f"{price} {cur}" if price and cur else "–"
+
+            iid = (
+                it.get("itemId")
+                or it.get("legacyItemId")
+                or it.get("epid")
+                or (web or "")[:200]
+            )
+
+            items.append({
+                "id": iid,
+                "title": title,
+                "price": price_str,
+                "url": web,
+                "img": img,
+                "term": term,
+                "src": "ebay",
+            })
+
+        return items, (int(total) if isinstance(total, int) else None)
+
+    except Exception as e:
+        print(f"[eBay API ERROR] {e}")
+        try:
+            current_app.logger.exception("[ebay_search_one] request failed")
+        except:
+            pass
+        return [], None
 
 
 def _backend_search_ebay(
-    terms: List[str], filters: dict, page: int, per_page: int
+    terms: List[str],
+    filters: dict,
+    page: int,
+    per_page: int
 ) -> Tuple[List[Dict], Optional[int]]:
-    if not LIVE_SEARCH or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
-        return _backend_search_demo(terms, page, per_page)
+    """
+    Hauptfunktion für eBay-Suche mit korrekter Filter-Anwendung.
 
-    filter_str = _build_ebay_filters(
-        filters.get("price_min", ""),
-        filters.get("price_max", ""),
-        filters.get("conditions") or [],
-    )
+    KORRIGIERT:
+    - Filter werden korrekt gebaut und übergeben
+    - Marketplace wird basierend auf location_country gesetzt
+    - Debug-Ausgaben zeigen den kompletten Ablauf
+    """
+    print("\n" + "=" * 70)
+    print("=== _backend_search_ebay AUFGERUFEN ===")
+    print(f"Terms: {terms}")
+    print(f"Filters: {filters}")
+    print(f"Page: {page}, Per Page: {per_page}")
+    print("=" * 70)
+
+    # ========== LIVE-SEARCH PRÜFUNG ==========
+    LIVE_SEARCH_BOOL = str(os.getenv("LIVE_SEARCH", "false")).strip().lower() in ("true", "1", "yes", "on")
+    EBAY_CLIENT_ID = os.getenv("EBAY_CLIENT_ID")
+    EBAY_CLIENT_SECRET = os.getenv("EBAY_CLIENT_SECRET")
+
+    print(f"[DEBUG] LIVE_SEARCH={LIVE_SEARCH_BOOL}")
+    print(f"[DEBUG] EBAY_CLIENT_ID={'vorhanden' if EBAY_CLIENT_ID else 'FEHLT!'}")
+    print(f"[DEBUG] EBAY_CLIENT_SECRET={'vorhanden' if EBAY_CLIENT_SECRET else 'FEHLT!'}")
+
+    if not LIVE_SEARCH_BOOL or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
+        print("[WARNUNG] Live-Suche nicht möglich → Fallback zu Demo-Modus")
+        return _backend_search_demo(terms, filters, page, per_page)
+
+    # ========== FILTER BAUEN ==========
+    print("\n--- Filter werden gebaut ---")
+    filter_str = _build_ebay_filters(filters)
     sort = _map_sort(filters.get("sort", "best"))
 
+    print(f"[DEBUG] Filter-String: {filter_str or 'KEINE FILTER'}")
+    print(f"[DEBUG] Sort-Parameter: {sort or 'BEST_MATCH (default)'}")
+
+    # ========== MARKETPLACE BASIEREND AUF LAND ==========
+    marketplace_map = {
+        "DE": "EBAY_DE",
+        "CH": "EBAY_CH",
+        "AT": "EBAY_AT",
+        "GB": "EBAY_GB",
+        "US": "EBAY_US",
+    }
+    location_country = (filters.get("location_country") or "DE").upper()
+    marketplace_id = marketplace_map.get(location_country, EBAY_MARKETPLACE_ID)
+
+    print(f"[DEBUG] Location Country: {location_country}")
+    print(f"[DEBUG] Marketplace ID: {marketplace_id}")
+
+    # ========== SUCHE PRO BEGRIFF ==========
     n = max(1, len(terms))
     per_term = max(1, per_page // n)
     offset = (page - 1) * per_term
 
+    print(f"\n--- Suche {n} Begriff(e), {per_term} Ergebnisse pro Begriff, Offset {offset} ---")
+
     items_all: List[Dict] = []
     totals: List[int] = []
-    for t in terms:
-        items, total = ebay_search_one(t, per_term, offset, filter_str, sort)
+
+    for i, t in enumerate(terms, 1):
+        print(f"\n[{i}/{n}] Suche Begriff: '{t}'")
+        items, total = ebay_search_one(t, per_term, offset, filter_str, sort, marketplace_id=marketplace_id)
         items_all.extend(items)
         if isinstance(total, int):
             totals.append(total)
+        print(f"[{i}/{n}] Gefunden: {len(items)} Items, Total: {total}")
 
+    # ========== AUFFÜLLEN MIT ERSTEM BEGRIFF ==========
     if len(items_all) < per_page and terms:
-        rest, base = per_page - len(items_all), offset + per_term
-        extra, _ = ebay_search_one(terms[0], rest, base, filter_str, sort)
+        rest = per_page - len(items_all)
+        base = offset + per_term
+        print(f"\n--- Fülle auf mit {rest} weiteren Ergebnissen von '{terms[0]}', Offset {base} ---")
+        extra, _ = ebay_search_one(terms[0], rest, base, filter_str, sort, marketplace_id=marketplace_id)
         items_all.extend(extra)
+        print(f"--- {len(extra)} zusätzliche Items geladen ---")
 
     total_estimated = sum(totals) if totals else None
+
+    print(f"\n=== ENDERGEBNIS: {len(items_all)} Items, Geschätzt insgesamt: {total_estimated} ===")
+    print("=" * 70 + "\n")
+
     return items_all[:per_page], total_estimated
+
+
+# ========== DEMO-BACKEND FÜR TESTS ==========
+def _backend_search_demo(
+    terms: List[str],
+    filters: dict,
+    page: int,
+    per_page: int
+) -> Tuple[List[Dict], int]:
+    """
+    Demo-Backend mit Filter-Simulation für lokale Tests.
+    """
+    print("[DEMO MODE] Verwende simulierte eBay-Daten")
+
+    # Parse Filter
+    try:
+        pmin = float(filters.get("price_min") or 0) if (filters.get("price_min") or "") != "" else None
+    except:
+        pmin = None
+
+    try:
+        pmax = float(filters.get("price_max") or 0) if (filters.get("price_max") or "") != "" else None
+    except:
+        pmax = None
+
+    conds = [(c or "").strip().upper() for c in (filters.get("conditions") or []) if (c or "").strip()]
+    location_country = (filters.get("location_country") or "").upper()
+    free_shipping = filters.get("free_shipping") is True or str(filters.get("free_shipping", "")).strip() == "1"
+
+    print(f"[DEMO] Filter: Preis {pmin}-{pmax}, Zustand {conds}, Land {location_country}, Versand frei: {free_shipping}")
+
+    # Generiere Pool
+    pool: List[Dict] = []
+    pool_size = max(60, len(terms) * 40)
+
+    for i in range(pool_size):
+        t = terms[i % max(1, len(terms))] if terms else f"Artikel {i+1}"
+        price_val = 20 + (i % 50) * 5
+        condition = "USED" if (i % 2 == 0) else "NEW"
+        item_free_shipping = (i % 3 == 0)
+        country = ["DE", "AT", "CH", "GB", "US"][i % 5]
+
+        item = {
+            "id": f"demo-{i+1}",
+            "title": f"Demo: {t} #{i+1} [{condition}]",
+            "price": f"{price_val:.2f} EUR",
+            "price_val": price_val,
+            "condition": condition,
+            "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
+            "img": "https://via.placeholder.com/64x48?text=%20",
+            "term": t,
+            "src": "demo",
+            "country": country,
+            "free_shipping": item_free_shipping,
+        }
+        pool.append(item)
+
+    # Filter anwenden
+    def keep(it):
+        # Term Match
+        if terms:
+            t0 = (terms[0] or "").strip().lower()
+            if t0 and t0 not in (it["title"] or "").lower():
+                return False
+
+        # Preis
+        if pmin is not None and it["price_val"] < pmin:
+            return False
+        if pmax is not None and it["price_val"] > pmax:
+            return False
+
+        # Zustand
+        if conds and it.get("condition", "").upper() not in conds:
+            return False
+
+        # Land
+        if location_country and it.get("country", "").upper() != location_country:
+            return False
+
+        # Kostenloser Versand
+        if free_shipping and not it.get("free_shipping", False):
+            return False
+
+        return True
+
+    filtered = [it for it in pool if keep(it)]
+    total = len(filtered)
+
+    # Pagination
+    start = (page - 1) * per_page
+    stop = start + per_page
+    page_items = filtered[start:stop]
+
+    print(f"[DEMO] {total} gefilterte Items, zeige {len(page_items)} auf Seite {page}")
+
+    # Zurück zur erwarteten Struktur
+    items: List[Dict] = []
+    for it in page_items:
+        items.append({
+            "id": it["id"],
+            "title": it["title"],
+            "price": f"{it['price_val']:.2f} EUR",
+            "url": it["url"],
+            "img": it["img"],
+            "term": it["term"],
+            "src": "demo",
+        })
+
+    return items, total
 
 
 # -------------------------------------------------------------------
@@ -971,10 +1408,27 @@ def start_free():
 # -------------------------------------------------------------------
 # Suche – PRG + Pagination + Filter
 # -------------------------------------------------------------------
+from urllib.parse import urlencode
+
 @app.route("/search", methods=["GET", "POST"])
 def search():
+    # DEBUG: Log eingehender Request-Daten
+    current_app.logger.debug("=== /search called, method=%s ===", request.method)
+    current_app.logger.debug("request.args: %s", request.args.to_dict(flat=False))
+    current_app.logger.debug("request.form: %s", request.form.to_dict(flat=False))
+    try:
+        current_app.logger.debug("request.json: %s", request.get_json(silent=True))
+    except Exception:
+        current_app.logger.debug("request.json: <error>")
+
+    # --------------------
     # POST -> Redirect mit Querystring (PRG)
+    # --------------------
     if request.method == "POST":
+        # DEBUG: show form content
+        current_app.logger.debug("[DEBUG] POST received! Form data: %s", dict(request.form))
+
+        # Parameter sammeln (condition als Liste) – FIX: Checkboxen nur wenn gesendet!
         params = {
             "q1": (request.form.get("q1") or "").strip(),
             "q2": (request.form.get("q2") or "").strip(),
@@ -984,11 +1438,18 @@ def search():
             "sort": (request.form.get("sort") or "best").strip(),
             "per_page": (request.form.get("per_page") or "").strip(),
             "condition": request.form.getlist("condition"),
+            # Erweiterte Filter – FIX: Nur senden, wenn vorhanden (kein "0"!)
+            "location_country": (request.form.get("location_country") or "DE").strip(),
+            "free_shipping": request.form.get("free_shipping"),  # None oder "1" → urlencode ignoriert None
+            "returns_accepted": request.form.get("returns_accepted"),
+            "top_rated_only": request.form.get("top_rated_only"),
+            "listing_type": request.form.get("listing_type", "").strip(),  # NEU: Auktion/Sofortkauf
         }
-        # Free-Limit zählen (nur beim Absenden)
+
+        # Free-Limit zählen (vor Redirect)
         if not session.get("is_premium", False):
             count = int(session.get("free_search_count", 0))
-            if count >= FREE_SEARCH_LIMIT:
+            if count >= FREE_SEARCH_LIMIT:  # Deine Config
                 session["ev_free_limit_hit"] = True
                 flash(
                     f"Kostenloses Limit ({FREE_SEARCH_LIMIT}) erreicht – bitte Upgrade buchen.",
@@ -997,10 +1458,21 @@ def search():
                 return redirect(url_for("public_pricing"))
             session["free_search_count"] = count + 1
 
+        # Seite auf 1 setzen
         params["page"] = 1
-        return redirect(url_for("search", **params))
 
+        # DEBUG: raw params zeigen
+        current_app.logger.debug("POST -> redirect params (raw): %s", params)
+
+        # Querystring bauen (doseq=True sorgt für condition=a&condition=b; None-Werte werden ignoriert)
+        query = urlencode(params, doseq=True)
+        redirect_url = url_for("search") + "?" + query
+        current_app.logger.debug("Redirecting to: %s", redirect_url)
+        return redirect(redirect_url)
+
+    # --------------------
     # GET -> tatsächliche Suche
+    # --------------------
     terms = [
         t
         for t in [
@@ -1012,25 +1484,59 @@ def search():
     ]
 
     if not terms:
-        return safe_render("search.html", title="Suche")
+        return safe_render("search.html", title="Suche")  # Deine safe_render-Funktion
 
+    # Filter aus request.args extrahieren
     filters = {
         "price_min": request.args.get("price_min", "").strip(),
         "price_max": request.args.get("price_max", "").strip(),
         "sort": request.args.get("sort", "best").strip(),
-        "conditions": request.args.getlist("condition"),
+        "conditions": request.args.getlist("condition") or [],
+        # Erweiterte Filter – FIX: Bool nur wenn "1" vorhanden
+        "location_country": request.args.get("location_country", "DE").strip(),
+        "free_shipping": request.args.get("free_shipping") == "1",
+        "returns_accepted": request.args.get("returns_accepted") == "1",
+        "top_rated_only": request.args.get("top_rated_only") == "1",
+        "listing_type": request.args.get("listing_type", "").strip(),  # NEU
     }
+
+    # ✅ DEBUG: Jetzt NACH der filters-Definition!
+    print("\n" + "="*70)
+    print("🔍 SEARCH ROUTE - GET REQUEST")
+    print("="*70)
+    print(f"Terms: {terms}")
+    print(f"\nFilters:")
+    for key, value in filters.items():
+        print(f"  {key}: {value!r}")
+    print("="*70 + "\n")
 
     try:
         page = max(1, int(request.args.get("page", 1)))
     except Exception:
         page = 1
+
     try:
-        per_page = min(100, max(5, int(request.args.get("per_page", PER_PAGE_DEFAULT))))
+        per_page = min(100, max(5, int(request.args.get("per_page", PER_PAGE_DEFAULT))))  # Deine Config
     except Exception:
         per_page = PER_PAGE_DEFAULT
 
-    items, total_estimated = _search_with_cache(terms, filters, page, per_page)
+    # DEBUG: Backend-Aufruf
+    current_app.logger.debug("Calling _backend_search_ebay with terms=%s filters=%s page=%s per_page=%s",
+                             terms, filters, page, per_page)
+    print(f"📞 Calling _backend_search_ebay(")
+    print(f"     terms={terms},")
+    print(f"     filters={filters},")
+    print(f"     page={page},")
+    print(f"     per_page={per_page}")
+    print(f"   )\n")
+
+    # Backend aufrufen
+    items, total_estimated = _backend_search_ebay(terms, filters, page, per_page)
+
+    # DEBUG: Backend-Resultat
+    print(f"✅ Backend returned: {len(items)} items, total_estimated={total_estimated}\n")
+
+    # Pagination berechnen
     total_pages = (
         math.ceil(total_estimated / per_page) if total_estimated is not None else None
     )
@@ -1039,6 +1545,7 @@ def search():
         not total_pages and len(items) == per_page
     )
 
+    # Base Query-String für Pagination
     base_qs = {
         "q1": request.args.get("q1", ""),
         "q2": request.args.get("q2", ""),
@@ -1048,8 +1555,15 @@ def search():
         "sort": filters["sort"],
         "condition": filters["conditions"],
         "per_page": per_page,
+        # Erweiterte Filter in base_qs – FIX: Nur "1" wenn True
+        "location_country": filters["location_country"],
+        "free_shipping": "1" if filters["free_shipping"] else None,  # None → ignoriert in urlencode
+        "returns_accepted": "1" if filters["returns_accepted"] else None,
+        "top_rated_only": "1" if filters["top_rated_only"] else None,
+        "listing_type": filters.get("listing_type", ""),  # NEU
     }
 
+    # Template rendern
     return safe_render(
         "search_results.html",
         title="Suchergebnisse",
@@ -1090,12 +1604,44 @@ def legacy_favicon():
 
 @app.route("/email/test", methods=["GET", "POST"])
 def email_test():
+    """
+    Test-Route:
+      - GET  /email/test?to=someone@example.com
+      - POST form field 'email' (guest input)
+      - Fallback: session.user_email or TEST_EMAIL / FROM_EMAIL env
+    Optional: Admin-check or PILOT_EMAILS whitelist (siehe weiter unten).
+    """
+    # lokale Imports hier, damit app import-agent zyklische Abhängigkeiten vermeidet
     from agent import get_mail_settings, send_mail
-    from flask import flash, redirect, request
-    import os
+
+    # optionaler Admin-Schutz (deaktiviere wenn nicht benötigt)
+    if os.getenv("EMAIL_TEST_ADMIN_ONLY", "0") == "1":
+        if not session.get("is_admin"):
+            abort(403)
+
+    # 1) Prioritäten: query param -> form -> session -> ENV
+    recipient = (
+        request.args.get("to")
+        or request.form.get("email")
+        or (session.get("user_email") if session is not None else None)
+        or os.getenv("TEST_EMAIL")
+        or os.getenv("FROM_EMAIL")
+    )
+
+    # einfache Validierung
+    if not recipient or "@" not in recipient:
+        flash("Keine gültige E-Mail-Adresse gefunden (query/form/session/ENV).", "danger")
+        return redirect(url_for("search"))
+
+    # optional: PILOT whitelist (nur zulässige Test-Adressen erlauben)
+    pilot_raw = os.getenv("PILOT_EMAILS", "")
+    if pilot_raw:
+        pilot_set = {e.strip().lower() for p in pilot_raw.split(",") for e in p.split(";") if e.strip()}
+        if pilot_set and recipient.lower() not in pilot_set:
+            flash("Diese E-Mail ist nicht für Testversand freigeschaltet.", "warning")
+            return redirect(url_for("search"))
 
     settings = get_mail_settings()
-    recipient = request.args.get("to") or os.getenv("TEST_EMAIL", "admin@lennycolli.com")
     subject = "✉️ Test-E-Mail vom eBay-Agent"
     body_html = "<p>✅ Test-Mail erfolgreich gesendet!</p><p>Grüße vom eBay-Agent.</p>"
 
@@ -1104,11 +1650,13 @@ def email_test():
         if ok:
             flash(f"Test-Mail an {recipient} gesendet ✅", "success")
         else:
-            flash("Fehler beim Versand ❌", "error")
+            flash("Fehler beim Versand (siehe Server-Log).", "warning")
     except Exception as e:
-        flash(f"Fehler: {e}", "error")
+        # Ausnahme anzeigen, aber nicht sensiblen Inhalt ins UI schreiben
+        flash(f"Fehler beim Versand: {str(e)}", "danger")
 
-    return redirect("/search")
+    return redirect(url_for("search"))
+
 
 
 

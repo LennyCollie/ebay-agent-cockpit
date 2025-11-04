@@ -1,239 +1,317 @@
-{# templates/search_results.html #} {% extends "base.html" %} {% block content %} {# ---- Sichere
-Defaults, damit nichts "undefined" ist ---- #} {% set base_qs = base_qs|default({}) %} {% set
-filters = filters|default({}) %} {% set pagination = pagination|default({'page': 1, 'has_prev':
-False, 'has_next': False, 'total_estimated': None, 'total_pages': None}) %} {% set terms =
-terms|default([]) %} {% set results = results|default([]) %} {# Share-URL vorbereiten (mit
-qs(base_qs) falls vorhanden) #} {% set share_url = request.base_url %} {% if base_qs and
-base_qs|length %} {% if qs is defined %} {% set share_url = request.base_url ~ '?' ~ qs(base_qs) %}
-{% else %} {# Fallback: notfalls aktuelle URL verwenden #} {% set share_url = request.url %} {%
-endif %} {% endif %}
+{# This file intentionally duplicates templates/search.html so the server can render either
+   templates/search.html (initial) or templates/search_results.html (when backend passes results)
+   and the user sees the unified single-page UI. #}
+{% extends "base.html" %}
 
-<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-  <h1 class="h4 mb-0">
-    Suchergebnisse {% if terms and terms|length > 0 %}
-    <small class="text-muted">für {{ terms|join(" · ") }}</small>
-    {% endif %}
-  </h1>
+{% block content %}
+{% set base_qs = base_qs|default({}) %}
+{% set filters = filters|default({}) %}
+{% set pagination = pagination|default({'page': 1, 'has_prev': False, 'has_next': False, 'total_estimated': None, 'total_pages': None}) %}
+{% set terms = terms|default([]) %}
+{% set results = results|default([]) %}
 
-  <div class="d-flex align-items-center gap-2">
-    <input
-      id="share-url"
-      class="form-control form-control-sm"
-      style="min-width: 260px"
-      readonly
-      value="{{ share_url }}"
-    />
-    <button
-      class="btn btn-sm btn-outline-secondary"
-      type="button"
-      onclick="
-      const el=document.getElementById('share-url');
-      el.select(); el.setSelectionRange(0,99999);
-      document.execCommand('copy');
-      this.innerText='Kopiert!';
-      setTimeout(()=>this.innerText='Link kopieren',1200);
-    "
-    >
-      Link kopieren
-    </button>
+<div class="container py-4">
+  <div class="text-center mb-4">
+    <h1 class="h3">Suche</h1>
+    <p class="text-muted mb-0">Gib 1–3 Begriffe an, setze optional Filter — unten erscheinen die Treffer.</p>
   </div>
-</div>
 
-{# ---------- Alerts Toolbar (🔔 speichern / ✉️ Testmail) ---------- #}
-<div class="d-flex flex-wrap align-items-center gap-2 mb-4">
-  {# 🔔 Alarm speichern #}
-  <form
-    action="{{ url_for('alerts_subscribe') }}"
-    method="post"
-    class="d-flex align-items-center gap-2"
-  >
-    <input type="hidden" name="q1" value="{{ base_qs.get('q1','') }}" />
-    <input type="hidden" name="q2" value="{{ base_qs.get('q2','') }}" />
-    <input type="hidden" name="q3" value="{{ base_qs.get('q3','') }}" />
-    <input type="hidden" name="price_min" value="{{ base_qs.get('price_min','') }}" />
-    <input type="hidden" name="price_max" value="{{ base_qs.get('price_max','') }}" />
-    <input type="hidden" name="sort" value="{{ base_qs.get('sort','best') }}" />
-    <input type="hidden" name="per_page" value="{{ base_qs.get('per_page', 20) }}" />
-    <input type="hidden" name="auction" value="{{ base_qs.get('auction','0') }}" />
-    <input type="hidden" name="bin" value="{{ base_qs.get('bin','1') }}" />
-    <input type="hidden" name="postal" value="{{ base_qs.get('postal','') }}" />
-    <input type="hidden" name="radius_km" value="{{ base_qs.get('radius_km','') }}" />
-    <input type="hidden" name="ship_to" value="{{ base_qs.get('ship_to','') }}" />
-    <input type="hidden" name="located_in" value="{{ base_qs.get('located_in','') }}" />
-    {% for c in (base_qs.get('condition') or []) %}
-    <input type="hidden" name="condition" value="{{ c }}" />
-    {% endfor %}
-    <button type="submit" class="btn btn-outline-primary">🔔 Alarm speichern</button>
-  </form>
 
-  {# ✉️ Jetzt E-Mail testen #}
-  <form
-    action="{{ url_for('alerts_send_now') }}"
-    method="post"
-    class="d-flex flex-wrap align-items-center gap-2"
-  >
-    <input type="hidden" name="q1" value="{{ base_qs.get('q1','') }}" />
-    <input type="hidden" name="q2" value="{{ base_qs.get('q2','') }}" />
-    <input type="hidden" name="q3" value="{{ base_qs.get('q3','') }}" />
-    <input type="hidden" name="price_min" value="{{ base_qs.get('price_min','') }}" />
-    <input type="hidden" name="price_max" value="{{ base_qs.get('price_max','') }}" />
-    <input type="hidden" name="sort" value="{{ base_qs.get('sort','best') }}" />
-    <input type="hidden" name="per_page" value="{{ base_qs.get('per_page', 20) }}" />
-    <input type="hidden" name="auction" value="{{ base_qs.get('auction','0') }}" />
-    <input type="hidden" name="bin" value="{{ base_qs.get('bin','1') }}" />
-    <input type="hidden" name="postal" value="{{ base_qs.get('postal','') }}" />
-    <input type="hidden" name="radius_km" value="{{ base_qs.get('radius_km','') }}" />
-    <input type="hidden" name="ship_to" value="{{ base_qs.get('ship_to','') }}" />
-    <input type="hidden" name="located_in" value="{{ base_qs.get('located_in','') }}" />
-    {% for c in (base_qs.get('condition') or []) %}
-    <input type="hidden" name="condition" value="{{ c }}" />
-    {% endfor %} {% set _email = (session.get('user_email') if session is defined else None) or
-    'guest' %} {% if _email == 'guest' %}
-    <input
-      type="email"
-      name="email"
-      class="form-control form-control-sm"
-      placeholder="E-Mail für Benachrichtigung"
-      required
-    />
-    {% endif %}
-
-    <!-- Link: sendet GET /email/test?to=<email> -->
-    <a
-      class="btn btn-success"
-      href="{{ url_for('email_test') }}?to={{ (session.get('user_email') if session else '') | urlencode }}"
-      title="Test-Mail an Logged-in user senden"
-    >
-      ✉️ Jetzt E-Mail testen (Link)
-    </a>
-
-    <form
-      action="{{ url_for('email_test') }}"
-      method="post"
-      class="d-flex flex-wrap align-items-center gap-2"
-    >
-      <!-- versteckte Felder mit deiner bestehenden base_qs -->
-      <input type="hidden" name="q1" value="{{ base_qs.get('q1','') }}" />
-      <!-- ... (alle anderen hidden inputs wie zuvor) ... -->
-
-      {% set _email = (session.get('user_email') if session is defined else None) or 'guest' %} {%
-      if _email == 'guest' %}
-      <input
-        type="email"
-        name="email"
-        class="form-control form-control-sm"
-        placeholder="E-Mail für Benachrichtigung"
-        required
-      />
-      {% endif %}
-
-      <button type="submit" class="btn btn-success">✉️ Jetzt E-Mail testen (Form)</button>
-    </form>
-
-    {# ---------- Meta / aktive Filter ---------- #}
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-      <div class="text-muted small">
-        {% if pagination.total_estimated %} ~{{ pagination.total_estimated }} Treffer geschätzt {%
-        if pagination.total_pages %} · Seite {{ pagination.page }} von {{ pagination.total_pages
-        }}{% endif %} {% else %} Seite {{ pagination.page }} {% endif %}
+<form id="searchForm" action="{{ url_for('search') }}" method="post" class="card mb-4">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Begriff 1</label>
+        <input type="text" class="form-control" name="q1" placeholder="z. B. iPhone 11"
+               value="{{ base_qs.get('q1', request.args.get('q1','')) }}" />
       </div>
-
-      <div class="small">
-        {% set has_filters = (filters.price_min or filters.price_max or (filters.conditions and
-        filters.conditions|length) or (filters.sort and filters.sort != 'best')) %} {% if
-        has_filters %}
-        <span class="badge text-bg-light">Filter aktiv</span>
-        {% if filters.price_min %}<span class="badge text-bg-secondary"
-          >ab {{ filters.price_min }}</span
-        >{% endif %} {% if filters.price_max %}<span class="badge text-bg-secondary"
-          >bis {{ filters.price_max }}</span
-        >{% endif %} {% if filters.sort and filters.sort != 'best' %}
-        <span class="badge text-bg-secondary">Sort: {{ filters.sort }}</span>
-        {% endif %} {% for c in (filters.conditions or []) %}
-        <span class="badge text-bg-secondary">{{ c }}</span>
-        {% endfor %} {% endif %}
+      <div class="col-md-4">
+        <label class="form-label">Begriff 2</label>
+        <input type="text" class="form-control" name="q2" placeholder="optional"
+               value="{{ base_qs.get('q2', request.args.get('q2','')) }}" />
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Begriff 3</label>
+        <input type="text" class="form-control" name="q3" placeholder="optional"
+               value="{{ base_qs.get('q3', request.args.get('q3','')) }}" />
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Preis min</label>
+        <input type="number" step="0.01" class="form-control" name="price_min" placeholder="z. B. 50"
+               value="{{ base_qs.get('price_min', request.args.get('price_min','')) }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Preis max</label>
+        <input type="number" step="0.01" class="form-control" name="price_max" placeholder="z. B. 250"
+               value="{{ base_qs.get('price_max', request.args.get('price_max','')) }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Sortierung</label>
+        {% set _sort = base_qs.get('sort', request.args.get('sort','best')) %}
+        <select class="form-select" name="sort">
+          <option value="best" {% if _sort == 'best' %}selected{% endif %}>Beste Treffer</option>
+          <option value="price_asc" {% if _sort == 'price_asc' %}selected{% endif %}>Preis ↑</option>
+          <option value="price_desc" {% if _sort == 'price_desc' %}selected{% endif %}>Preis ↓</option>
+          <option value="newly" {% if _sort == 'newly' %}selected{% endif %}>Neu eingestellt</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Ergebnisse pro Seite</label>
+        {% set _pp = base_qs.get('per_page', request.args.get('per_page','20')) %}
+        <select class="form-select" name="per_page">
+          <option value="20" {% if _pp == '20' %}selected{% endif %}>20</option>
+          <option value="40" {% if _pp == '40' %}selected{% endif %}>40</option>
+          <option value="60" {% if _pp == '60' %}selected{% endif %}>60</option>
+          <option value="100" {% if _pp == '100' %}selected{% endif %}>100</option>
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label d-block mb-1">Zustand</label>
+        {% set chosen = base_qs.get('condition', request.args.getlist('condition')) %}
+        <div class="d-flex flex-wrap gap-3">
+          <label class="form-check">
+            <input class="form-check-input" type="checkbox" name="condition" value="NEW" {% if 'NEW' in chosen %}checked{% endif %}>
+            <span class="form-check-label">Neu</span>
+          </label>
+          <label class="form-check">
+            <input class="form-check-input" type="checkbox" name="condition" value="USED" {% if 'USED' in chosen %}checked{% endif %}>
+            <span class="form-check-label">Gebraucht</span>
+          </label>
+          <label class="form-check">
+            <input class="form-check-input" type="checkbox" name="condition" value="CERTIFIED_REFURBISHED" {% if 'CERTIFIED_REFURBISHED' in chosen %}checked{% endif %}>
+            <span class="form-check-label">Refurbished (zert.)</span>
+          </label>
+        </div>
+        <div class="form-text">Mehrfachauswahl möglich.</div>
+      </div>
+      <div class="col-md-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="freeShipping2" name="free_shipping" value="1" {% if base_qs.get('free_shipping') == '1' or request.args.get('free_shipping') == '1' %}checked{% endif %}>
+          <label class="form-check-label" for="freeShipping2">Nur kostenloser Versand</label>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="returns2" name="returns_accepted" value="1" {% if base_qs.get('returns_accepted') == '1' or request.args.get('returns_accepted') == '1' %}checked{% endif %}>
+          <label class="form-check-label" for="returns2">Nur mit Rückgaberecht</label>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="topRated2" name="top_rated_only" value="1" {% if base_qs.get('top_rated_only') == '1' or request.args.get('top_rated_only') == '1' %}checked{% endif %}>
+          <label class="form-check-label" for="topRated2">Nur Top-bewertete Verkäufer</label>
+        </div>
+      </div>
+      <!-- NEU: Auktion/Sofortkauf Dropdown -->
+      <div class="col-md-3">
+        <label class="form-label">Angebotsformat</label>
+        {% set _lt = base_qs.get('listing_type', request.args.get('listing_type', '')) %}
+        <select class="form-select" name="listing_type">
+          <option value="" {% if not _lt %}selected{% endif %}>Alle</option>
+          <option value="buy_it_now" {% if _lt == 'buy_it_now' %}selected{% endif %}>Sofortkauf</option>
+          <option value="auction" {% if _lt == 'auction' %}selected{% endif %}>Auktion</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Land</label>
+        <select class="form-select" name="location_country">
+          {% set _lc = base_qs.get('location_country', request.args.get('location_country', 'DE')) %}
+          <option value="DE" {% if _lc=='DE' %}selected{% endif %}>🇩🇪 Deutschland</option>
+          <option value="AT" {% if _lc=='AT' %}selected{% endif %}>🇦🇹 Österreich</option>
+          <option value="CH" {% if _lc=='CH' %}selected{% endif %}>🇨🇭 Schweiz</option>
+          <option value="GB" {% if _lc=='GB' %}selected{% endif %}>🇬🇧 Großbritannien</option>
+          <option value="US" {% if _lc=='US' %}selected{% endif %}>🇺🇸 USA</option>
+        </select>
       </div>
     </div>
+    <div class="d-flex gap-2 mt-4">
+      <button type="submit" class="btn btn-primary">🔎 Suchen</button>
+      <button type="reset" class="btn btn-outline-secondary" id="btnReset2">Zurücksetzen</button>
+    </div>
+  </div>
+</form>
 
-    {# ---------- Ergebnisse ---------- #} {% if results and results|length %}
+  {# Toolbar (alerts, email) and share link like in search.html omitted for brevity here,
+     but you can re-add same blocks as in search.html if desired. #}
+
+  {# Results (same rendering as in search.html) #}
+  {% if results and results|length %}
+    <div class="mb-3 text-muted small">
+      {% if pagination.total_estimated %}
+        ~{{ pagination.total_estimated }} Treffer geschätzt
+        {% if pagination.total_pages %} · Seite {{ pagination.page }} von {{ pagination.total_pages }}{% endif %}
+      {% else %}
+        Seite {{ pagination.page }}
+      {% endif %}
+    </div>
+
     <div class="row g-3">
       {% for item in results %}
-      <div class="col-12 col-md-6 col-lg-4">
-        <div class="card h-100 shadow-sm">
-          <div class="row g-0 h-100">
-            <div class="col-4 d-flex align-items-center justify-content-center p-2">
-              {% set img = item.img or 'https://via.placeholder.com/160x120?text=%20' %}
-              <img
-                src="{{ img }}"
-                class="img-fluid rounded"
-                alt="Bild"
-                loading="lazy"
-                style="max-height: 120px"
-              />
-            </div>
-            <div class="col-8">
-              <div class="card-body d-flex flex-column">
-                <div class="d-flex align-items-center gap-1 mb-1">
-                  {% set src = (item.src or '')|lower %} {% if src == 'amazon' %}
-                  <span class="badge rounded-pill text-bg-warning text-dark">Amazon</span>
-                  {% elif src == 'ebay' %}
-                  <span class="badge rounded-pill text-bg-primary">eBay</span>
-                  {% elif src == 'demo' %}
-                  <span class="badge rounded-pill text-bg-secondary">Demo</span>
-                  {% endif %} {% if item.term %}
-                  <span class="badge text-bg-light">{{ item.term }}</span>
-                  {% endif %} {% if item.verdict %} {% if item.verdict == 'ok' %}
-                  <span class="badge rounded-pill text-bg-success">KI-geprüft</span>
-                  {% elif item.verdict == 'suspicious' %}
-                  <span class="badge rounded-pill text-bg-warning text-dark">Verdacht</span>
-                  {% elif item.verdict == 'damaged' %}
-                  <span class="badge rounded-pill text-bg-danger">Beschädigt</span>
-                  {% endif %} {% endif %}
-                </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <div class="card h-100 shadow-sm">
+            <div class="row g-0 h-100">
+              <div class="col-4 d-flex align-items-center justify-content-center p-2">
+                {% set img = item.img or 'https://via.placeholder.com/160x120?text=%20' %}
+                <img src="{{ img }}" class="img-fluid rounded" alt="Bild" loading="lazy" style="max-height:120px" />
+              </div>
+              <div class="col-8">
+                <div class="card-body d-flex flex-column">
+                  <div class="d-flex align-items-center gap-1 mb-1">
+                    {% set src = (item.src or '')|lower %}
+                    {% if src == 'amazon' %}
+                      <span class="badge rounded-pill text-bg-warning text-dark">Amazon</span>
+                    {% elif src == 'ebay' %}
+                      <span class="badge rounded-pill text-bg-primary">eBay</span>
+                    {% elif src == 'demo' %}
+                      <span class="badge rounded-pill text-bg-secondary">Demo</span>
+                    {% endif %}
+                    {% if item.term %}
+                      <span class="badge text-bg-light">{{ item.term }}</span>
+                    {% endif %}
+                  </div>
 
-                <h2 class="h6 card-title mb-1 text-truncate" title="{{ item.title }}">
-                  {{ item.title }}
-                </h2>
-                <div class="mb-2 fw-semibold">{{ item.price or '–' }}</div>
+                  <h2 class="h6 card-title mb-1 text-truncate" title="{{ item.title }}">{{ item.title }}</h2>
+                  <div class="mb-2 fw-semibold">{{ item.price or '–' }}</div>
 
-                <div class="mt-auto">
-                  <a
-                    href="{{ item.url }}"
-                    target="_blank"
-                    rel="nofollow noopener"
-                    class="btn btn-sm btn-outline-dark w-100"
-                  >
-                    Zum Angebot öffnen
-                  </a>
+                  <div class="mt-auto">
+                    <div class="d-flex gap-1">
+                      <a href="{{ item.url }}" target="_blank" rel="nofollow noopener" class="btn btn-sm btn-outline-dark flex-fill">Zum Angebot</a>
+
+                      <form method="post" action="{{ url_for('watchlist.add') }}" class="flex-fill m-0 watchlist-form">
+                        <input type="hidden" name="item_id" value="{{ item.id or item.url }}" />
+                        <input type="hidden" name="title" value="{{ item.title }}" />
+                        <input type="hidden" name="price" value="{{ item.price }}" />
+                        <input type="hidden" name="url" value="{{ item.url }}" />
+                        <input type="hidden" name="image_url" value="{{ item.img }}" />
+                        <input type="hidden" name="source" value="search" />
+                        <button type="submit" class="btn btn-sm btn-warning w-100" title="Zur Watchlist hinzufügen" {% if not item.id and not item.url %}disabled{% endif %}>⭐ Watchlist</button>
+                      </form>
+                    </div>
+                  </div>
+
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
       {% endfor %}
     </div>
-    {% else %}
-    <div class="alert alert-info mt-3">
-      Keine Treffer gefunden. Bitte Begriffe oder Filter anpassen.
-    </div>
-    {% endif %} {# ---------- Pagination ---------- #} {% set prev_url = '#' %} {% set next_url =
-    '#' %} {% if pagination.has_prev %} {% if qs is defined %} {% set prev_url = url_for('search') ~
-    '?' ~ qs(base_qs, page=pagination.page-1) %} {% else %} {% set prev_url = url_for('search') %}
-    {% endif %} {% endif %} {% if pagination.has_next %} {% if qs is defined %} {% set next_url =
-    url_for('search') ~ '?' ~ qs(base_qs, page=pagination.page+1) %} {% else %} {% set next_url =
-    url_for('search') %} {% endif %} {% endif %} {% if pagination %}
+
+    {# Pagination as in search.html #}
+    {% set prev_url = '#' %}
+    {% set next_url = '#' %}
+    {% set b = base_qs if base_qs else {} %}
+    {% if pagination.has_prev %}
+      {% if qs is defined %}
+        {% set prev_url = url_for('search') ~ '?' ~ qs(b, page=pagination.page-1) %}
+      {% else %}
+        {% set prev_url = url_for('search') %}
+      {% endif %}
+    {% endif %}
+    {% if pagination.has_next %}
+      {% if qs is defined %}
+        {% set next_url = url_for('search') ~ '?' ~ qs(b, page=pagination.page+1) %}
+      {% else %}
+        {% set next_url = url_for('search') %}
+      {% endif %}
+    {% endif %}
+
     <nav class="mt-4" aria-label="Seiten">
       <ul class="pagination justify-content-center">
-        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-          <a class="page-link" href="{{ prev_url }}">‹ Zurück</a>
-        </li>
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}"><a class="page-link" href="{{ prev_url }}">‹ Zurück</a></li>
         <li class="page-item active"><span class="page-link">{{ pagination.page }}</span></li>
-        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-          <a class="page-link" href="{{ next_url }}">Weiter ›</a>
-        </li>
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}"><a class="page-link" href="{{ next_url }}">Weiter ›</a></li>
       </ul>
     </nav>
-    {% endif %} {% endblock %}
-  </form>
+  {% else %}
+    <div class="alert alert-info mt-3">Noch keine Treffer – bitte Begriffe eingeben und Suchen klicken.</div>
+  {% endif %}
+
 </div>
+
+{# Duplicate the same client-side JS as in search.html to ensure identical behavior #}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // Build share URL etc.
+  const form = document.getElementById('searchForm');
+  const share = document.getElementById('shareUrl');
+  function updateShareUrl() {
+    if (!form || !share) return;
+    const params = new URLSearchParams();
+    const q1 = (form.q1.value || '').trim();
+    const q2 = (form.q2.value || '').trim();
+    const q3 = (form.q3.value || '').trim();
+    if (q1) params.set('q1', q1);
+    if (q2) params.set('q2', q2);
+    if (q3) params.set('q3', q3);
+    const pmin = (form.price_min.value || '').trim();
+    const pmax = (form.price_max.value || '').trim();
+    if (pmin) params.set('price_min', pmin);
+    if (pmax) params.set('price_max', pmax);
+    const sort = (form.sort.value || 'best').trim();
+    if (sort) params.set('sort', sort);
+    const per = (form.per_page.value || '').trim();
+    if (per) params.set('per_page', per);
+    form.querySelectorAll('input[name="condition"]:checked').forEach(cb => params.append('condition', cb.value));
+    const lc = (form.location_country && form.location_country.value) ? form.location_country.value : '';
+    if (lc) params.set('location_country', lc);
+    if (form.free_shipping && form.free_shipping.checked) params.set('free_shipping','1');
+    if (form.returns_accepted && form.returns_accepted.checked) params.set('returns_accepted','1');
+    if (form.top_rated_only && form.top_rated_only.checked) params.set('top_rated_only','1');
+    if (share) share.value = '{{ url_for("search") }}' + (params.toString() ? '?' + params.toString() : '');
+    const lt = (form.listing_type && form.listing_type.value) ? form.listing_type.value : '';
+    if (lt) params.set('listing_type', lt);
+  }
+  if (form) {
+    form.addEventListener('input', updateShareUrl);
+    form.addEventListener('change', updateShareUrl);
+    updateShareUrl();
+  }
+
+  // Defensive submit (capture) to force navigation for search form
+  window.addEventListener('submit', function(e) {
+    try {
+      const tgt = e.target;
+      if (!tgt || tgt.tagName !== 'FORM') return;
+      if (tgt.id === 'searchForm') {
+        e.preventDefault();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        if (e.stopPropagation) e.stopPropagation();
+        try {
+          const fd = new FormData(tgt);
+          const params = new URLSearchParams();
+          for (const pair of fd.entries()) params.append(pair[0], pair[1]);
+          const action = tgt.getAttribute('action') || window.location.pathname;
+          const qs = params.toString();
+          window.location.href = action + (qs ? ('?' + qs) : '');
+        } catch (err) {
+          console.error('search navigation failed, fallback', err);
+          tgt.submit();
+        }
+      }
+    } catch (err) { console.error(err); }
+  }, true);
+
+  // Watchlist AJAX
+  try {
+    document.querySelectorAll('form.watchlist-form').forEach(function(f) {
+      f.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var btn = f.querySelector('button[type="submit"]');
+        if (!btn) return;
+        var orig = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = '...';
+        try {
+          var res = await fetch(f.action, { method: 'POST', body: new FormData(f), credentials: 'same-origin', headers: {'X-Requested-With':'XMLHttpRequest'} });
+          if (res.ok) btn.innerText = '✓';
+          else { btn.innerText = 'Fehler'; console.error('watchlist failed', res.status); }
+        } catch (err) { console.error(err); btn.innerText = 'Fehler'; }
+        setTimeout(()=>{ btn.innerText = orig; btn.disabled = false; }, 1000);
+      });
+    });
+  } catch (err) { console.error('watchlist init failed', err); }
+});
+</script>
+
+{% endblock %}
