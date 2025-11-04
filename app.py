@@ -244,55 +244,6 @@ def ebay_get_token() -> Optional[str]:
         return None
 
 
-def _build_ebay_filters(filters: dict) -> Optional[str]:
-    """
-    Baut den 'filter' Query-Parameter für die eBay Browse API aus dem filters dict.
-    Erwartete keys in filters: price_min, price_max, conditions (list), sort, free_shipping (str '1'),
-    listing_type (e.g. 'buy_it_now'|'auction'|'all'), location_country (z.B. 'DE'), ...
-    Gibt None zurück wenn kein Filter gesetzt ist.
-    """
-    parts: List[str] = []
-    if not isinstance(filters, dict):
-        return None
-    # Preisbereich
-    pmn = str(filters.get("price_min") or "").strip()
-    pmx = str(filters.get("price_max") or "").strip()
-    if pmn or pmx:
-        parts.append(f"price:[{pmn}..{pmx}]")
-        if EBAY_CURRENCY:  # Annahme: Deine Config-Variable
-            parts.append(f"priceCurrency:{EBAY_CURRENCY}")
-    # Zustand(e)
-    conds = [str(c).strip().upper() for c in (filters.get("conditions") or []) if c and str(c).strip()]
-    if conds:
-        parts.append("conditions:{" + ",".join(conds) + "}")
-    # Listing / Angebotsformat
-    lt = str(filters.get("listing_type") or "").strip().lower()
-    if lt:
-        if lt in ("buy_it_now", "bin", "fixed_price", "fixedprice", "fixed"):
-            parts.append("buyingOptions:{FIXED_PRICE}")
-        elif lt in ("auction", "auktion"):
-            parts.append("buyingOptions:{AUCTION}")
-        # 'all' -> nothing
-    # Kostenloser Versand
-    fs = str(filters.get("free_shipping") or "").strip().lower()
-    if fs in ("1", "true", "yes", "on"):
-        parts.append("deliveryOptions:{FREE}")
-    # Land / Lieferland
-    lc = str(filters.get("location_country") or "").strip().upper()
-    if lc:
-        parts.append(f"deliveryCountry:{lc}")
-    # Top-rated seller
-    tr = str(filters.get("top_rated_only") or "").strip().lower()
-    if tr in ("1", "true", "yes", "on"):
-        parts.append("sellerTopRated:true")
-    # Returns accepted (erweitert)
-    ra = str(filters.get("returns_accepted") or "").strip().lower()
-    if ra in ("1", "true", "yes", "on"):
-        parts.append("returnsAccepted:true")
-    if parts:
-        return ",".join(parts)
-    return None
-
 def _map_sort(ui_sort: str) -> Optional[str]:
     s = (ui_sort or "").strip()
     if not s or s == "best":  # Best Match
@@ -593,8 +544,6 @@ def ebay_search_one(
 
     KORRIGIERT: Debug-Logging zeigt alle Parameter.
     """
-    # Annahme: Diese Funktion existiert bereits
-    from app import ebay_get_token, _append_affiliate
     import requests as _http
     from flask import current_app
 
@@ -716,8 +665,6 @@ def _backend_search_ebay(
 
     if not LIVE_SEARCH_BOOL or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
         print("[WARNUNG] Live-Suche nicht möglich → Fallback zu Demo-Modus")
-        # Annahme: Diese Funktion existiert
-        from app import _backend_search_demo
         return _backend_search_demo(terms, filters, page, per_page)
 
     # ========== FILTER BAUEN ==========
