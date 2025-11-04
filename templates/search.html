@@ -1,180 +1,171 @@
 {% extends "base.html" %}
+
 {% block content %}
+{# Unified search page: form + results on a single page. Works both as initial search page
+   and as results page (when view renders with `results` / `pagination` / `base_qs`). #}
+
+{# Safe defaults so template works when rendered from either /search (GET/POST) or from app.py #}
+{% set base_qs = base_qs|default({}) %}
+{% set filters = filters|default({}) %}
+{% set pagination = pagination|default({'page': 1, 'has_prev': False, 'has_next': False, 'total_estimated': None, 'total_pages': None}) %}
+{% set terms = terms|default([]) %}
+{% set results = results|default([]) %}
 
 <div class="container py-4">
   <div class="text-center mb-4">
     <h1 class="h3">Suche</h1>
-    <p class="text-muted mb-0">Gib 1–3 Begriffe an, setze optional Filter – fertig.</p>
+    <p class="text-muted mb-0">Gib 1–3 Begriffe an, setze optional Filter — unten erscheinen die Treffer.</p>
   </div>
 
-  <!-- Vorlagen-Suchen -->
+  {# ---------- Presets / Schnellvorlagen ---------- #}
   <div class="card mb-4">
     <div class="card-body">
       <div class="d-flex align-items-center mb-2">
         <strong class="me-2">Vorlagen:</strong>
-        <span class="text-muted">ein Klick füllt das Formular & startet die Suche</span>
+        <span class="text-muted">ein Klick füllt das Formular und startet die Suche</span>
       </div>
 
       <div class="d-flex flex-wrap gap-2" id="preset-list">
        <span class="text-muted">wird geladen …</span>
       </div>
+    </div>
+  </div>
 
-  <!-- Suchformular -->
+  {# ---------- Suchformular (ein Formular für alles) ---------- #}
   <form id="searchForm" action="{{ url_for('search') }}" method="post" class="card">
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-4">
           <label class="form-label">Begriff 1</label>
-          <input type="text" class="form-control" name="q1" placeholder="z. B. iPhone 11" value="{{ request.args.get('q1','') }}">
+          <input type="text" class="form-control" name="q1" placeholder="z. B. iPhone 11"
+                 value="{{ base_qs.get('q1', request.args.get('q1','')) }}" />
         </div>
+
         <div class="col-md-4">
           <label class="form-label">Begriff 2</label>
-          <input type="text" class="form-control" name="q2" placeholder="optional" value="{{ request.args.get('q2','') }}">
+          <input type="text" class="form-control" name="q2" placeholder="optional"
+                 value="{{ base_qs.get('q2', request.args.get('q2','')) }}" />
         </div>
+
         <div class="col-md-4">
           <label class="form-label">Begriff 3</label>
-          <input type="text" class="form-control" name="q3" placeholder="optional" value="{{ request.args.get('q3','') }}">
+          <input type="text" class="form-control" name="q3" placeholder="optional"
+                 value="{{ base_qs.get('q3', request.args.get('q3','')) }}" />
         </div>
 
         <div class="col-md-3">
           <label class="form-label">Preis min</label>
-          <input type="number" step="0.01" class="form-control" name="price_min" placeholder="z. B. 50" value="{{ request.args.get('price_min','') }}">
+          <input type="number" step="0.01" class="form-control" name="price_min" placeholder="z. B. 50"
+                 value="{{ base_qs.get('price_min', request.args.get('price_min','')) }}">
         </div>
+
         <div class="col-md-3">
           <label class="form-label">Preis max</label>
-          <input type="number" step="0.01" class="form-control" name="price_max" placeholder="z. B. 250" value="{{ request.args.get('price_max','') }}">
+          <input type="number" step="0.01" class="form-control" name="price_max" placeholder="z. B. 250"
+                 value="{{ base_qs.get('price_max', request.args.get('price_max','')) }}">
         </div>
 
         <div class="col-md-3">
           <label class="form-label">Sortierung</label>
+          {% set _sort = base_qs.get('sort', request.args.get('sort','best')) %}
           <select class="form-select" name="sort">
-            {% set _sort = request.args.get('sort', 'best') %}
-            <option value="best" {{ 'selected' if _sort=='best' else '' }}>Beste Treffer</option>
-            <option value="price_asc" {{ 'selected' if _sort=='price_asc' else '' }}>Preis ↑</option>
-            <option value="price_desc" {{ 'selected' if _sort=='price_desc' else '' }}>Preis ↓</option>
-            <option value="newly" {{ 'selected' if _sort=='newly' else '' }}>Neu eingestellt</option>
+            <option value="best" {% if _sort == 'best' %}selected{% endif %}>Beste Treffer</option>
+            <option value="price_asc" {% if _sort == 'price_asc' %}selected{% endif %}>Preis ↑</option>
+            <option value="price_desc" {% if _sort == 'price_desc' %}selected{% endif %}>Preis ↓</option>
+            <option value="newly" {% if _sort == 'newly' %}selected{% endif %}>Neu eingestellt</option>
           </select>
         </div>
 
         <div class="col-md-3">
           <label class="form-label">Ergebnisse pro Seite</label>
-          {% set _pp = request.args.get('per_page', '20') %}
+          {% set _pp = base_qs.get('per_page', request.args.get('per_page','20')) %}
           <select class="form-select" name="per_page">
-            <option value="20" {{ 'selected' if _pp=='20' else '' }}>20</option>
-            <option value="40" {{ 'selected' if _pp=='40' else '' }}>40</option>
-            <option value="60" {{ 'selected' if _pp=='60' else '' }}>60</option>
-            <option value="100" {{ 'selected' if _pp=='100' else '' }}>100</option>
+            <option value="20" {% if _pp == '20' %}selected{% endif %}>20</option>
+            <option value="40" {% if _pp == '40' %}selected{% endif %}>40</option>
+            <option value="60" {% if _pp == '60' %}selected{% endif %}>60</option>
+            <option value="100" {% if _pp == '100' %}selected{% endif %}>100</option>
           </select>
         </div>
 
         <div class="col-12">
           <label class="form-label d-block mb-1">Zustand</label>
-          {% set chosen = request.args.getlist('condition') %}
+          {% set chosen = base_qs.get('condition', request.args.getlist('condition')) %}
           <div class="d-flex flex-wrap gap-3">
             <label class="form-check">
-              <input class="form-check-input" type="checkbox" name="condition" value="NEW" {{ 'checked' if 'NEW' in chosen else '' }}>
+              <input class="form-check-input" type="checkbox" name="condition" value="NEW"
+                     {% if 'NEW' in chosen %}checked{% endif %}>
               <span class="form-check-label">Neu</span>
             </label>
             <label class="form-check">
-              <input class="form-check-input" type="checkbox" name="condition" value="USED" {{ 'checked' if 'USED' in chosen else '' }}>
+              <input class="form-check-input" type="checkbox" name="condition" value="USED"
+                     {% if 'USED' in chosen %}checked{% endif %}>
               <span class="form-check-label">Gebraucht</span>
             </label>
             <label class="form-check">
-              <input class="form-check-input" type="checkbox" name="condition" value="CERTIFIED_REFURBISHED" {{ 'checked' if 'CERTIFIED_REFURBISHED' in chosen else '' }}>
+              <input class="form-check-input" type="checkbox" name="condition" value="CERTIFIED_REFURBISHED"
+                     {% if 'CERTIFIED_REFURBISHED' in chosen %}checked{% endif %}>
               <span class="form-check-label">Refurbished (zert.)</span>
             </label>
           </div>
           <div class="form-text">Mehrfachauswahl möglich.</div>
         </div>
+
+        {# Erweiterte Filter: Werte mit value="1" damit Backend die Flags erkennt #}
+        <div class="col-md-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="freeShipping" name="free_shipping" value="1"
+                   {% if base_qs.get('free_shipping', request.args.get('free_shipping')) == '1' %}checked{% endif %}>
+            <label class="form-check-label" for="freeShipping">Nur kostenloser Versand</label>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="returns" name="returns_accepted" value="1"
+                   {% if base_qs.get('returns_accepted', request.args.get('returns_accepted')) == '1' %}checked{% endif %}>
+            <label class="form-check-label" for="returns">Nur mit Rückgaberecht</label>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="topRated" name="top_rated_only" value="1"
+                   {% if base_qs.get('top_rated_only', request.args.get('top_rated_only')) == '1' %}checked{% endif %}>
+            <label class="form-check-label" for="topRated">Nur Top-bewertete Verkäufer</label>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Land</label>
+          <select class="form-select" name="location_country">
+            {% set _lc = base_qs.get('location_country', request.args.get('location_country', 'DE')) %}
+            <option value="DE" {% if _lc=='DE' %}selected{% endif %}>🇩🇪 Deutschland</option>
+            <option value="AT" {% if _lc=='AT' %}selected{% endif %}>🇦🇹 Österreich</option>
+            <option value="CH" {% if _lc=='CH' %}selected{% endif %}>🇨🇭 Schweiz</option>
+            <option value="GB" {% if _lc=='GB' %}selected{% endif %}>🇬🇧 Großbritannien</option>
+            <option value="US" {% if _lc=='US' %}selected{% endif %}>🇺🇸 USA</option>
+          </select>
+        </div>
+
       </div>
-
-      <!-- Bestehende Felder... -->
-
-<!-- NEU: Angebotsformat -->
-<div class="mb-3">
-  <label class="form-label">Angebotsformat</label>
-  <select name="listing_type" class="form-select">
-    <option value="all">Alle</option>
-    <option value="auction">Nur Auktionen</option>
-    <option value="buy_it_now">Nur Sofortkauf</option>
-    <option value="auction_with_bin">Auktion mit Sofortkauf</option>
-  </select>
-</div>
-
-<!-- NEU: Standort -->
-<div class="row">
-  <div class="col-md-6">
-    <label class="form-label">Land</label>
-    <select name="location_country" class="form-select">
-      <option value="DE">Deutschland</option>
-      <option value="AT">Österreich</option>
-      <option value="CH">Schweiz</option>
-      <option value="">Alle Länder</option>
-    </select>
-  </div>
-
-  <div class="col-md-6">
-    <label class="form-label">PLZ (für Umkreissuche)</label>
-    <input type="text" name="zip_code" class="form-control" placeholder="z.B. 44139">
-  </div>
-</div>
-
-<div class="mb-3">
-  <label class="form-label">Umkreis</label>
-  <select name="max_distance_km" class="form-select">
-    <option value="">Egal</option>
-    <option value="25">25 km</option>
-    <option value="50">50 km</option>
-    <option value="100">100 km</option>
-    <option value="200">200 km</option>
-  </select>
-</div>
-
-<!-- NEU: Weitere Filter -->
-<div class="mb-3">
-  <div class="form-check">
-    <input type="checkbox" name="free_shipping" class="form-check-input" id="freeShip">
-    <label class="form-check-label" for="freeShip">
-      Nur kostenloser Versand
-    </label>
-  </div>
-
-  <div class="form-check">
-    <input type="checkbox" name="returns_accepted" class="form-check-input" id="returns">
-    <label class="form-check-label" for="returns">
-      Nur mit Rückgaberecht
-    </label>
-  </div>
-
-  <div class="form-check">
-    <input type="checkbox" name="top_rated_only" class="form-check-input" id="topRated">
-    <label class="form-check-label" for="topRated">
-      Nur Top-bewertete Verkäufer
-    </label>
-  </div>
-
-  <div class="form-check">
-    <input type="checkbox" name="exclude_international" class="form-check-input" id="excludeInt">
-    <label class="form-check-label" for="excludeInt">
-      Keine internationalen Angebote
-    </label>
-  </div>
-</div>
 
       <div class="d-flex gap-2 mt-4">
         <button type="submit" class="btn btn-primary">🔎 Suchen</button>
         <button type="reset" class="btn btn-outline-secondary" id="btnReset">Zurücksetzen</button>
-        <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-success ms-auto">Preise ansehen</a>
+
+        <div class="ms-auto">
+          <a class="btn btn-outline-success" href="{{ url_for('public_pricing') }}">Preise ansehen</a>
+        </div>
       </div>
     </div>
   </form>
 
-  <!-- Teilen: Direktlink zur GET-Suche -->
-  <div class="card mt-4">
+  {# ---------- Share-URL (GET link) ---------- #}
+  <div class="card mt-4 mb-4">
     <div class="card-body">
       <div class="d-flex align-items-center mb-2">
-        <strong class="me-2">Teilen:</strong>
-        <span class="text-muted">Erzeuge einen Link (GET) zu genau dieser Suche.</span>
+        <strong class="me-2">Link teilen:</strong>
+        <span class="text-muted">Erzeugt einen GET-Link zu genau dieser Suche.</span>
       </div>
       <div class="input-group">
         <input type="text" class="form-control" id="shareUrl" readonly value="">
@@ -183,145 +174,299 @@
       <div class="form-text mt-1">Der Link öffnet direkt die Ergebnisse mit allen Filtern.</div>
     </div>
   </div>
+
+  {# ---------- Toolbar: Alerts / Test-Mail ---------- #}
+  <div class="d-flex gap-2 mb-3">
+    <form action="{{ url_for('alerts_subscribe') }}" method="post" class="m-0">
+      {# hidden fields to preserve current search when saving alert #}
+      <input type="hidden" name="q1" value="{{ base_qs.get('q1', request.args.get('q1','')) }}" />
+      <input type="hidden" name="q2" value="{{ base_qs.get('q2', request.args.get('q2','')) }}" />
+      <input type="hidden" name="q3" value="{{ base_qs.get('q3', request.args.get('q3','')) }}" />
+      <input type="hidden" name="price_min" value="{{ base_qs.get('price_min', request.args.get('price_min','')) }}" />
+      <input type="hidden" name="price_max" value="{{ base_qs.get('price_max', request.args.get('price_max','')) }}" />
+      <input type="hidden" name="sort" value="{{ base_qs.get('sort', request.args.get('sort','best')) }}" />
+      {% for c in (base_qs.get('condition', request.args.getlist('condition')) or []) %}
+        <input type="hidden" name="condition" value="{{ c }}" />
+      {% endfor %}
+      <button type="submit" class="btn btn-outline-primary">🔔 Alarm speichern</button>
+    </form>
+
+    <a class="btn btn-success" href="{{ url_for('email_test') }}?to={{ (session.get('user_email') if session else '') | urlencode }}">✉️ E-Mail testen</a>
+  </div>
+
+  {# ---------- Results area: only shown when `results` present ---------- #}
+  {% if results and results|length %}
+    <div class="mb-3 text-muted small">
+      {% if pagination.total_estimated %}
+        ~{{ pagination.total_estimated }} Treffer geschätzt
+        {% if pagination.total_pages %} · Seite {{ pagination.page }} von {{ pagination.total_pages }}{% endif %}
+      {% else %}
+        Seite {{ pagination.page }}
+      {% endif %}
+    </div>
+
+    <div class="row g-3">
+      {% for item in results %}
+        <div class="col-12 col-md-6 col-lg-4">
+          <div class="card h-100 shadow-sm">
+            <div class="row g-0 h-100">
+              <div class="col-4 d-flex align-items-center justify-content-center p-2">
+                {% set img = item.img or 'https://via.placeholder.com/160x120?text=%20' %}
+                <img src="{{ img }}" class="img-fluid rounded" alt="Bild" loading="lazy" style="max-height:120px" />
+              </div>
+              <div class="col-8">
+                <div class="card-body d-flex flex-column">
+                  <div class="d-flex align-items-center gap-1 mb-1">
+                    {% set src = (item.src or '')|lower %}
+                    {% if src == 'amazon' %}
+                      <span class="badge rounded-pill text-bg-warning text-dark">Amazon</span>
+                    {% elif src == 'ebay' %}
+                      <span class="badge rounded-pill text-bg-primary">eBay</span>
+                    {% elif src == 'demo' %}
+                      <span class="badge rounded-pill text-bg-secondary">Demo</span>
+                    {% endif %}
+                    {% if item.term %}
+                      <span class="badge text-bg-light">{{ item.term }}</span>
+                    {% endif %}
+                  </div>
+
+                  <h2 class="h6 card-title mb-1 text-truncate" title="{{ item.title }}">{{ item.title }}</h2>
+                  <div class="mb-2 fw-semibold">{{ item.price or '–' }}</div>
+
+                  <div class="mt-auto">
+                    <div class="d-flex gap-1">
+                      <a href="{{ item.url }}" target="_blank" rel="nofollow noopener" class="btn btn-sm btn-outline-dark flex-fill">Zum Angebot</a>
+
+                      <form method="post" action="{{ url_for('watchlist.add') }}" class="flex-fill m-0 watchlist-form">
+                        <input type="hidden" name="item_id" value="{{ item.id or item.url }}" />
+                        <input type="hidden" name="title" value="{{ item.title }}" />
+                        <input type="hidden" name="price" value="{{ item.price }}" />
+                        <input type="hidden" name="url" value="{{ item.url }}" />
+                        <input type="hidden" name="image_url" value="{{ item.img }}" />
+                        <input type="hidden" name="source" value="search" />
+                        <button type="submit" class="btn btn-sm btn-warning w-100" title="Zur Watchlist hinzufügen" {% if not item.id and not item.url %}disabled{% endif %}>⭐ Watchlist</button>
+                      </form>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    {# Pagination (simple prev/next) #}
+    {% set prev_url = '#' %}
+    {% set next_url = '#' %}
+    {% set b = base_qs if base_qs else {} %}
+    {% if pagination.has_prev %}
+      {% if qs is defined %}
+        {% set prev_url = url_for('search') ~ '?' ~ qs(b, page=pagination.page-1) %}
+      {% else %}
+        {% set prev_url = url_for('search') %}
+      {% endif %}
+    {% endif %}
+    {% if pagination.has_next %}
+      {% if qs is defined %}
+        {% set next_url = url_for('search') ~ '?' ~ qs(b, page=pagination.page+1) %}
+      {% else %}
+        {% set next_url = url_for('search') %}
+      {% endif %}
+    {% endif %}
+
+    <nav class="mt-4" aria-label="Seiten">
+      <ul class="pagination justify-content-center">
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}"><a class="page-link" href="{{ prev_url }}">‹ Zurück</a></li>
+        <li class="page-item active"><span class="page-link">{{ pagination.page }}</span></li>
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}"><a class="page-link" href="{{ next_url }}">Weiter ›</a></li>
+      </ul>
+    </nav>
+  {% else %}
+    {# If no results variable provided, show helpful hint #}
+    <div class="alert alert-info mt-3">Noch keine Suche durchgeführt — gib Begriffe ein und klicke "Suchen".</div>
+  {% endif %}
+
 </div>
 
+{# ---------- Client-side JS: presets, share-url builder, defensive form handling and watchlist AJAX ---------- #}
 <script>
-  (function () {
-    const form = document.getElementById('searchForm');
-    const share = document.getElementById('shareUrl');
-
-    // Presets (Auto-Fill + Auto-Submit)
-    // === Dynamische Presets aus /static/templates.json ===
-
-// 1) Presets laden
-async function loadPresets() {
-  try {
-    const res = await fetch('/static/templates.json', { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    return Array.isArray(data?.presets) ? data.presets : [];
-  } catch (e) {
-    console.warn('Konnte Presets nicht laden:', e);
-    return [];
-  }
-}
-
-// 2) Preset anwenden und Suche starten
-function applyPreset(p) {
-  form.q1.value = (p.q1 || '').trim();
-  form.q2.value = (p.q2 || '').trim();
-  form.q3.value = (p.q3 || '').trim();
-
-  form.price_min.value = (p.price_min ?? '').toString();
-  form.price_max.value = (p.price_max ?? '').toString();
-
-  form.sort.value = (p.sort || 'best');
-
-  form.querySelectorAll('input[name="condition"]').forEach(cb => (cb.checked = false));
-  if (p.cond) {
-    p.cond.split(',').map(s => s.trim()).filter(Boolean).forEach(val => {
-      const el = form.querySelector('input[name="condition"][value="' + val + '"]');
-      if (el) el.checked = true;
-    });
-  }
-
-  updateShareUrl();
-  form.submit(); // nur hier absenden
-}
-
-// 3) Buttons in #preset-list rendern
-function renderChips(presets) {
-  const list = document.getElementById('preset-list');
-  if (!list) return;
-
-  list.innerHTML = '';
-  if (!presets.length) {
-    list.innerHTML = '<span class="text-muted">keine Presets gefunden</span>';
-    return;
-  }
-
-  presets.forEach(p => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn btn-outline-primary btn-sm';
-    btn.textContent = p.label || p.id || 'Preset';
-    btn.title = [p.q1, p.q2, p.q3].filter(Boolean).join(' • ');
-    btn.addEventListener('click', () => applyPreset(p));
-    list.appendChild(btn);
-  });
-
-  const reset = document.createElement('button');
-  reset.type = 'button';
-  reset.className = 'btn btn-outline-secondary btn-sm';
-  reset.textContent = 'Zurücksetzen';
-  reset.addEventListener('click', () => {
-    if (typeof form.reset === 'function') form.reset();
-    form.querySelectorAll('input[type="text"], input[type="number"]').forEach(inp => (inp.value = ''));
-    form.querySelectorAll('input[name="condition"]').forEach(cb => (cb.checked = false));
-    updateShareUrl();
-  });
-  list.appendChild(reset);
-}
-
-// 4) Start
-loadPresets().then(renderChips);
-
-
-    // Build GET-URL zu /search (inkl. Mehrfachparametern "condition")
-    function updateShareUrl() {
-      const params = new URLSearchParams();
-
-      const q1 = (form.q1.value || '').trim();
-      const q2 = (form.q2.value || '').trim();
-      const q3 = (form.q3.value || '').trim();
-      if (q1) params.set('q1', q1);
-      if (q2) params.set('q2', q2);
-      if (q3) params.set('q3', q3);
-
-      const pmin = (form.price_min.value || '').trim();
-      const pmax = (form.price_max.value || '').trim();
-      if (pmin) params.set('price_min', pmin);
-      if (pmax) params.set('price_max', pmax);
-
-      const sort = (form.sort.value || 'best').trim();
-      if (sort && sort !== 'best') params.set('sort', sort);
-
-      const per = (form.per_page.value || '').trim();
-      if (per) params.set('per_page', per);
-
-      // Mehrfachwerte
-      form.querySelectorAll('input[name="condition"]:checked').forEach(cb => {
-        params.append('condition', cb.value);
+document.addEventListener('DOMContentLoaded', function () {
+  // Presets loader
+  (async function loadPresets() {
+    try {
+      const res = await fetch('/static/templates.json', {cache: 'no-store'});
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const list = document.getElementById('preset-list');
+      list.innerHTML = '';
+      const presets = (data && Array.isArray(data.presets)) ? data.presets : [];
+      if (!presets.length) {
+        list.innerHTML = '<span class="text-muted">keine Presets gefunden</span>';
+        return;
+      }
+      presets.forEach(p => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-outline-primary btn-sm';
+        btn.textContent = p.label || p.id || 'Preset';
+        btn.title = [p.q1,p.q2,p.q3].filter(Boolean).join(' • ');
+        btn.addEventListener('click', () => {
+          // Fill fields and submit
+          const f = document.getElementById('searchForm');
+          if (!f) return;
+          f.q1.value = (p.q1 || '').trim();
+          f.q2.value = (p.q2 || '').trim();
+          f.q3.value = (p.q3 || '').trim();
+          f.price_min.value = (p.price_min || '').toString();
+          f.price_max.value = (p.price_max || '').toString();
+          if (p.sort) f.sort.value = p.sort;
+          // conditions
+          f.querySelectorAll('input[name="condition"]').forEach(cb => cb.checked = false);
+          if (p.cond) {
+            p.cond.split(',').map(s => s.trim()).filter(Boolean).forEach(val => {
+              const el = f.querySelector('input[name="condition"][value="' + val + '"]');
+              if (el) el.checked = true;
+            });
+          }
+          updateShareUrl();
+          f.submit();
+        });
+        list.appendChild(btn);
       });
-
-      const url = '{{ url_for("search") }}' + (params.toString() ? '?' + params.toString() : '');
-      if (share) share.value = url;
+      // Add reset button
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'btn btn-outline-secondary btn-sm';
+      reset.textContent = 'Zurücksetzen';
+      reset.addEventListener('click', () => {
+        const f = document.getElementById('searchForm');
+        if (f) {
+          f.reset();
+          f.querySelectorAll('input[type="text"], input[type="number"]').forEach(i=>i.value='');
+          f.querySelectorAll('input[name="condition"]').forEach(cb => cb.checked = false);
+          updateShareUrl();
+        }
+      });
+      list.appendChild(reset);
+    } catch (e) {
+      console.warn('Konnte Presets nicht laden:', e);
     }
+  })();
 
-    // Eingaben beobachten → Share-URL aktuell halten
+  // Share link builder
+  const form = document.getElementById('searchForm');
+  const share = document.getElementById('shareUrl');
+  function updateShareUrl() {
+    if (!form || !share) return;
+    const params = new URLSearchParams();
+    const q1 = (form.q1.value || '').trim();
+    const q2 = (form.q2.value || '').trim();
+    const q3 = (form.q3.value || '').trim();
+    if (q1) params.set('q1', q1);
+    if (q2) params.set('q2', q2);
+    if (q3) params.set('q3', q3);
+    const pmin = (form.price_min.value || '').trim();
+    const pmax = (form.price_max.value || '').trim();
+    if (pmin) params.set('price_min', pmin);
+    if (pmax) params.set('price_max', pmax);
+    const sort = (form.sort.value || 'best').trim();
+    if (sort) params.set('sort', sort);
+    const per = (form.per_page.value || '').trim();
+    if (per) params.set('per_page', per);
+    form.querySelectorAll('input[name="condition"]:checked').forEach(cb => params.append('condition', cb.value));
+    const lc = (form.location_country && form.location_country.value) ? form.location_country.value : '';
+    if (lc) params.set('location_country', lc);
+    if (form.free_shipping && form.free_shipping.checked) params.set('free_shipping','1');
+    if (form.returns_accepted && form.returns_accepted.checked) params.set('returns_accepted','1');
+    if (form.top_rated_only && form.top_rated_only.checked) params.set('top_rated_only','1');
+    share.value = '{{ url_for("search") }}' + (params.toString() ? '?' + params.toString() : '');
+  }
+  if (form) {
     form.addEventListener('input', updateShareUrl);
     form.addEventListener('change', updateShareUrl);
-    document.getElementById('btnReset').addEventListener('click', () => {
-      setTimeout(updateShareUrl, 0);
-    });
+    document.getElementById('btnReset').addEventListener('click', () => setTimeout(updateShareUrl, 0));
+    updateShareUrl();
+  }
 
-    // Kopieren
-    document.getElementById('btnCopy').addEventListener('click', async () => {
+  // Copy share link
+  const btnCopy = document.getElementById('btnCopy');
+  if (btnCopy && share) {
+    btnCopy.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(share.value);
-        const old = document.getElementById('btnCopy').textContent;
-        document.getElementById('btnCopy').textContent = '✔️ Kopiert';
-        setTimeout(() => document.getElementById('btnCopy').textContent = old, 1200);
+        const old = btnCopy.textContent;
+        btnCopy.textContent = '✔️ Kopiert';
+        setTimeout(()=>btnCopy.textContent = old, 1200);
       } catch (e) {
-        // Fallback
         share.select();
         document.execCommand('copy');
       }
     });
+  }
 
-    // Erste Initialisierung
-    updateShareUrl();
-  })();
+  // Defensive submit handling
+  // Intercept submits in capture phase to beat global fetch handlers and force navigation with querystring
+  window.addEventListener('submit', function(e) {
+    try {
+      const tgt = e.target;
+      if (!tgt || tgt.tagName !== 'FORM') return;
+      // our search form: force navigation with querystring (so server GET branch runs)
+      if (tgt.id === 'searchForm') {
+        e.preventDefault();
+        // stop other listeners from handling it
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        if (e.stopPropagation) e.stopPropagation();
+        try {
+          const fd = new FormData(tgt);
+          const params = new URLSearchParams();
+          for (const pair of fd.entries()) params.append(pair[0], pair[1]);
+          // also append checked checkboxes that may not be represented when unchecked
+          // (FormData already includes checked values)
+          const action = tgt.getAttribute('action') || window.location.pathname;
+          const qs = params.toString();
+          window.location.href = action + (qs ? ('?' + qs) : '');
+        } catch (err) {
+          console.error('search navigation failed, falling back to normal submit', err);
+          tgt.submit();
+        }
+      }
+    } catch (err) {
+      console.error('submit capture handler error', err);
+    }
+  }, true); // capture
+
+  // Watchlist AJAX: only intercept forms with class 'watchlist-form'
+  try {
+    document.querySelectorAll('form.watchlist-form').forEach(function(f) {
+      f.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var btn = f.querySelector('button[type="submit"]');
+        if (!btn) return;
+        var orig = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = '...';
+        try {
+          var res = await fetch(f.action, { method: 'POST', body: new FormData(f), credentials: 'same-origin', headers: {'X-Requested-With':'XMLHttpRequest'} });
+          if (res.ok) {
+            btn.innerText = '✓';
+          } else {
+            btn.innerText = 'Fehler';
+            console.error('Watchlist add failed', res.status);
+          }
+        } catch (err) {
+          console.error(err);
+          btn.innerText = 'Fehler';
+        }
+        setTimeout(function(){ btn.innerText = orig; btn.disabled = false; }, 1000);
+      });
+    });
+  } catch (err) {
+    console.error('watchlist init failed', err);
+  }
+
+}, false);
 </script>
 
 {% endblock %}
