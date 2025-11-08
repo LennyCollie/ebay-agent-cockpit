@@ -7,16 +7,16 @@ services:
     volumes:
       - .:/workspace:cached
       - ./instance:/workspace/instance:rw
-      # KEINE .env-Zeile hier!
     working_dir: /workspace
-    environment:
-      FLASK_ENV: development
-      FLASK_DEBUG: "1"
-      FLASK_APP: app.py
-      PYTHONUNBUFFERED: "1"
-      DATABASE_URL: "postgresql://agent_db_final_user:7FfbPfBywc3Xd0qCDWSwCT3cxl7NSMvt@dpg-d1ua2849c44c73cp4cag-a.oregon-postgres.render.com/agent_db_final"
     env_file:
-      - .env # Nur so wird .env geladen!
+      - .env
+    environment:
+      # Optional overrides or debug flags (keine Secrets hier)
+      FLASK_DEBUG: "1"
+      FLASK_APP: "app" # oder "app.py"
+      PYTHONUNBUFFERED: "1"
+      # Optional dev flags
+      TELEGRAM_USE_POLLING: "0" # 0=use webhook, 1=polling (dev)
     dns:
       - 8.8.8.8
       - 8.8.4.4
