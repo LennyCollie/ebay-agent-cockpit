@@ -76,9 +76,10 @@ Run the integration test:
 python scripts/run_kleinanzeigen_test.py "laptop" 5
 ```
 
-Run unit tests:
+Run unit tests (install dev dependencies first):
 
 ```bash
+pip install -r requirements-dev.txt
 pytest tests/test_kleinanzeigen_parser.py
 ```
 
