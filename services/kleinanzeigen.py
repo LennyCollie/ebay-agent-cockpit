@@ -147,22 +147,22 @@ def _parse_item(article) -> Optional[Dict[str, Optional[str]]]:
     """
     # Extract ID from data attribute or href
     item_id = None
-    if article.get("data-adid"):
-        item_id = article.get("data-adid")
-    elif article.get("data-ad-id"):
-        item_id = article.get("data-ad-id")
+    item_id = article.get("data-adid") or article.get("data-ad-id")
     
     # Extract title and URL
     title = None
     url = None
     
     # Try to find title link (multiple selectors)
-    title_link = (
-        article.find("a", class_="ellipsis") or
-        article.find("a", {"data-test": "listing-title"}) or
-        article.find("a", class_="aditem-main--title") or
-        article.find("h2", class_="text-module-begin").find("a") if article.find("h2", class_="text-module-begin") else None
-    )
+    title_link = article.find("a", class_="ellipsis")
+    if not title_link:
+        title_link = article.find("a", {"data-test": "listing-title"})
+    if not title_link:
+        title_link = article.find("a", class_="aditem-main--title")
+    if not title_link:
+        h2 = article.find("h2", class_="text-module-begin")
+        if h2:
+            title_link = h2.find("a")
     
     if title_link:
         title = title_link.get_text(strip=True)
@@ -171,14 +171,16 @@ def _parse_item(article) -> Optional[Dict[str, Optional[str]]]:
             url = urljoin(BASE_URL, href)
             # Extract ID from URL if not found in data attributes
             if not item_id and "/s-anzeige/" in href:
+                # URL format: /s-anzeige/title-slug/ID-extra-data
                 parts = href.split("/")
-                for i, part in enumerate(parts):
-                    if part == "s-anzeige" and i + 1 < len(parts):
-                        # ID is typically in format: title-text/123456789
-                        next_part = parts[i + 1]
-                        if "/" in next_part:
-                            item_id = next_part.split("/")[-1]
-                        break
+                if len(parts) >= 4:
+                    # Get the last part which contains the ID
+                    id_part = parts[-1]
+                    # ID is before the first dash
+                    if "-" in id_part:
+                        item_id = id_part.split("-")[0]
+                    else:
+                        item_id = id_part
     
     # Extract price
     price = None
