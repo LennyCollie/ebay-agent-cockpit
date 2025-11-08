@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
+from alert_checker import run_alert_check
+
 
 import requests
 import stripe
@@ -31,7 +33,7 @@ from flask import (
 
 from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from routes.search import bp_search as search_bp
-from routes.telegram import bp as telegram_bp
+from routes.telegram import bp as telegram_bp#
 from routes.watchlist import bp as watchlist_bp
 from agent import get_mail_settings, send_mail
 
@@ -159,7 +161,8 @@ def _sqlite_file_from_url(url: str) -> Path:
 
 
 DB_FILE = _sqlite_file_from_url(DB_URL)
-DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+if DB_URL.startswith("sqlite:"):
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # -------------------------------------------------------------------
 # eBay – OAuth Client Credentials + Suche
@@ -197,6 +200,37 @@ def _currency_for_marketplace(mkt: str) -> str:
 
 EBAY_MARKETPLACE_ID = _marketplace_from_global(EBAY_GLOBAL_ID)
 EBAY_CURRENCY = _currency_for_marketplace(EBAY_MARKETPLACE_ID)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_DEFAULT_CHAT_ID = os.getenv("TELEGRAM_DEFAULT_CHAT_ID", "")
+ALERT_CHECK_INTERVAL = int(os.getenv("ALERT_CHECK_INTERVAL", "3"))
+NOTIFICATION_METHOD = os.getenv("NOTIFICATION_METHOD", "email")
+
+def send_telegram_notification(chat_id: str, message: str) -> bool:
+    """
+    Sendet eine Telegram-Nachricht.
+    Returns: True wenn erfolgreich
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        print("[Telegram] ❌ Bot Token fehlt!")
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": False,
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        print(f"[Telegram] ✅ Nachricht gesendet an {chat_id}")
+        return True
+    except Exception as e:
+        print(f"[Telegram] ❌ Fehler: {e}")
+        return False
 
 # Optional: Affiliate-Parameter (an itemWebUrl anhängen)
 AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # "campid=XXXX;customid=YOURTAG"
@@ -1409,44 +1443,313 @@ def public_pricing():
 
 @app.route("/dashboard")
 def dashboard():
+    """Dashboard mit Telegram-Status, Alerts, Statistiken"""
     if not session.get("user_id"):
         flash("Bitte einloggen.", "info")
         return redirect(url_for("login"))
 
-    # Dummy-Daten bis du die echten Features hast
-    context = {
-        "title": "Dashboard",
-        "watchlist_count": 0,
-        "notifications_today": 0,
-        "avg_price_saved": 0
-    }
+    user_email = session.get("user_email")
 
-    # Optional: Echte Daten aus DB holen
     try:
         conn = get_db()
-        user_email = session.get("user_email")
+        cur = conn.cursor()
 
-        # Watchlist zählen (falls Tabelle existiert)
-        try:
-            context["watchlist_count"] = conn.execute(
-                "SELECT COUNT(*) FROM watchlist WHERE user_email=?", (user_email,)
-            ).fetchone()[0]
-        except:
-            pass
+        # User-Daten holen
+        cur.execute("""
+            SELECT email, telegram_chat_id, telegram_enabled, telegram_verified,
+                   telegram_username, plan_type, is_premium
+            FROM users WHERE email = ?
+        """, (user_email,))
 
-        # Alerts zählen
-        try:
-            context["notifications_today"] = conn.execute(
-                "SELECT COUNT(*) FROM search_alerts WHERE user_email=? AND is_active=1", (user_email,)
-            ).fetchone()[0]
-        except:
-            pass
+        user_row = cur.fetchone()
+        user = dict(user_row) if user_row else {
+            "email": user_email,
+            "telegram_chat_id": None,
+            "telegram_enabled": False,
+            "telegram_verified": False,
+            "telegram_username": None,
+            "plan_type": "free",
+            "is_premium": False
+        }
+
+        # Stats holen
+        stats = get_watchlist_stats(user_email, conn)
+
+        # Recent Alerts holen
+        cur.execute("""
+            SELECT id, terms_json, filters_json, last_run_ts
+            FROM search_alerts
+            WHERE user_email = ? AND is_active = 1
+            ORDER BY id DESC LIMIT 10
+        """, (user_email,))
+
+        recent_alerts = []
+        for row in cur.fetchall():
+            row = dict(row)
+            try:
+                terms = json.loads(row["terms_json"])
+                filters = json.loads(row["filters_json"])
+                recent_alerts.append({
+                    "id": row["id"],
+                    "search_term": terms[0] if terms else "Unbekannt",
+                    "price_min": filters.get("price_min", ""),
+                    "price_max": filters.get("price_max", ""),
+                    "location": filters.get("location_country", "DE"),
+                    "free_shipping": filters.get("free_shipping", False)
+                })
+            except:
+                continue
 
         conn.close()
-    except Exception as e:
-        print(f"[dashboard] Error loading stats: {e}")
 
-    return safe_render("dashboard.html", **context)
+        context = {
+            "title": "Dashboard",
+            "user": user,
+            "stats": stats,
+            "recent_alerts": recent_alerts,
+            "watchlist_count": stats.get("active_alerts", 0),
+            "notifications_today": stats.get("notifications_today", 0),
+            "last_notification_time": "5"
+        }
+
+        return safe_render("dashboard.html", **context)
+
+    except Exception as e:
+        print(f"[Dashboard] Fehler: {e}")
+        return safe_render("dashboard.html",
+            title="Dashboard",
+            user={"email": user_email, "telegram_verified": False},
+            stats={"active_alerts": 0, "max_alerts": 3, "notifications_today": 0,
+                   "plan": "free", "check_interval": 5},
+            recent_alerts=[],
+            watchlist_count=0,
+            notifications_today=0
+        )
+
+# Watchlist Stats Funktion (ersetzt Import von watchlist_integration)
+# -------------------------
+# Watchlist-Statistiken
+# -------------------------
+def get_watchlist_stats(user_email, conn):
+    """Holt Watchlist-Statistiken"""
+    cur = conn.cursor()
+
+    # Aktive Alerts
+    cur.execute(
+        """
+        SELECT COUNT(*) as count
+        FROM search_alerts
+        WHERE user_email = ? AND is_active = 1
+        """,
+        (user_email,),
+    )
+    row = cur.fetchone()
+    active_alerts = row["count"] if row and "count" in row else 0
+
+    # Benachrichtigungen heute
+    import time
+    today_start = int(time.time()) - (24 * 3600)
+    cur.execute(
+        """
+        SELECT COUNT(*) as count
+        FROM alert_seen
+        WHERE user_email = ? AND first_seen > ?
+        """,
+        (user_email, today_start),
+    )
+    row = cur.fetchone()
+    notifications_today = row["count"] if row and "count" in row else 0
+
+    # Plan-Limits
+    cur.execute("SELECT plan_type FROM users WHERE email = ?", (user_email,))
+    user = cur.fetchone()
+    plan = user["plan_type"] if user and "plan_type" in user else "free"
+
+    plan_limits = {
+        "free": {"max_alerts": 3, "check_interval": 5},
+        "basic": {"max_alerts": 10, "check_interval": 3},
+        "pro": {"max_alerts": 50, "check_interval": 1},
+        "team": {"max_alerts": 150, "check_interval": 1},
+    }
+
+    limits = plan_limits.get(plan, plan_limits["free"])
+
+    return {
+        "active_alerts": active_alerts,
+        "max_alerts": limits["max_alerts"],
+        "notifications_today": notifications_today,
+        "plan": plan,
+        "check_interval": limits["check_interval"],
+    }
+
+
+# -------------------------
+# Dashboard-Route
+# -------------------------
+@app.route("/dashboard2")
+def dashboard2():
+    """Dashboard mit Telegram-Status, Alerts, Statistiken"""
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+
+        # User-Daten holen
+        cur.execute(
+            """
+            SELECT email, telegram_chat_id, telegram_enabled, telegram_verified,
+                   telegram_username, plan_type, is_premium
+            FROM users WHERE email = ?
+            """,
+            (user_email,),
+        )
+        user_row = cur.fetchone()
+        user = (
+            dict(user_row)
+            if user_row
+            else {
+                "email": user_email,
+                "telegram_chat_id": None,
+                "telegram_enabled": False,
+                "telegram_verified": False,
+                "telegram_username": None,
+                "plan_type": "free",
+                "is_premium": False,
+            }
+        )
+
+        # Stats holen
+        stats = get_watchlist_stats(user_email, conn)
+
+        # ============================================================
+        # RECENT ALERTS (Letzte 10)
+        # ============================================================
+        cur.execute(
+            """
+            SELECT id, terms_json, filters_json, last_run_ts
+            FROM search_alerts
+            WHERE user_email = ? AND is_active = 1
+            ORDER BY id DESC
+            LIMIT 10
+            """,
+            (user_email,),
+        )
+
+        alerts_raw = cur.fetchall()
+        recent_alerts = []
+        for row in alerts_raw:
+            row = dict(row)
+            try:
+                terms = json.loads(row.get("terms_json") or "[]")
+                filters = json.loads(row.get("filters_json") or "{}")
+                recent_alerts.append(
+                    {
+                        "id": row.get("id"),
+                        "search_term": terms[0] if terms else "Unbekannt",
+                        "price_min": filters.get("price_min", ""),
+                        "price_max": filters.get("price_max", ""),
+                        "location": filters.get("location_country", "DE"),
+                        "free_shipping": filters.get("free_shipping", False),
+                        "last_check": row.get("last_run_ts", 0),
+                    }
+                )
+            except Exception as e:
+                app.logger.debug("[Dashboard] Alert-Parse-Fehler: %s", e)
+                continue
+
+        # ============================================================
+        # WATCHLIST COUNT (für alte Kompatibilität)
+        # ============================================================
+        watchlist_count = stats.get("active_alerts", 0)
+        try:
+            cur.execute(
+                """
+                SELECT COUNT(*) as count
+                FROM watchlist
+                WHERE user_email = ?
+                """,
+                (user_email,),
+            )
+            old_watchlist_count = cur.fetchone()
+            if old_watchlist_count and "count" in old_watchlist_count:
+                watchlist_count = old_watchlist_count["count"]
+        except Exception:
+            # watchlist Tabelle existiert ggf. nicht — safe fallback
+            pass
+
+        # ============================================================
+        # LETZTE BENACHRICHTIGUNG (optional)
+        # ============================================================
+        last_notification_time = "–"
+        try:
+            import time
+
+            cur.execute(
+                """
+                SELECT MAX(first_seen) as last_seen
+                FROM alert_seen
+                WHERE user_email = ?
+                """,
+                (user_email,),
+            )
+            last_row = cur.fetchone()
+            if last_row and last_row.get("last_seen"):
+                last_seen = last_row["last_seen"]
+                now = int(time.time())
+                minutes_ago = (now - last_seen) // 60
+
+                if minutes_ago < 60:
+                    last_notification_time = f"{minutes_ago}"
+                elif minutes_ago < 1440:  # < 24 Stunden
+                    last_notification_time = f"{minutes_ago // 60}h"
+                else:
+                    last_notification_time = f"{minutes_ago // 1440}d"
+        except Exception as e:
+            app.logger.debug("[Dashboard] Last-Notification-Fehler: %s", e)
+
+        conn.close()
+
+        # ============================================================
+        # CONTEXT ZUSAMMENSTELLEN
+        # ============================================================
+        context = {
+            "title": "Dashboard",
+            "user": user,
+            "stats": stats,
+            "recent_alerts": recent_alerts,
+            "watchlist_count": watchlist_count,
+            "notifications_today": stats.get("notifications_today", 0),
+            "last_notification_time": last_notification_time,
+            "avg_price_saved": 0,  # Optional: Später berechnen
+        }
+
+        return safe_render("dashboard.html", **context)
+
+    except Exception as e:
+        # Fehler-Fallback
+        app.logger.exception("[Dashboard] Kritischer Fehler")
+        context = {
+            "title": "Dashboard",
+            "user": {"email": user_email, "telegram_verified": False},
+            "stats": {
+                "active_alerts": 0,
+                "max_alerts": 3,
+                "notifications_today": 0,
+                "plan": "free",
+                "check_interval": 5,
+            },
+            "recent_alerts": [],
+            "watchlist_count": 0,
+            "notifications_today": 0,
+            "last_notification_time": "–",
+        }
+        return safe_render("dashboard.html", **context)
+
 
 
 @app.route("/start-free")
@@ -1634,6 +1937,31 @@ def search():
         base_qs=base_qs,
     )
 
+@app.route("/cron/check-alerts", methods=["POST", "GET"])
+def cron_check_alerts():
+    """
+    Cron-Job Route: Prüft alle Alerts und sendet Benachrichtigungen.
+    """
+    # Token aus Header oder Query-Parameter
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        token = request.args.get("token", "")
+
+    # Token prüfen
+    if not token or token != AGENT_TRIGGER_TOKEN:
+        print("[Cron] ❌ Ungültiger Token")
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
+
+    print(f"[Cron] ✅ Alert-Check gestartet")
+
+    try:
+        result = run_alert_check()
+        return jsonify(result), 200 if result["success"] else 500
+    except Exception as e:
+        print(f"[Cron] ❌ Fehler: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/", methods=["GET"])
 def index():
@@ -3131,6 +3459,257 @@ def admin_clear_bounces():
 
     return redirect("/admin/bounces")
 
+# ============================================================================
+# TELEGRAM ROUTES
+# ============================================================================
+
+@app.route("/telegram/settings")
+def telegram_settings():
+    """Zeigt Telegram-Einstellungen"""
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            telegram_chat_id,
+            telegram_enabled,
+            telegram_verified,
+            telegram_username
+        FROM users
+        WHERE email = ?
+    """, (user_email,))
+
+    user_row = cur.fetchone()
+    conn.close()
+
+    if user_row:
+        user = dict(user_row)
+    else:
+        user = {
+            "telegram_chat_id": None,
+            "telegram_enabled": False,
+            "telegram_verified": False,
+            "telegram_username": None
+        }
+
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")
+
+    return safe_render(
+        "telegram_settings.html",
+        user=user,
+        bot_configured=bool(TELEGRAM_BOT_TOKEN),
+        bot_username=TELEGRAM_BOT_USERNAME
+    )
+
+
+@app.route("/telegram/connect", methods=["POST"])
+def telegram_connect():
+    """Startet Telegram-Verbindungsprozess"""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    user_email = session.get("user_email")
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")
+
+    if not TELEGRAM_BOT_TOKEN:
+        return jsonify({
+            "success": False,
+            "error": "Telegram Bot nicht konfiguriert"
+        }), 500
+
+    # Deep Link zu Telegram Bot
+    deep_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start={user_email.replace('@', '_at_')}"
+
+    print(f"[Telegram] Deep Link erstellt: {deep_link}")
+
+    return jsonify({
+        "success": True,
+        "deep_link": deep_link,
+        "message": "Bitte klicke in Telegram auf 'Start'"
+    })
+
+
+@app.route("/telegram/verify", methods=["POST"])
+def telegram_verify():
+    """Wird vom Telegram Bot aufgerufen wenn User /start klickt"""
+    # Token-Check
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+
+    if token != AGENT_TRIGGER_TOKEN:
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
+
+    data = request.get_json()
+    chat_id = data.get("chat_id")
+    username = data.get("username")
+    user_email = data.get("user_email")
+
+    if not all([chat_id, user_email]):
+        return jsonify({"success": False, "error": "Missing data"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # User-Email dekodieren
+        user_email = user_email.replace("_at_", "@")
+
+        # Telegram-Daten setzen
+        cur.execute("""
+            UPDATE users
+            SET telegram_chat_id = ?,
+                telegram_username = ?,
+                telegram_enabled = 1,
+                telegram_verified = 1
+            WHERE email = ?
+        """, (str(chat_id), username, user_email))
+
+        if cur.rowcount == 0:
+            conn.close()
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        conn.commit()
+        conn.close()
+
+        # Willkommensnachricht senden
+        from telegram_bot import send_welcome_notification
+        send_welcome_notification(str(chat_id), username or "User")
+
+        print(f"[Telegram] ✅ User {user_email} verknüpft mit Chat-ID {chat_id}")
+
+        return jsonify({
+            "success": True,
+            "message": "User erfolgreich verknüpft"
+        })
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        print(f"[Telegram] ❌ Fehler: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/telegram/toggle", methods=["POST"])
+def telegram_toggle():
+    """Aktiviert/Deaktiviert Telegram-Benachrichtigungen"""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    user_email = session.get("user_email")
+    data = request.get_json()
+    enabled = data.get("enabled", False)
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE users
+        SET telegram_enabled = ?
+        WHERE email = ?
+    """, (1 if enabled else 0, user_email))
+
+    conn.commit()
+    conn.close()
+
+    status = "aktiviert" if enabled else "deaktiviert"
+    print(f"[Telegram] User {user_email}: Benachrichtigungen {status}")
+
+    return jsonify({
+        "success": True,
+        "message": f"Telegram-Alerts {status}"
+    })
+
+
+@app.route("/telegram/test", methods=["POST"])
+def telegram_test():
+    """Sendet Test-Benachrichtigung"""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    user_email = session.get("user_email")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT telegram_chat_id, telegram_enabled, telegram_verified
+        FROM users
+        WHERE email = ?
+    """, (user_email,))
+
+    user_row = cur.fetchone()
+    conn.close()
+
+    if not user_row:
+        return jsonify({"success": False, "message": "User nicht gefunden"}), 404
+
+    user = dict(user_row)
+
+    if not user["telegram_verified"]:
+        return jsonify({"success": False, "message": "Telegram nicht verbunden"}), 400
+
+    if not user["telegram_enabled"]:
+        return jsonify({"success": False, "message": "Telegram-Alerts sind deaktiviert"}), 400
+
+    # Test-Nachricht senden
+    from telegram_bot import TelegramBot
+    bot = TelegramBot()
+
+    message = """
+🧪 <b>Test-Benachrichtigung</b>
+
+Dein Telegram ist korrekt konfiguriert! ✅
+
+Du erhältst ab sofort Echtzeit-Benachrichtigungen,
+wenn neue Artikel gefunden werden.
+
+<i>Diese Nachricht kannst du ignorieren.</i>
+"""
+
+    success = bot.send_message(user["telegram_chat_id"], message)
+
+    if success:
+        return jsonify({"success": True, "message": "Test-Nachricht gesendet! Prüfe Telegram."})
+    else:
+        return jsonify({"success": False, "message": "Fehler beim Senden"}), 500
+
+
+@app.route("/telegram/disconnect", methods=["POST"])
+def telegram_disconnect():
+    """Trennt Telegram-Verbindung"""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    user_email = session.get("user_email")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE users
+        SET telegram_chat_id = NULL,
+            telegram_enabled = 0,
+            telegram_verified = 0,
+            telegram_username = NULL
+        WHERE email = ?
+    """, (user_email,))
+
+    conn.commit()
+    conn.close()
+
+    print(f"[Telegram] User {user_email}: Verbindung getrennt")
+
+    return jsonify({"success": True, "message": "Telegram getrennt"})
+
+
+print("[Telegram] ✅ Routes registriert")
+
 
 # --- Admin Blueprint: simple stats view --------------------------------------
 import sqlite3
@@ -3246,6 +3825,17 @@ def admin_stats_recalc():
         204,
         {"HX-Redirect": f"/admin/stats{q}"},
     )  # funktioniert normal & mit HTMX
+
+    # ============================================================================
+# WATCHLIST & TELEGRAM INTEGRATION
+# ============================================================================
+
+# ============================================================================
+# WATCHLIST ROUTES (direkt in app.py definiert)
+# ============================================================================
+# Integration-Dateien wurden deaktiviert, Routes sind direkt hier definiert
+
+
 
 
 if __name__ == "__main__":

@@ -26,6 +26,31 @@ class TelegramBot:
         """Prüft ob Bot konfiguriert ist"""
         return bool(self.token and len(self.token) > 10)
 
+    def get_me(self) -> Optional[Dict[str, Any]]:
+        """Ruft Telegram getMe ab und gibt das Result-Objekt zurück (oder None)"""
+        if not self.is_configured():
+            return None
+        try:
+            r = requests.get(f"{self.api_url}/getMe", timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                return data.get("result")
+            else:
+                logger.error(f"getMe failed: {r.status_code} {r.text}")
+        except Exception as e:
+            logger.exception(f"getMe exception: {e}")
+        return None
+
+    def get_username(self) -> Optional[str]:
+        """Versucht den Bot-Username aus getMe zu lesen"""
+        me = self.get_me()
+        if not me:
+            return None
+        username = me.get("username")
+        if username:
+            return username
+        return me.get("first_name")
+
     def send_message(
         self,
         chat_id: str,
@@ -36,13 +61,6 @@ class TelegramBot:
     ) -> bool:
         """
         Sendet eine Nachricht an einen User
-
-        Args:
-            chat_id: Telegram Chat ID
-            text: Nachrichtentext (unterstützt HTML)
-            parse_mode: "HTML" oder "Markdown"
-            disable_web_page_preview: Keine Link-Vorschau
-            reply_markup: Inline Keyboard Buttons
         """
         if not self.is_configured():
             logger.error("Telegram Bot nicht konfiguriert!")
@@ -67,7 +85,7 @@ class TelegramBot:
                 logger.info(f"✅ Telegram Nachricht gesendet an {chat_id}")
                 return True
             else:
-                logger.error(f"❌ Telegram API Error: {response.text}")
+                logger.error(f"❌ Telegram API Error: {response.status_code} {response.text}")
                 return False
 
         except Exception as e:
@@ -100,7 +118,12 @@ class TelegramBot:
                 f"{self.api_url}/sendPhoto", json=payload, timeout=10
             )
 
-            return response.status_code == 200
+            if response.status_code == 200:
+                logger.info(f"✅ Telegram Foto gesendet an {chat_id}")
+                return True
+            else:
+                logger.error(f"❌ Telegram API Error sendPhoto: {response.status_code} {response.text}")
+                return False
 
         except Exception as e:
             logger.error(f"❌ Fehler beim Senden des Bildes: {e}")
@@ -118,6 +141,7 @@ class TelegramBot:
 
             if response.status_code == 200:
                 return response.json().get("result")
+            logger.error(f"get_chat_info failed: {response.status_code} {response.text}")
             return None
 
         except Exception as e:
@@ -129,13 +153,6 @@ class TelegramBot:
 
 
 def format_ebay_alert(item: Dict[str, Any], agent_name: str = "eBay Alert") -> str:
-    """
-    Formatiert eine schöne Telegram-Nachricht für ein neues eBay Item
-
-    Args:
-        item: Dict mit eBay Item Daten (title, price, url, etc.)
-        agent_name: Name des Such-Agenten
-    """
     title = item.get("title", "Unbekannt")
     price = item.get("price", "N/A")
     currency = item.get("currency", "EUR")
@@ -143,8 +160,7 @@ def format_ebay_alert(item: Dict[str, Any], agent_name: str = "eBay Alert") -> s
     condition = item.get("condition", "")
     location = item.get("location", "")
 
-    # Emoji basierend auf Preis
-    emoji = "🔥" if "Angebot" in title.lower() else "📦"
+    emoji = "🔥" if "angebot" in title.lower() or "sale" in title.lower() else "📦"
 
     message = f"""
 {emoji} <b>Neues Angebot gefunden!</b>
@@ -204,7 +220,6 @@ Viel Erfolg beim Schnäppchen-Jagen! 🎯
 def format_daily_summary(
     agent_count: int, new_items: int, saved_money: float = 0
 ) -> str:
-    """Tägliche Zusammenfassung"""
     return f"""
 📊 <b>Deine tägliche Zusammenfassung</b>
 
@@ -227,16 +242,11 @@ def send_new_item_alert(
 ) -> bool:
     """
     Sendet einen formatierten Alert für ein neues eBay Item
-
-    Args:
-        chat_id: Telegram Chat ID des Users
-        item: Dict mit Item-Daten
-        agent_name: Name des Such-Agenten
-        with_image: Soll Produktbild mitgesendet werden?
     """
     bot = TelegramBot()
 
     if not bot.is_configured():
+        logger.error("send_new_item_alert: Telegram Bot nicht konfiguriert")
         return False
 
     message = format_ebay_alert(item, agent_name)
@@ -274,9 +284,6 @@ def verify_telegram_connection(chat_id: str) -> Optional[Dict]:
 def handle_telegram_update(update: Dict[str, Any]):
     """
     Verarbeitet Telegram Updates (z.B. Button-Klicks)
-
-    Args:
-        update: Telegram Update Object
     """
     # Beispiel: Callback Query (Button Click)
     if "callback_query" in update:
@@ -285,35 +292,18 @@ def handle_telegram_update(update: Dict[str, Any]):
         chat_id = callback["message"]["chat"]["id"]
 
         if data == "mute_1h":
-            # TODO: Agent für 1h stumm schalten
             bot = TelegramBot()
             bot.send_message(chat_id, "🔕 Agent für 1 Stunde stummgeschaltet.")
 
         elif data == "pause_agent":
-            # TODO: Agent pausieren
             bot = TelegramBot()
             bot.send_message(chat_id, "⏸️ Agent pausiert.")
 
 
 if __name__ == "__main__":
-    # Test
     bot = TelegramBot()
 
     if bot.is_configured():
         print("✅ Telegram Bot ist konfiguriert!")
-
-        # Test-Item
-        test_item = {
-            "title": "iPhone 15 Pro Max 256GB Neu OVP",
-            "price": "999",
-            "currency": "EUR",
-            "url": "https://ebay.de/itm/123456",
-            "image_url": "https://i.ebayimg.com/images/g/test.jpg",
-            "condition": "Neu",
-            "location": "Berlin",
-        }
-
-        # Test-Nachricht (ersetze DEINE_CHAT_ID)
-        # send_new_item_alert("DEINE_CHAT_ID", test_item, "Test Agent")
     else:
         print("❌ TELEGRAM_BOT_TOKEN fehlt in .env!")
