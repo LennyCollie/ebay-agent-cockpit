@@ -66,6 +66,22 @@ print(f"EBAY_MARKETPLACE_ID = {os.getenv('EBAY_MARKETPLACE_ID')}")
 print("="*50 + "\n")
 
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+import os
+
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+# Session/Cookie Einstellungen für Produktion (nur aktivieren, wenn ENV=production oder auf Render)
+if os.getenv("ENV", "").lower() == "production" or os.getenv("RENDER") is not None:
+    # Secure Cookies (nur über HTTPS) — erforderlich bei SameSite=None
+    app.config["SESSION_COOKIE_SECURE"] = True
+    # Empfohlen: 'Lax' für typische auth-flows; setze 'None' nur, wenn wirklich cross-site Cookies nötig sind
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    # Optional: erzwinge preferred URL scheme
+    app.config["PREFERRED_URL_SCHEME"] = "https"
+
+
 # app.register_blueprint(visiontest_bp)
 app.config.from_object(Config)
 
