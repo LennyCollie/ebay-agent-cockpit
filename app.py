@@ -67,20 +67,58 @@ print(f"EBAY_MARKETPLACE_ID = {os.getenv('EBAY_MARKETPLACE_ID')}")
 print("="*50 + "\n")
 
 
-from werkzeug.middleware.proxy_fix import ProxyFix
+# -------------------- Session / SECRET_KEY Setup --------------------
 import os
+from werkzeug.middleware.proxy_fix import ProxyFix
 
-
+# ProxyFix (falls hinter Proxy/LoadBalancer wie Render)
+# (wenn du ProxyFix bereits weiter oben gesetzt hast, kann diese Zeile entfallen)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
-# Session/Cookie Einstellungen für Produktion (nur aktivieren, wenn ENV=production oder auf Render)
-if os.getenv("ENV", "").lower() == "production" or os.getenv("RENDER") is not None:
-    # Secure Cookies (nur über HTTPS) — erforderlich bei SameSite=None
-    app.config["SESSION_COOKIE_SECURE"] = True
-    # Empfohlen: 'Lax' für typische auth-flows; setze 'None' nur, wenn wirklich cross-site Cookies nötig sind
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    # Optional: erzwinge preferred URL scheme
+# SECRET_KEY: lade verlässlich aus ENV (Render / FLASK_SECRET_KEY / fallback)
+secret = (
+    os.getenv("SECRET_KEY")
+    or os.getenv("FLASK_SECRET_KEY")
+    or os.getenv("APP_SECRET")
+    or os.getenv("SECRET")
+)
+
+# Spiegeln in beiden Varianten damit alle Bibliotheken gleiches Feld sehen
+if secret:
+    app.secret_key = secret
+    app.config["SECRET_KEY"] = secret
+    app.logger.info("SECRET_KEY loaded: True")
+else:
+    # Dev-Fallback (nur wenn kein ENV gesetzt) — ersetzt nicht die Production-Var!
+    fallback = "dev-key-change-in-production-!!!!"
+    app.secret_key = fallback
+    app.config["SECRET_KEY"] = fallback
+    app.logger.warning("SECRET_KEY loaded: False — using fallback (dev). Set SECRET_KEY in ENV for production!")
+
+# Session / Cookie-Konfiguration
+# Wenn auf Render oder in Production, sichere Cookies erzwingen
+IS_RENDER = bool(os.getenv("RENDER"))
+IS_PRODUCTION = os.getenv("ENV", "").lower() == "production" or IS_RENDER
+
+# Basis-Einstellungen
+app.config["SESSION_PERMANENT"] = True
+# PERMANENT_SESSION_LIFETIME erwartet seconds (z. B. 24h)
+try:
+    app.config["PERMANENT_SESSION_LIFETIME"] = int(os.getenv("SESSION_LIFETIME", 86400))
+except Exception:
+    app.config["PERMANENT_SESSION_LIFETIME"] = 86400
+
+if IS_PRODUCTION:
+    app.config["SESSION_COOKIE_SECURE"] = True      # nur HTTPS
+    app.config["SESSION_COOKIE_HTTPONLY"] = True    # XSS Schutz
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"   # typischer Auth-flow
     app.config["PREFERRED_URL_SCHEME"] = "https"
+else:
+    # Dev fallback - lokal testen über http
+    app.config["SESSION_COOKIE_SECURE"] = False
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+# -------------------------------------------------------------------
 
 
 # app.register_blueprint(visiontest_bp)
