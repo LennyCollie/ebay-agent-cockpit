@@ -59,6 +59,7 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 # DEBUG: Zeige alle Umgebungsvariablen
 print("\n" + "="*50)
 print("ENV VARS DEBUG:")
+print("SECRET_KEY loaded:", bool(app.secret_key))
 print(f"LIVE_SEARCH = {os.getenv('LIVE_SEARCH')}")
 print(f"EBAY_CLIENT_ID = {os.getenv('EBAY_CLIENT_ID', 'MISSING')}")
 print(f"EBAY_CLIENT_SECRET = {os.getenv('EBAY_CLIENT_SECRET', 'MISSING')}")
