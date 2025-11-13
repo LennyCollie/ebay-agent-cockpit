@@ -1448,28 +1448,36 @@ def register():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    print(f"[DEBUG] DATABASE_URL: {os.getenv('DATABASE_URL', 'NOT SET')}")
+    print(f"[DEBUG] DB_FILE: {DB_FILE}")
     if request.method == "GET":
         return safe_render("login.html", title="Login")
-
+    
     email = (request.form.get("email") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
-
-    conn = get_db()
-    row = conn.execute(
-        "SELECT id, password, is_premium FROM users WHERE email = ?", (email,)
-    ).fetchone()
-    conn.close()
-
-    if not row or row["password"] != password:
+    
+    # SQLAlchemy statt get_db()
+    from sqlalchemy import create_engine, text
+    
+    db_url = os.getenv("DATABASE_URL", f"sqlite:///{DB_FILE}")
+    engine = create_engine(db_url)
+    
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT id, password, is_premium FROM users WHERE email = :email"),
+            {"email": email}
+        )
+        row = result.fetchone()
+    
+    if not row or row[1] != password:  # row[1] = password
         flash("E-Mail oder Passwort ist falsch.", "warning")
         return redirect(url_for("login"))
-
-    session["user_id"] = int(row["id"])
+    
+    session["user_id"] = int(row[0])
     session["user_email"] = email
-    session["is_premium"] = bool(row["is_premium"])
+    session["is_premium"] = bool(row[2])
     flash("Login erfolgreich.", "success")
     return redirect(url_for("dashboard"))
-
 
 @app.route("/logout")
 def logout():
