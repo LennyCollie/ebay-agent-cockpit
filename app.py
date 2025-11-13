@@ -36,6 +36,7 @@ from routes.search import bp_search as search_bp
 from routes.telegram import bp as telegram_bp#
 from routes.watchlist import bp as watchlist_bp
 from agent import get_mail_settings, send_mail
+from werkzeug.security import check_password_hash
 
 
 
@@ -1441,27 +1442,53 @@ def register():
     return redirect(url_for("login"))
 
 
+from werkzeug.security import check_password_hash
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    # GET -> Login Formular
     if request.method == "GET":
         return safe_render("login.html", title="Login")
 
+    # POST -> Login-Versuch
     email = (request.form.get("email") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
 
-    conn = get_db()
-    row = conn.execute(
-        "SELECT id, password, is_premium FROM users WHERE email = ?", (email,)
-    ).fetchone()
-    conn.close()
+    if not email or not password:
+        flash("Bitte E-Mail und Passwort eingeben.", "warning")
+        return redirect(url_for("login"))
 
-    if not row or row["password"] != password:
+    conn = get_db()
+    try:
+        # Wichtig: password_hash (nicht password)
+        # .mappings() stellt sicher, dass wir ein dict-ähnliches Row-Objekt bekommen
+        row = conn.execute(
+            "SELECT id, password_hash, is_premium, is_active FROM users WHERE email = ?",
+            (email,),
+        ).mappings().fetchone()
+    finally:
+        conn.close()
+
+    # User nicht gefunden
+    if not row:
         flash("E-Mail oder Passwort ist falsch.", "warning")
         return redirect(url_for("login"))
 
-    session["user_id"] = int(row["id"])
+    pw_hash = (row.get("password_hash") or "").strip()
+    # Passwort vergleichen (hashed)
+    if not pw_hash or not check_password_hash(pw_hash, password):
+        flash("E-Mail oder Passwort ist falsch.", "warning")
+        return redirect(url_for("login"))
+
+    # Optional: Account aktiviert?
+    if row.get("is_active") is not None and row.get("is_active") is False:
+        flash("Account ist deaktiviert. Bitte Kontaktieren.", "warning")
+        return redirect(url_for("login"))
+
+    # Login erfolgreich -> Session setzen
+    session["user_id"] = int(row.get("id"))
     session["user_email"] = email
-    session["is_premium"] = bool(row["is_premium"])
+    session["is_premium"] = bool(row.get("is_premium"))
     flash("Login erfolgreich.", "success")
     return redirect(url_for("dashboard"))
 
