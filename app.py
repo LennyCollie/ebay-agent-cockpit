@@ -1444,53 +1444,49 @@ def register():
 
 
 
+from werkzeug.security import check_password_hash
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    # GET -> Login Formular
-    if request.method == "GET":
-        return safe_render("login.html", title="Login")
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        pwd = (request.form.get("password") or "").strip()
+        if not email or not pwd:
+            flash("Bitte E-Mail und Passwort eingeben.", "warning")
+            return redirect(url_for("login"))
 
-    # POST -> Login-Versuch
-    email = (request.form.get("email") or "").strip().lower()
-    password = (request.form.get("password") or "").strip()
+        # DB via SQLAlchemy/psycopg2 oder eigene helper-Funktion
+        try:
+            # falls du SQLAlchemy-Modelle verwendest:
+            from models import User
+            user = User.query.filter_by(email=email).first()
+            if not user:
+                flash("Login fehlgeschlagen.", "danger")
+                return redirect(url_for("login"))
 
-    if not email or not password:
-        flash("Bitte E-Mail und Passwort eingeben.", "warning")
-        return redirect(url_for("login"))
+            if not user.password_hash or not check_password_hash(user.password_hash, pwd):
+                flash("Login fehlgeschlagen.", "danger")
+                return redirect(url_for("login"))
 
-    conn = get_db()
-    try:
-        # Wichtig: password_hash (nicht password)
-        # .mappings() stellt sicher, dass wir ein dict-ähnliches Row-Objekt bekommen
-        row = conn.execute(
-            "SELECT id, password_hash, is_premium, is_active FROM users WHERE email = ?",
-            (email,),
-        ).mappings().fetchone()
-    finally:
-        conn.close()
+            # optional: ist der Account aktiv?
+            if getattr(user, "is_active", True) is False:
+                flash("Account deaktiviert.", "warning")
+                return redirect(url_for("login"))
 
-    # User nicht gefunden
-    if not row:
-        flash("E-Mail oder Passwort ist falsch.", "warning")
-        return redirect(url_for("login"))
+            # Login erfolgreich -> Session setzen
+            session["user_id"] = int(user.id)
+            session["user_email"] = user.email
+            # optional: other session flags
+            flash("Erfolgreich eingeloggt.", "success")
+            return redirect(url_for("dashboard"))
+        except Exception as e:
+            current_app.logger.exception("Login-Error")
+            flash("Interner Fehler beim Login.", "danger")
+            return redirect(url_for("login"))
 
-    pw_hash = (row.get("password_hash") or "").strip()
-    # Passwort vergleichen (hashed)
-    if not pw_hash or not check_password_hash(pw_hash, password):
-        flash("E-Mail oder Passwort ist falsch.", "warning")
-        return redirect(url_for("login"))
+    # GET -> Login-Formular anzeigen
+    return render_template("login.html")
 
-    # Optional: Account aktiviert?
-    if row.get("is_active") is not None and row.get("is_active") is False:
-        flash("Account ist deaktiviert. Bitte Kontaktieren.", "warning")
-        return redirect(url_for("login"))
-
-    # Login erfolgreich -> Session setzen
-    session["user_id"] = int(row.get("id"))
-    session["user_email"] = email
-    session["is_premium"] = bool(row.get("is_premium"))
-    flash("Login erfolgreich.", "success")
-    return redirect(url_for("dashboard"))
 
 
 @app.route("/logout")
