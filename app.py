@@ -36,7 +36,7 @@ from routes.search import bp_search as search_bp
 from routes.telegram import bp as telegram_bp#
 from routes.watchlist import bp as watchlist_bp
 from agent import get_mail_settings, send_mail
-from werkzeug.security import check_password_hash
+
 
 
 
@@ -1448,45 +1448,27 @@ def register():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
-        email = (request.form.get("email") or "").strip().lower()
-        pwd = (request.form.get("password") or "").strip()
-        if not email or not pwd:
-            flash("Bitte E-Mail und Passwort eingeben.", "warning")
-            return redirect(url_for("login"))
+    if request.method == "GET":
+        return safe_render("login.html", title="Login")
 
-        # DB via SQLAlchemy/psycopg2 oder eigene helper-Funktion
-        try:
-            # falls du SQLAlchemy-Modelle verwendest:
-            from models import User
-            user = User.query.filter_by(email=email).first()
-            if not user:
-                flash("Login fehlgeschlagen.", "danger")
-                return redirect(url_for("login"))
+    email = (request.form.get("email") or "").strip().lower()
+    password = (request.form.get("password") or "").strip()
 
-            if not user.password_hash or not check_password_hash(user.password_hash, pwd):
-                flash("Login fehlgeschlagen.", "danger")
-                return redirect(url_for("login"))
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, password, is_premium FROM users WHERE email = ?", (email,)
+    ).fetchone()
+    conn.close()
 
-            # optional: ist der Account aktiv?
-            if getattr(user, "is_active", True) is False:
-                flash("Account deaktiviert.", "warning")
-                return redirect(url_for("login"))
+    if not row or row["password"] != password:
+        flash("E-Mail oder Passwort ist falsch.", "warning")
+        return redirect(url_for("login"))
 
-            # Login erfolgreich -> Session setzen
-            session["user_id"] = int(user.id)
-            session["user_email"] = user.email
-            # optional: other session flags
-            flash("Erfolgreich eingeloggt.", "success")
-            return redirect(url_for("dashboard"))
-        except Exception as e:
-            current_app.logger.exception("Login-Error")
-            flash("Interner Fehler beim Login.", "danger")
-            return redirect(url_for("login"))
-
-    # GET -> Login-Formular anzeigen
-    return render_template("login.html")
-
+    session["user_id"] = int(row["id"])
+    session["user_email"] = email
+    session["is_premium"] = bool(row["is_premium"])
+    flash("Login erfolgreich.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/logout")
