@@ -1442,7 +1442,7 @@ def register():
     return redirect(url_for("login"))
 
 
-from werkzeug.security import check_password_hash
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
