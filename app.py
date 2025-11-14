@@ -1421,26 +1421,37 @@ def register():
 
     email = (request.form.get("email") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
+    
     if not email or not password:
         flash("Bitte E-Mail und Passwort angeben.", "warning")
         return redirect(url_for("register"))
 
-    conn = get_db()
+    # Passwort hashen!
+    from werkzeug.security import generate_password_hash
+    password_hash = generate_password_hash(password)
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.exc import IntegrityError
+    
+    db_url = os.getenv("DATABASE_URL", f"sqlite:///{DB_FILE}")
+    engine = create_engine(db_url)
+    
     try:
-        conn.execute(
-            "INSERT INTO users (email, password, is_premium) VALUES (?, ?, 0)",
-            (email, password),
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO users (email, password, is_premium) VALUES (:email, :password, 0)"),
+                {"email": email, "password": password_hash}
+            )
+        flash("✅ Registrierung erfolgreich. Bitte einloggen.", "success")
+        return redirect(url_for("login"))
+        
+    except IntegrityError:
         flash("Diese E-Mail ist bereits registriert.", "warning")
         return redirect(url_for("register"))
-    finally:
-        conn.close()
-
-    flash("Registrierung erfolgreich. Bitte einloggen.", "success")
-    return redirect(url_for("login"))
-
+    except Exception as e:
+        print(f"[REGISTER] Error: {e}")
+        flash("Fehler bei der Registrierung.", "danger")
+        return redirect(url_for("register"))
 
 
 
@@ -1448,16 +1459,18 @@ def register():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    print(f"[DEBUG] DATABASE_URL: {os.getenv('DATABASE_URL', 'NOT SET')}")
-    print(f"[DEBUG] DB_FILE: {DB_FILE}")
     if request.method == "GET":
         return safe_render("login.html", title="Login")
+    
+    print(f"[DEBUG] DATABASE_URL: {os.getenv('DATABASE_URL', 'NOT SET')}")
+    print(f"[DEBUG] DB_FILE: {DB_FILE}")
     
     email = (request.form.get("email") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
     
     # SQLAlchemy statt get_db()
     from sqlalchemy import create_engine, text
+    from werkzeug.security import check_password_hash
     
     db_url = os.getenv("DATABASE_URL", f"sqlite:///{DB_FILE}")
     engine = create_engine(db_url)
@@ -1469,7 +1482,8 @@ def login():
         )
         row = result.fetchone()
     
-    if not row or row[1] != password:  # row[1] = password
+    # Passwort-Check mit Hash-Vergleich
+    if not row or not check_password_hash(row[1], password):
         flash("E-Mail oder Passwort ist falsch.", "warning")
         return redirect(url_for("login"))
     
