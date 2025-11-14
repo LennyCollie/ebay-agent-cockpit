@@ -12,15 +12,26 @@ bp = Blueprint('watchlist', __name__, url_prefix='/watchlist')
 
 
 def get_current_user(db):
-    """Holt User basierend auf Session aus der DB"""
-    user_email = session.get('user_email', 'guest')
+    """Holt User basierend auf Session (robust: user_id oder user_email)."""
+    # 1) user_id bevorzugt (numeric)
+    uid = session.get("user_id")
+    if uid:
+        try:
+            uid = int(uid)
+            user = db.query(User).filter_by(id=uid).first()
+            if user:
+                return user
+        except Exception:
+            pass
 
-    if user_email == 'guest' or not user_email or '@' not in user_email:
+    # 2) fallback auf user_email
+    user_email = (session.get("user_email") or "").strip().lower()
+    if not user_email or user_email == "guest" or "@" not in user_email:
         return None
 
-    # Hole User direkt aus model_users Tabelle
     user = db.query(User).filter_by(email=user_email).first()
     return user
+
 
 
 @bp.route('/')
