@@ -12,8 +12,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
-from alert_checker import run_alert_check
-
 
 import requests
 import stripe
@@ -30,118 +28,112 @@ from flask import (
     session,
     url_for,
 )
-
-from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
-from routes.search import bp_search as search_bp
-from routes.telegram import bp as telegram_bp#
-from routes.watchlist import bp as watchlist_bp
-from agent import get_mail_settings, send_mail
-
-
-
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # -------------------------------------------------------------------
-# .env laden
+# .env laden (lokal)
 # -------------------------------------------------------------------
 try:
     from dotenv import load_dotenv
-
     load_dotenv(".env.local", override=True)
     load_dotenv()
 except Exception:
     pass
 
-
 # -------------------------------------------------------------------
-# App & Basis-Konfig
+# Flask App erstellen
 # -------------------------------------------------------------------
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-# DEBUG: Zeige alle Umgebungsvariablen
-print("\n" + "="*50)
-print("ENV VARS DEBUG:")
-print("SECRET_KEY loaded:", bool(app.secret_key))
-print(f"LIVE_SEARCH = {os.getenv('LIVE_SEARCH')}")
-print(f"EBAY_CLIENT_ID = {os.getenv('EBAY_CLIENT_ID', 'MISSING')}")
-print(f"EBAY_CLIENT_SECRET = {os.getenv('EBAY_CLIENT_SECRET', 'MISSING')}")
-print(f"EBAY_MARKETPLACE_ID = {os.getenv('EBAY_MARKETPLACE_ID')}")
-print("="*50 + "\n")
-
-
-# -------------------- Session / SECRET_KEY Setup --------------------
-import os
-from werkzeug.middleware.proxy_fix import ProxyFix
-
-# ProxyFix (falls hinter Proxy/LoadBalancer wie Render)
-# (wenn du ProxyFix bereits weiter oben gesetzt hast, kann diese Zeile entfallen)
+# ProxyFix für Render (hinter Cloudflare/LoadBalancer)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
-# SECRET_KEY: lade verlässlich aus ENV (Render / FLASK_SECRET_KEY / fallback)
-secret = (
+# -------------------------------------------------------------------
+# SECRET_KEY Setup (KRITISCH für Sessions!)
+# -------------------------------------------------------------------
+SECRET_KEY = (
     os.getenv("SECRET_KEY")
     or os.getenv("FLASK_SECRET_KEY")
     or os.getenv("APP_SECRET")
-    or os.getenv("SECRET")
+    or "dev-key-CHANGE-IN-PRODUCTION-!!!"  # Fallback nur für lokale Entwicklung
 )
 
-# Spiegeln in beiden Varianten damit alle Bibliotheken gleiches Feld sehen
-if secret:
-    app.secret_key = secret
-    app.config["SECRET_KEY"] = secret
-    app.logger.info("SECRET_KEY loaded: True")
-else:
-    # Dev-Fallback (nur wenn kein ENV gesetzt) — ersetzt nicht die Production-Var!
-    fallback = "dev-key-change-in-production-!!!!"
-    app.secret_key = fallback
-    app.config["SECRET_KEY"] = fallback
-    app.logger.warning("SECRET_KEY loaded: False — using fallback (dev). Set SECRET_KEY in ENV for production!")
+app.secret_key = SECRET_KEY
+app.config["SECRET_KEY"] = SECRET_KEY
 
-# Session / Cookie-Konfiguration
-# Wenn auf Render oder in Production, sichere Cookies erzwingen
+# Debug-Ausgabe
+secret_from_env = bool(os.getenv("SECRET_KEY"))
+print("\n" + "="*50)
+print("🔐 SECRET_KEY CONFIG:")
+print(f"  Loaded from ENV: {secret_from_env}")
+print(f"  Length: {len(SECRET_KEY)}")
+print(f"  First 8 chars: {SECRET_KEY[:8]}...")
+print("="*50)
+
+# -------------------------------------------------------------------
+# Session / Cookie Config
+# -------------------------------------------------------------------
 IS_RENDER = bool(os.getenv("RENDER"))
 IS_PRODUCTION = os.getenv("ENV", "").lower() == "production" or IS_RENDER
 
-# Basis-Einstellungen
 app.config["SESSION_PERMANENT"] = True
-# PERMANENT_SESSION_LIFETIME erwartet seconds (z. B. 24h)
-try:
-    app.config["PERMANENT_SESSION_LIFETIME"] = int(os.getenv("SESSION_LIFETIME", 86400))
-except Exception:
-    app.config["PERMANENT_SESSION_LIFETIME"] = 86400
+app.config["PERMANENT_SESSION_LIFETIME"] = 86400  # 24 Stunden
 
 if IS_PRODUCTION:
-    app.config["SESSION_COOKIE_SECURE"] = True      # nur HTTPS
-    app.config["SESSION_COOKIE_HTTPONLY"] = True    # XSS Schutz
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"   # typischer Auth-flow
+    print("🔒 Production Mode: Secure Cookies ENABLED")
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["PREFERRED_URL_SCHEME"] = "https"
 else:
-    # Dev fallback - lokal testen über http
+    print("🔓 Development Mode: Secure Cookies DISABLED")
     app.config["SESSION_COOKIE_SECURE"] = False
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
 # -------------------------------------------------------------------
+# Config & Imports
+# -------------------------------------------------------------------
+from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 
-
-# app.register_blueprint(visiontest_bp)
+# NUR EINMAL Config laden!
 app.config.from_object(Config)
 
-
+# Stripe Config
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
 app.config["PRICE_TO_PLAN"] = PRICE_TO_PLAN
 app.config["PLAUSIBLE_DOMAIN"] = os.getenv("PLAUSIBLE_DOMAIN", "")
 
-import stripe
-
-stripe.api_key = (
-    Config.STRIPE_SECRET_KEY or os.getenv("STRIPE_SECRET_KEY", "")
-).strip()
+stripe.api_key = (Config.STRIPE_SECRET_KEY or os.getenv("STRIPE_SECRET_KEY", "")).strip()
 STRIPE_OK = bool(stripe.api_key and len(stripe.api_key) > 10)
 
+# -------------------------------------------------------------------
+# Blueprints registrieren
+# -------------------------------------------------------------------
+from routes.inbound import bp as inbound_bp
+from routes.telegram import bp as telegram_bp
+from routes.vision_test import bp as vision_test_bp
+from routes.watchlist import bp as watchlist_bp
+from routes.search import bp_search as search_bp
 
-# --- kleine Helfer ---
+app.register_blueprint(inbound_bp)
+app.register_blueprint(telegram_bp)
+app.register_blueprint(vision_test_bp)
+app.register_blueprint(search_bp)
+app.register_blueprint(watchlist_bp)
+
+print("[Telegram] ✅ Routes registriert")
+
+# -------------------------------------------------------------------
+# Imports für Mail & Agent
+# -------------------------------------------------------------------
+from agent import get_mail_settings, send_mail
+
+# -------------------------------------------------------------------
+# Helper Functions
+# -------------------------------------------------------------------
 def as_bool(val: Optional[str]) -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
-
 
 def getenv_any(*names: str, default: str = "") -> str:
     for n in names:
@@ -150,31 +142,29 @@ def getenv_any(*names: str, default: str = "") -> str:
             return v
     return default
 
+# -------------------------------------------------------------------
+# Security Headers
+# -------------------------------------------------------------------
+@app.after_request
+def add_security_headers(resp):
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    return resp
 
-# 5) Blueprints registrieren (nachdem die Config steht)
-from routes.inbound import bp as inbound_bp
-from routes.telegram import bp as telegram_bp
-from routes.vision_test import bp as vision_test_bp
-from routes.watchlist import bp as watchlist_bp
-
-app.register_blueprint(inbound_bp)
-app.register_blueprint(telegram_bp)
-app.register_blueprint(vision_test_bp)
-#app.register_blueprint(search_bp)
-app.register_blueprint(watchlist_bp)
-
-
-
-
-# Falls du eine Config-Klasse nutzt, bleibt das so:
-app.config.from_object(Config)  # (nur falls bei dir vorhanden)
-
-# HIER EINFÜGEN:
-app.config["STRIPE_PRICE"] = (
-    STRIPE_PRICE  # <— die 3 Price-IDs im App-Config verfügbar machen
-)
-# (optional, aber praktisch)
-app.config["PRICE_TO_PLAN"] = {v: k for k, v in STRIPE_PRICE.items()}
+# -------------------------------------------------------------------
+# Debug-Ausgabe ENV
+# -------------------------------------------------------------------
+print("\n" + "="*50)
+print("🌍 ENVIRONMENT DEBUG:")
+print(f"  LIVE_SEARCH = {os.getenv('LIVE_SEARCH', 'NOT SET')}")
+print(f"  EBAY_CLIENT_ID = {os.getenv('EBAY_CLIENT_ID', 'MISSING')[:20]}...")
+print(f"  EBAY_CLIENT_SECRET = {os.getenv('EBAY_CLIENT_SECRET', 'MISSING')[:20]}...")
+print(f"  DATABASE_URL = {bool(os.getenv('DATABASE_URL'))}")
+print(f"  RENDER = {IS_RENDER}")
+print("="*50 + "\n")
 
 
 # --- Security Headers (basic hardening) ---
