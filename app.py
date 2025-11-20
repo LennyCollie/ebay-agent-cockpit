@@ -55,33 +55,34 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 # -------------------------------------------------------------------
 # SECRET_KEY Setup (KRITISCH für Sessions!)
 # -------------------------------------------------------------------
+# --------------------
+# SECRET_KEY + Session / Cookie config (robust)
+# Replace the previous SECRET_KEY/session block with this
+# --------------------
 SECRET_KEY = (
     os.getenv("SECRET_KEY")
     or os.getenv("FLASK_SECRET_KEY")
     or os.getenv("APP_SECRET")
-    or "dev-key-CHANGE-IN-PRODUCTION-!!!"  # Fallback nur für lokale Entwicklung
+    or ""
 )
 
-app.secret_key = SECRET_KEY
-app.config["SECRET_KEY"] = SECRET_KEY
+if SECRET_KEY:
+    app.secret_key = SECRET_KEY
+    app.config["SECRET_KEY"] = SECRET_KEY
+else:
+    # Dev fallback only (visible in logs)
+    fallback = "dev-key-CHANGE-IN-PRODUCTION-!!!"
+    app.secret_key = fallback
+    app.config["SECRET_KEY"] = fallback
+    print("[WARN] SECRET_KEY not found in ENV — using local fallback (dev only).")
 
-# Debug-Ausgabe
-secret_from_env = bool(os.getenv("SECRET_KEY"))
-print("\n" + "="*50)
-print("🔐 SECRET_KEY CONFIG:")
-print(f"  Loaded from ENV: {secret_from_env}")
-print(f"  Length: {len(SECRET_KEY)}")
-print(f"  First 8 chars: {SECRET_KEY[:8]}...")
-print("="*50)
-
-# -------------------------------------------------------------------
-# Session / Cookie Config
-# -------------------------------------------------------------------
+# Environment flags
 IS_RENDER = bool(os.getenv("RENDER"))
 IS_PRODUCTION = os.getenv("ENV", "").lower() == "production" or IS_RENDER
 
+# Sessions
 app.config["SESSION_PERMANENT"] = True
-app.config["PERMANENT_SESSION_LIFETIME"] = 86400  # 24 Stunden
+app.config["PERMANENT_SESSION_LIFETIME"] = 86400  # 24h
 
 if IS_PRODUCTION:
     print("🔒 Production Mode: Secure Cookies ENABLED")
@@ -94,6 +95,7 @@ else:
     app.config["SESSION_COOKIE_SECURE"] = False
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
 
 # -------------------------------------------------------------------
 # Config & Imports
@@ -114,17 +116,55 @@ STRIPE_OK = bool(stripe.api_key and len(stripe.api_key) > 10)
 # -------------------------------------------------------------------
 # Blueprints registrieren
 # -------------------------------------------------------------------
-from routes.inbound import bp as inbound_bp
-from routes.telegram import bp as telegram_bp
-from routes.vision_test import bp as vision_test_bp
-from routes.watchlist import bp as watchlist_bp
-from routes.search import bp_search as search_bp
+missing_blueprints = []
 
-app.register_blueprint(inbound_bp)
-app.register_blueprint(telegram_bp)
-app.register_blueprint(vision_test_bp)
-app.register_blueprint(search_bp)
-app.register_blueprint(watchlist_bp)
+try:
+    from routes.inbound import bp as inbound_bp
+except Exception as e:
+    inbound_bp = None
+    missing_blueprints.append(("inbound_bp", str(e)))
+try:
+    from routes.telegram import bp as telegram_bp
+except Exception as e:
+    telegram_bp = None
+    missing_blueprints.append(("telegram_bp", str(e)))
+try:
+    from routes.vision_test import bp as vision_test_bp
+except Exception as e:
+    vision_test_bp = None
+    missing_blueprints.append(("vision_test_bp", str(e)))
+try:
+    from routes.watchlist import bp as watchlist_bp
+except Exception as e:
+    watchlist_bp = None
+    missing_blueprints.append(("watchlist_bp", str(e)))
+try:
+    from routes.search import bp_search as search_bp
+except Exception as e:
+    search_bp = None
+    missing_blueprints.append(("search_bp", str(e)))
+
+for name, bp in [
+    ("inbound_bp", inbound_bp),
+    ("telegram_bp", telegram_bp),
+    ("vision_test_bp", vision_test_bp),
+    ("search_bp", search_bp),
+    ("watchlist_bp", watchlist_bp),
+]:
+    if not bp:
+        app.logger.debug(f"Blueprint '{name}' nicht gefunden — übersprungen.")
+        continue
+    bp_name = getattr(bp, "name", name)
+    if bp_name not in app.blueprints:
+        app.register_blueprint(bp)
+        app.logger.info(f"Blueprint '{bp_name}' registriert.")
+    else:
+        app.logger.info(f"Blueprint '{bp_name}' bereits registriert — übersprungen.")
+
+if missing_blueprints:
+    print("[Blueprints] Some blueprints failed to import:")
+    for n, err in missing_blueprints:
+        print(f" - {n}: {err}")
 
 print("[Telegram] ✅ Routes registriert")
 
@@ -1415,7 +1455,7 @@ def register():
 
     email = (request.form.get("email") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
-    
+
     if not email or not password:
         flash("Bitte E-Mail und Passwort angeben.", "warning")
         return redirect(url_for("register"))
@@ -1426,10 +1466,10 @@ def register():
 
     from sqlalchemy import create_engine, text
     from sqlalchemy.exc import IntegrityError
-    
+
     db_url = os.getenv("DATABASE_URL", f"sqlite:///{DB_FILE}")
     engine = create_engine(db_url)
-    
+
     try:
         with engine.begin() as conn:
             conn.execute(
@@ -1438,7 +1478,7 @@ def register():
             )
         flash("✅ Registrierung erfolgreich. Bitte einloggen.", "success")
         return redirect(url_for("login"))
-        
+
     except IntegrityError:
         flash("Diese E-Mail ist bereits registriert.", "warning")
         return redirect(url_for("register"))
@@ -1455,32 +1495,32 @@ def register():
 def login():
     if request.method == "GET":
         return safe_render("login.html", title="Login")
-    
+
     print(f"[DEBUG] DATABASE_URL: {os.getenv('DATABASE_URL', 'NOT SET')}")
     print(f"[DEBUG] DB_FILE: {DB_FILE}")
-    
+
     email = (request.form.get("email") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
-    
+
     # SQLAlchemy statt get_db()
     from sqlalchemy import create_engine, text
     from werkzeug.security import check_password_hash
-    
+
     db_url = os.getenv("DATABASE_URL", f"sqlite:///{DB_FILE}")
     engine = create_engine(db_url)
-    
+
     with engine.connect() as conn:
         result = conn.execute(
             text("SELECT id, password, is_premium FROM users WHERE email = :email"),
             {"email": email}
         )
         row = result.fetchone()
-    
+
     # Passwort-Check mit Hash-Vergleich
     if not row or not check_password_hash(row[1], password):
         flash("E-Mail oder Passwort ist falsch.", "warning")
         return redirect(url_for("login"))
-    
+
     session["user_id"] = int(row[0])
     session["user_email"] = email
     session["is_premium"] = bool(row[2])
