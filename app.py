@@ -1495,116 +1495,77 @@ def register():
 from werkzeug.security import check_password_hash
 
 @app.route("/login", methods=["GET", "POST"])
- def login():
-     if request.method == "GET":
-         return safe_render("login.html", title="Login")
- 
-     email = (request.form.get("email") or "").strip().lower()
-     password = (request.form.get("password") or "").strip()
- 
--    conn = get_db()
--    row = conn.execute(
--        "SELECT id, password, is_premium FROM users WHERE email = ?", (email,)
--    ).fetchone()
--    conn.close()
-+    conn = get_db()
-+    # Try to select both password_hash and password; fallback if DB doesn't have password_hash column
-+    try:
-+        # Some DB drivers / dialects accept ? (sqlite) or %s (psycopg) - get_db() should return a connection compatible
-+        # We'll try parameter style with tuple - if your DB driver uses other style this will raise and fallback
-+        row = conn.execute(
-+            "SELECT id, email, password_hash, password, is_premium FROM users WHERE email = ?",
-+            (email,),
-+        ).fetchone()
-+    except Exception:
-+        # Fallback: DB doesn't have password_hash column -> select old password column
-+        try:
-+            row = conn.execute(
-+                "SELECT id, email, password, is_premium FROM users WHERE email = ?",
-+                (email,),
-+            ).fetchone()
-+        except Exception:
-+            # As last resort, try Postgres param style (%s)
-+            try:
-+                row = conn.execute(
-+                    "SELECT id, email, password_hash, password, is_premium FROM users WHERE email = %s",
-+                    (email,),
-+                ).fetchone()
-+            except Exception:
-+                row = conn.execute(
-+                    "SELECT id, email, password, is_premium FROM users WHERE email = %s",
-+                    (email,),
-+                ).fetchone()
-+    finally:
-+        try:
-+            conn.close()
-+        except Exception:
-+            pass
- 
--    if not row or row["password"] != password:
--        flash("E-Mail oder Passwort ist falsch.", "warning")
--        return redirect(url_for("login"))
--
--    session["user_id"] = int(row["id"])
--    session["user_email"] = email
--    session["is_premium"] = bool(row["is_premium"])
--    flash("Login erfolgreich.", "success")
--    return redirect(url_for("dashboard"))
-+    # No user found?
-+    if not row:
-+        flash("E-Mail oder Passwort ist falsch.", "warning")
-+        return redirect(url_for("login"))
-+
-+    # Determine whether DB returned a password_hash column or only password
-+    pw_hash = None
-+    pw_plain = None
-+    # row may be sqlite3.Row or SQLAlchemy RowProxy or dict-like
-+    try:
-+        # try dict-like access
-+        pw_hash = row.get("password_hash") if hasattr(row, "get") else row["password_hash"]
-+    except Exception:
-+        pw_hash = None
-+    try:
-+        pw_plain = row.get("password") if hasattr(row, "get") else row["password"]
-+    except Exception:
-+        # try attribute access for SQLAlchemy
-+        pw_plain = getattr(row, "password", None)
-+        if pw_plain is None:
-+            # try index-based (id, email, password, ...)
-+            try:
-+                # When we selected id,email,password,... password might be at index 2
-+                pw_plain = row[2]
-+            except Exception:
-+                pw_plain = None
-+
-+    # Verify password:
-+    ok = False
-+    if pw_hash:
-+        try:
-+            ok = check_password_hash(pw_hash, password)
-+        except Exception:
-+            ok = False
-+    elif pw_plain is not None:
-+        # Legacy plain-text password (not ideal) - direct compare
-+        ok = (str(pw_plain) == password)
-+
-+    if not ok:
-+        flash("E-Mail oder Passwort ist falsch.", "warning")
-+        return redirect(url_for("login"))
-+
-+    # Save session
-+    try:
-+        session["user_id"] = int(row["id"]) if hasattr(row, "__getitem__") else int(getattr(row, "id"))
-+    except Exception:
-+        # fallback: try common positions
-+        try:
-+            session["user_id"] = int(row[0])
-+        except Exception:
-+            session["user_id"] = None
-+    session["user_email"] = email
-+    session["is_premium"] = bool(row.get("is_premium") if hasattr(row, "get") else (getattr(row, "is_premium", False)))
-+    flash("Login erfolgreich.", "success")
-+    return redirect(url_for("dashboard"))
+def login():
+    if request.method == "GET":
+        return safe_render("login.html", title="Login")
+
+    email = (request.form.get("email") or "").strip().lower()
+    password = (request.form.get("password") or "").strip()
+
+    if not email or not password:
+        flash("E-Mail oder Passwort ist falsch.", "warning")
+        return redirect(url_for("login"))
+
+    # DB query — passe ggf. den SQL für deine DB/ORM an
+    conn = get_db()
+    try:
+        # Versuche, password_hash zu lesen, fallback auf password
+        row = conn.execute(
+            "SELECT id, email, password_hash, password, is_premium FROM users WHERE email = %s" if getattr(conn, "engine", None) else
+            "SELECT id, email, password_hash, password, is_premium FROM users WHERE email = ?",
+            (email,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        flash("E-Mail oder Passwort ist falsch.", "warning")
+        return redirect(url_for("login"))
+
+    # Hol das Hash-Feld falls vorhanden (ORM-Row might be tuple/dict — handle beides)
+    try:
+        pw_hash = row["password_hash"] if isinstance(row, dict) or hasattr(row, "keys") else None
+    except Exception:
+        pw_hash = None
+    # fallback plaintext field (alte DBs)
+    try:
+        pw_plain = row["password"] if (isinstance(row, dict) or hasattr(row, "keys")) else None
+    except Exception:
+        # if row is tuple -> try index
+        try:
+            pw_plain = row[3]
+        except Exception:
+            pw_plain = None
+
+    valid = False
+    # prefer hashed password check
+    if pw_hash:
+        try:
+            valid = check_password_hash(pw_hash, password)
+        except Exception:
+            valid = False
+    else:
+        # fallback: plaintext comparison (nicht ideal, aber kompatibel)
+        if pw_plain and pw_plain == password:
+            valid = True
+
+    if not valid:
+        flash("E-Mail oder Passwort ist falsch.", "warning")
+        return redirect(url_for("login"))
+
+    # setze die wichtigen session keys — zwingend name 'user_email' weil watchlist.get_current_user das erwartet
+    session["user_id"] = int(row["id"] if (isinstance(row, dict) or hasattr(row, "keys")) else row[0])
+    session["user_email"] = (row["email"] if (isinstance(row, dict) or hasattr(row, "keys")) else row[1])
+    # is_premium in bool
+    is_prem = None
+    try:
+        is_prem = row.get("is_premium") if (isinstance(row, dict) or hasattr(row, "keys")) else (row[4] if len(row) > 4 else 0)
+    except Exception:
+        is_prem = 0
+    session["is_premium"] = bool(is_prem)
+
+    flash("Login erfolgreich.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/logout")
