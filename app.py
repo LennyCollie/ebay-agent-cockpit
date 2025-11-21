@@ -1493,7 +1493,6 @@ def register():
 
 # --- LOGIN (robust, unterstützt password_hash und plain-password fallback) ---
 from werkzeug.security import check_password_hash
-from werkzeug.middleware.proxy_fix import ProxyFix
 
 @app.route("/login", methods=["GET", "POST"])
  def login():
