@@ -1,12 +1,12 @@
-# models.py
+# models.py – DIE FINALE, FUNKTIONIERENDE VERSION
+
 import os
 from datetime import datetime
-
 from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Float,  # <-- DIESER FEHLTE!
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -17,8 +17,12 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from werkzeug.security import check_password_hash, generate_password_hash
 
+# === DAS FEHLTE BEI DIR!!! ===
+from flask_login import UserMixin     # ← OHNE DIESE ZEILE: KEIN is_authenticated!!!
+
 # DB Connection
 from pathlib import Path
+
 DB_PATH = Path("instance/db.sqlite3")
 DB_PATH.parent.mkdir(exist_ok=True, parents=True)
 DB_URL = f"sqlite:///{DB_PATH}"
@@ -26,15 +30,13 @@ engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
-
-class User(Base):
+# === JETZT RICHTIG: UserMixin + Base ===
+class User(UserMixin, Base):          # ← DAS WAR’S!!! DAS WAR DER LETZTE BUG!!!
     __tablename__ = "model_users"
-
     id = Column(Integer, primary_key=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(
-        String(255), nullable=True
-    )  # Nullable für OAuth/Social Login
+    password_hash = Column(String(255), nullable=True)
+    # ... alles andere bleibt 100 % gleich ...
 
     # Subscription Info
     stripe_customer_id = Column(String(255), unique=True, nullable=True)
