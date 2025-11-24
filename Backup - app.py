@@ -5,16 +5,13 @@ import io
 import json
 import math
 import os
+import sqlite3
 import time
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
-from alert_checker import run_alert_check
-
-# NEU: Database Import
-from database import get_db, dict_cursor, init_db, IS_POSTGRES, get_placeholder
 
 import requests
 import stripe
@@ -31,15 +28,10 @@ from flask import (
     session,
     url_for,
 )
-
-from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
-from routes.search import bp_search as search_bp
-from routes.telegram import bp as telegram_bp
-from routes.watchlist import bp as watchlist_bp
-from agent import get_mail_settings, send_mail
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # -------------------------------------------------------------------
-# .env laden
+# .env laden (lokal)
 # -------------------------------------------------------------------
 try:
     from dotenv import load_dotenv
@@ -49,60 +41,101 @@ except Exception:
     pass
 
 # -------------------------------------------------------------------
-# App & Basis-Konfig
+# Flask App erstellen
 # -------------------------------------------------------------------
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-# ===================================================================
-# WICHTIG: SESSION KONFIGURATION (NEU!)
-# ===================================================================
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-CHANGE-IN-PRODUCTION')
-app.config['SESSION_COOKIE_SECURE'] = True  # Nur über HTTPS
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 Stunden
+# ProxyFix für Render (hinter Cloudflare/LoadBalancer)
 
-# DEBUG: Zeige alle Umgebungsvariablen
+from werkzeug.middleware.proxy_fix import ProxyFix
+import os
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+# -------------------------------------------------------------------
+# SECRET_KEY Setup (KRITISCH für Sessions!)
+# -------------------------------------------------------------------
+SECRET_KEY = (
+    os.getenv("SECRET_KEY")
+    or os.getenv("FLASK_SECRET_KEY")
+    or os.getenv("APP_SECRET")
+    or "dev-key-CHANGE-IN-PRODUCTION-!!!"  # Fallback nur für lokale Entwicklung
+)
+
+app.secret_key = SECRET_KEY
+app.config["SECRET_KEY"] = SECRET_KEY
+
+# Debug-Ausgabe
+secret_from_env = bool(os.getenv("SECRET_KEY"))
 print("\n" + "="*50)
-print("ENV VARS DEBUG:")
-print(f"LIVE_SEARCH = {os.getenv('LIVE_SEARCH')}")
-print(f"EBAY_CLIENT_ID = {os.getenv('EBAY_CLIENT_ID', 'MISSING')}")
-print(f"EBAY_CLIENT_SECRET = {os.getenv('EBAY_CLIENT_SECRET', 'MISSING')}")
-print(f"EBAY_MARKETPLACE_ID = {os.getenv('EBAY_MARKETPLACE_ID')}")
-print(f"SECRET_KEY = {'SET' if os.getenv('SECRET_KEY') else 'MISSING!'}")
-print(f"DATABASE = {'PostgreSQL' if IS_POSTGRES else 'SQLite'}")
-print("="*50 + "\n")
+print("🔐 SECRET_KEY CONFIG:")
+print(f"  Loaded from ENV: {secret_from_env}")
+print(f"  Length: {len(SECRET_KEY)}")
+print(f"  First 8 chars: {SECRET_KEY[:8]}...")
+print("="*50)
 
-# Blueprints registrieren
-from routes.inbound import bp as inbound_bp
-from routes.vision_test import bp as vision_test_bp
+# -------------------------------------------------------------------
+# Session / Cookie Config
+# -------------------------------------------------------------------
+IS_RENDER = bool(os.getenv("RENDER"))
+IS_PRODUCTION = os.getenv("ENV", "").lower() == "production" or IS_RENDER
 
-app.register_blueprint(inbound_bp)
-app.register_blueprint(telegram_bp)
-app.register_blueprint(vision_test_bp)
-app.register_blueprint(watchlist_bp)
+app.config["SESSION_PERMANENT"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = 86400  # 24 Stunden
 
-# App Config
+if IS_PRODUCTION:
+    print("🔒 Production Mode: Secure Cookies ENABLED")
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["PREFERRED_URL_SCHEME"] = "https"
+else:
+    print("🔓 Development Mode: Secure Cookies DISABLED")
+    app.config["SESSION_COOKIE_SECURE"] = False
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+# -------------------------------------------------------------------
+# Config & Imports
+# -------------------------------------------------------------------
+from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
+
+# NUR EINMAL Config laden!
 app.config.from_object(Config)
+
+# Stripe Config
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
 app.config["PRICE_TO_PLAN"] = PRICE_TO_PLAN
 app.config["PLAUSIBLE_DOMAIN"] = os.getenv("PLAUSIBLE_DOMAIN", "")
 
-import stripe
 stripe.api_key = (Config.STRIPE_SECRET_KEY or os.getenv("STRIPE_SECRET_KEY", "")).strip()
 STRIPE_OK = bool(stripe.api_key and len(stripe.api_key) > 10)
 
-# --- Security Headers ---
-@app.after_request
-def add_security_headers(resp):
-    resp.headers["X-Frame-Options"] = "DENY"
-    resp.headers["X-Content-Type-Options"] = "nosniff"
-    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-    return resp
+# -------------------------------------------------------------------
+# Blueprints registrieren
+# -------------------------------------------------------------------
+from routes.inbound import bp as inbound_bp
+from routes.telegram import bp as telegram_bp
+from routes.vision_test import bp as vision_test_bp
+from routes.watchlist import bp as watchlist_bp
+from routes.search import bp_search as search_bp
 
-# --- Helfer Funktionen ---
+app.register_blueprint(inbound_bp)
+app.register_blueprint(telegram_bp)
+app.register_blueprint(vision_test_bp)
+app.register_blueprint(search_bp)
+app.register_blueprint(watchlist_bp)
+
+print("[Telegram] ✅ Routes registriert")
+
+# -------------------------------------------------------------------
+# Imports für Mail & Agent
+# -------------------------------------------------------------------
+from agent import get_mail_settings, send_mail
+
+# -------------------------------------------------------------------
+# Helper Functions
+# -------------------------------------------------------------------
 def as_bool(val: Optional[str]) -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -113,24 +146,83 @@ def getenv_any(*names: str, default: str = "") -> str:
             return v
     return default
 
+# -------------------------------------------------------------------
+# Security Headers
+# -------------------------------------------------------------------
+@app.after_request
+def add_security_headers(resp):
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    return resp
+
+# -------------------------------------------------------------------
+# Debug-Ausgabe ENV
+# -------------------------------------------------------------------
+print("\n" + "="*50)
+print("🌍 ENVIRONMENT DEBUG:")
+print(f"  LIVE_SEARCH = {os.getenv('LIVE_SEARCH', 'NOT SET')}")
+print(f"  EBAY_CLIENT_ID = {os.getenv('EBAY_CLIENT_ID', 'MISSING')[:20]}...")
+print(f"  EBAY_CLIENT_SECRET = {os.getenv('EBAY_CLIENT_SECRET', 'MISSING')[:20]}...")
+print(f"  DATABASE_URL = {bool(os.getenv('DATABASE_URL'))}")
+print(f"  RENDER = {IS_RENDER}")
+print("="*50 + "\n")
+
+
+# --- Security Headers (basic hardening) ---
+@app.after_request
+def add_security_headers(resp):
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # optional, aber sinnvoll:
+    resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    return resp
+
+
 # Limits / Defaults
 FREE_SEARCH_LIMIT = int(os.getenv("FREE_SEARCH_LIMIT", "3"))
 PREMIUM_SEARCH_LIMIT = int(os.getenv("PREMIUM_SEARCH_LIMIT", "10"))
 PER_PAGE_DEFAULT = int(os.getenv("PER_PAGE_DEFAULT", "20"))
-SEARCH_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "60"))
+SEARCH_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "60"))  # Sekunden
+
+
 NOTIFY_COOLDOWN_MIN = int(os.getenv("NOTIFY_COOLDOWN_MINUTES", "120"))
 NOTIFY_MAX_ITEMS_PER_MAIL = int(os.getenv("NOTIFY_MAX_ITEMS_PER_MAIL", "10"))
+
+# NEU: Token für den privaten HTTP-Cron-Trigger
 AGENT_TRIGGER_TOKEN = os.getenv("AGENT_TRIGGER_TOKEN", "")
+
+# ALT (deprecated): Query-Token für /cron/run-alerts
 CRON_TOKEN = os.getenv("CRON_TOKEN", "")
 
+# DB (SQLite Pfad auch für Render kompatibel)
+DB_URL = os.getenv("DB_PATH", "sqlite:///instance/db.sqlite3")
+
+
+def _sqlite_file_from_url(url: str) -> Path:
+    if url.startswith("sqlite:///"):
+        rel = url.replace("sqlite:///", "", 1)
+        return Path(rel)
+    return Path(url)
+
+
+DB_FILE = _sqlite_file_from_url(DB_URL)
+if DB_URL.startswith("sqlite:"):
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+
 # -------------------------------------------------------------------
-# eBay OAuth Client Credentials + Suche
+# eBay – OAuth Client Credentials + Suche
 # -------------------------------------------------------------------
 EBAY_CLIENT_ID = getenv_any("EBAY_CLIENT_ID", "EBAY_APP_ID")
 EBAY_CLIENT_SECRET = getenv_any("EBAY_CLIENT_SECRET", "EBAY_CERT_ID")
 EBAY_SCOPES = os.getenv("EBAY_SCOPES", "https://api.ebay.com/oauth/api_scope")
 EBAY_GLOBAL_ID = os.getenv("EBAY_GLOBAL_ID", "EBAY-DE")
 LIVE_SEARCH = as_bool(os.getenv("LIVE_SEARCH", "0"))
+
 
 def _marketplace_from_global(gid: str) -> str:
     gid = (gid or "").upper()
@@ -144,6 +236,7 @@ def _marketplace_from_global(gid: str) -> str:
         return "EBAY_FR"
     return "EBAY_DE"
 
+
 def _currency_for_marketplace(mkt: str) -> str:
     mkt = (mkt or "").upper()
     if mkt == "EBAY_US":
@@ -154,6 +247,7 @@ def _currency_for_marketplace(mkt: str) -> str:
         return "EUR"
     return "EUR"
 
+
 EBAY_MARKETPLACE_ID = _marketplace_from_global(EBAY_GLOBAL_ID)
 EBAY_CURRENCY = _currency_for_marketplace(EBAY_MARKETPLACE_ID)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -162,12 +256,16 @@ ALERT_CHECK_INTERVAL = int(os.getenv("ALERT_CHECK_INTERVAL", "3"))
 NOTIFICATION_METHOD = os.getenv("NOTIFICATION_METHOD", "email")
 
 def send_telegram_notification(chat_id: str, message: str) -> bool:
-    """Sendet eine Telegram-Nachricht."""
+    """
+    Sendet eine Telegram-Nachricht.
+    Returns: True wenn erfolgreich
+    """
     if not TELEGRAM_BOT_TOKEN:
         print("[Telegram] ❌ Bot Token fehlt!")
         return False
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
     payload = {
         "chat_id": chat_id,
         "text": message,
@@ -184,8 +282,9 @@ def send_telegram_notification(chat_id: str, message: str) -> bool:
         print(f"[Telegram] ❌ Fehler: {e}")
         return False
 
-# Affiliate Parameter
-AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")
+# Optional: Affiliate-Parameter (an itemWebUrl anhängen)
+AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")  # "campid=XXXX;customid=YOURTAG"
+
 
 def _append_affiliate(url: Optional[str]) -> Optional[str]:
     if not url or not AFFILIATE_PARAMS:
@@ -195,9 +294,11 @@ def _append_affiliate(url: Optional[str]) -> Optional[str]:
     sep = "&" if "?" in url else "?"
     return f"{url}{sep}{q}" if q else url
 
+
 # HTTP Session + Token Cache
 _http = requests.Session()
 _EBAY_TOKEN: Dict[str, object] = {"access_token": None, "expires_at": 0.0}
+
 
 def ebay_get_token() -> Optional[str]:
     tok = _EBAY_TOKEN.get("access_token")
@@ -215,7 +316,6 @@ def ebay_get_token() -> Optional[str]:
         "Content-Type": "application/x-www-form-urlencoded",
     }
     data = {"grant_type": "client_credentials", "scope": EBAY_SCOPES}
-
     try:
         r = _http.post(token_url, headers=headers, data=data, timeout=15)
         r.raise_for_status()
@@ -227,64 +327,59 @@ def ebay_get_token() -> Optional[str]:
         print(f"[ebay_get_token] {e}")
         return None
 
-# -------------------------------------------------------------------
-# eBay Filter & Search Funktionen
-# -------------------------------------------------------------------
+
 def _build_ebay_filters(filters: dict) -> Optional[str]:
-    """Baut den 'filter' Query-Parameter für die eBay Browse API."""
+    """
+    Baut den 'filter' Query-Parameter für die eBay Browse API aus dem filters dict.
+    Erwartete keys in filters: price_min, price_max, conditions (list), sort, free_shipping (str '1'),
+    listing_type (e.g. 'buy_it_now'|'auction'|'all'), location_country (z.B. 'DE'), ...
+    Gibt None zurück wenn kein Filter gesetzt ist.
+    """
     parts: List[str] = []
     if not isinstance(filters, dict):
         return None
-
-    # Preis
+    # Preisbereich
     pmn = str(filters.get("price_min") or "").strip()
     pmx = str(filters.get("price_max") or "").strip()
     if pmn or pmx:
         parts.append(f"price:[{pmn}..{pmx}]")
-        if EBAY_CURRENCY:
+        if EBAY_CURRENCY:  # Annahme: Deine Config-Variable
             parts.append(f"priceCurrency:{EBAY_CURRENCY}")
-
-    # Zustand
+    # Zustand(e)
     conds = [str(c).strip().upper() for c in (filters.get("conditions") or []) if c and str(c).strip()]
     if conds:
         parts.append("conditions:{" + ",".join(conds) + "}")
-
-    # Angebotsformat
+    # Listing / Angebotsformat
     lt = str(filters.get("listing_type") or "").strip().lower()
     if lt:
         if lt in ("buy_it_now", "bin", "fixed_price", "fixedprice", "fixed"):
             parts.append("buyingOptions:{FIXED_PRICE}")
         elif lt in ("auction", "auktion"):
             parts.append("buyingOptions:{AUCTION}")
-
+        # 'all' -> nothing
     # Kostenloser Versand
-    fs = filters.get("free_shipping")
-    if fs is True or str(fs).strip().lower() in ("1", "true", "yes", "on"):
+    fs = str(filters.get("free_shipping") or "").strip().lower()
+    if fs in ("1", "true", "yes", "on"):
         parts.append("deliveryOptions:{FREE}")
-
-    # Lieferland
+    # Land / Lieferland
     lc = str(filters.get("location_country") or "").strip().upper()
-    if lc and lc != "ALL":
+    if lc:
         parts.append(f"deliveryCountry:{lc}")
-
-    # Top-rated Seller
-    tr = filters.get("top_rated_only")
-    if tr is True or str(tr).strip().lower() in ("1", "true", "yes", "on"):
+    # Top-rated seller
+    tr = str(filters.get("top_rated_only") or "").strip().lower()
+    if tr in ("1", "true", "yes", "on"):
         parts.append("sellerTopRated:true")
-
-    # Rückgaberecht
-    ra = filters.get("returns_accepted")
-    if ra is True or str(ra).strip().lower() in ("1", "true", "yes", "on"):
+    # Returns accepted (erweitert)
+    ra = str(filters.get("returns_accepted") or "").strip().lower()
+    if ra in ("1", "true", "yes", "on"):
         parts.append("returnsAccepted:true")
-
     if parts:
         return ",".join(parts)
     return None
 
 def _map_sort(ui_sort: str) -> Optional[str]:
-    """Mappt UI-Sortierung auf eBay API sort-Parameter."""
     s = (ui_sort or "").strip()
-    if not s or s == "best":
+    if not s or s == "best":  # Best Match
         return None
     if s == "price_asc":
         return "price"
@@ -302,28 +397,30 @@ def ebay_search_one(
     sort: Optional[str],
     marketplace_id: Optional[str] = None,
 ) -> Tuple[List[Dict], Optional[int]]:
-    """Sucht einen Begriff via eBay Browse API."""
-    token = ebay_get_token()
+    """
+    Sucht ein Term via eBay Browse API. marketplace_id kann übergeben werden (z.B. 'EBAY_DE').
+    Debug-Log gibt die finalen params aus.
+    """
+    token = ebay_get_token()  # Deine Funktion
     if not token or not term:
         return [], None
-
     url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
-    params = {
-        "q": term,
-        "limit": max(1, min(limit, 50)),
-        "offset": max(0, offset)
-    }
-
+    params = {"q": term, "limit": max(1, min(limit, 50)), "offset": max(0, offset)}
     if filter_str:
         params["filter"] = filter_str
     if sort:
         params["sort"] = sort
-
-    used_marketplace = marketplace_id or EBAY_MARKETPLACE_ID
+    used_marketplace = marketplace_id or EBAY_MARKETPLACE_ID  # Deine Config
     headers = {
         "Authorization": f"Bearer {token}",
         "X-EBAY-C-MARKETPLACE-ID": used_marketplace,
     }
+    # Debug: Log the final params we send to eBay (ohne Authorization)
+    msg = f"[ebay_search_one] url={url} marketplace={used_marketplace} params={params}"
+    try:
+        current_app.logger.debug(msg)
+    except Exception:
+        print(msg)  # Fallback
 
     try:
         r = _http.get(url, headers=headers, params=params, timeout=15)
@@ -331,7 +428,6 @@ def ebay_search_one(
         j = r.json() or {}
         items_raw = j.get("itemSummaries", []) or []
         total = j.get("total")
-
         items: List[Dict] = []
         for it in items_raw:
             title = it.get("title") or "—"
@@ -346,36 +442,139 @@ def ebay_search_one(
                 or it.get("epid")
                 or (web or "")[:200]
             )
-            items.append({
-                "id": iid,
-                "title": title,
-                "price": price_str,
-                "url": web,
-                "img": img,
-                "term": term,
-                "src": "ebay",
-            })
-
+            items.append(
+                {
+                    "id": iid,
+                    "title": title,
+                    "price": price_str,
+                    "url": web,
+                    "img": img,
+                    "term": term,
+                    "src": "ebay",
+                }
+            )
         return items, (int(total) if isinstance(total, int) else None)
-
     except Exception as e:
-        print(f"[ebay_search_one] {e}")
+        try:
+            current_app.logger.exception("[ebay_search_one] request failed")
+        except Exception:
+            print(f"[ebay_search_one] request failed: {e}")
         return [], None
 
+def _backend_search_demo(
+    terms: List[str], filters: dict, page: int, per_page: int
+) -> Tuple[List[Dict], int]:
+    """
+    Simuliertes Demo-Backend, das einfache Filter (price range, condition, country, free_shipping)
+    berücksichtigt, damit die UI lokal getestet werden kann.
+    - Erzeugt deterministische Preise und Zustände (NEW/USED) pro Item.
+    - Filter werden angewendet bevor Paging berechnet wird.
+    """
+    # Parse filter values (sicher)
+    try:
+        pmin = float(filters.get("price_min") or 0) if (filters.get("price_min") or "") != "" else None
+    except Exception:
+        pmin = None
+    try:
+        pmax = float(filters.get("price_max") or 0) if (filters.get("price_max") or "") != "" else None
+    except Exception:
+        pmax = None
+
+    conds = [(c or "").strip().upper() for c in (filters.get("conditions") or []) if (c or "").strip()]
+    location_country = (filters.get("location_country") or "").upper()
+    free_shipping = bool(filters.get("free_shipping"))
+    # top_rated_only ignored in demo or simulated below
+
+    # Generate a larger pool of candidate items (deterministic)
+    pool: List[Dict] = []
+    pool_size = max(60, len(terms) * 40)
+    for i in range(pool_size):
+        # choose a term to include in title/url for deterministic matching
+        t = terms[i % max(1, len(terms))] if terms else f"Artikel {i+1}"
+        # deterministic price (e.g. 20 + (i % 50) * 5)
+        price_val = 20 + (i % 50) * 5
+        # deterministic condition
+        condition = "USED" if (i % 2 == 0) else "NEW"
+        # deterministic free shipping for some items
+        item_free_shipping = (i % 3 == 0)
+        # deterministic country distribution
+        country = ["DE", "AT", "CH", "GB", "US"][i % 5]
+
+        item = {
+            "id": f"demo-{i+1}",
+            "title": f"Demo-Ergebnis für „{t}“ #{i+1} [{condition}]",
+            "price": f"{price_val:.2f} EUR",
+            "price_val": price_val,
+            "condition": condition,
+            "url": f"https://www.ebay.de/sch/i.html?_nkw={t}",
+            "img": "https://via.placeholder.com/64x48?text=%20",
+            "term": t,
+            "src": "demo",
+            "country": country,
+            "free_shipping": item_free_shipping,
+            "seller_top_rated": (i % 10 == 0),
+        }
+        pool.append(item)
+
+    # Apply filters to pool
+    def keep(it):
+        # term match (must contain first search term in title/url)
+        if terms:
+            # require at least one search term substring in title (case-insensitive)
+            t0 = (terms[0] or "").strip().lower()
+            if t0 and t0 not in (it["title"] or "").lower() and t0 not in (it["term"] or "").lower():
+                return False
+        # price range
+        if pmin is not None and it["price_val"] < pmin:
+            return False
+        if pmax is not None and it["price_val"] > pmax:
+            return False
+        # conditions (if provided)
+        if conds:
+            if it.get("condition", "").upper() not in conds:
+                return False
+        # country (if provided)
+        if location_country:
+            if it.get("country", "").upper() != location_country:
+                return False
+        # free shipping
+        if filters.get("free_shipping"):
+            if not it.get("free_shipping", False):
+                return False
+        # top rated
+        if filters.get("top_rated_only"):
+            if not it.get("seller_top_rated", False):
+                return False
+        return True
+
+    filtered = [it for it in pool if keep(it)]
+
+    total = len(filtered)
+    # pagination
+    start = (page - 1) * per_page
+    stop = start + per_page
+    page_items = filtered[start:stop]
+
+    # Map back to expected item shape (drop internal keys)
+    items: List[Dict] = []
+    for it in page_items:
+        items.append(
+            {
+                "id": it["id"],
+                "title": it["title"],
+                "price": f"{it['price_val']:.2f} EUR",
+                "url": it["url"],
+                "img": it["img"],
+                "term": it["term"],
+                "src": "demo",
+            }
+        )
+
+    return items, total
+
+
 # Mini-Cache
-_search_cache: dict = {}
-
-def _cache_get(key):
-    if key not in _search_cache:
-        return None
-    ts, data = _search_cache[key]
-    if time.time() - ts > SEARCH_CACHE_TTL:
-        del _search_cache[key]
-        return None
-    return data
-
-def _cache_set(key, data):
-    _search_cache[key] = (time.time(), data)
+_search_cache: dict = {}  # key -> (ts, (items, total_estimated))
 
 # -------------------------
 # 1) Saubere _build_ebay_filters
@@ -569,12 +768,112 @@ def ebay_search_one(
         return [], None
 
 
+def _backend_search_ebay(
+    terms: List[str],
+    filters: dict,
+    page: int,
+    per_page: int
+) -> Tuple[List[Dict], Optional[int]]:
+    """
+    Hauptfunktion für eBay-Suche mit korrekter Filter-Anwendung.
+
+    KORRIGIERT:
+    - Filter werden korrekt gebaut und übergeben
+    - Marketplace wird basierend auf location_country gesetzt
+    - Debug-Ausgaben zeigen den kompletten Ablauf
+    """
+    print("\n" + "=" * 70)
+    print("=== _backend_search_ebay AUFGERUFEN ===")
+    print(f"Terms: {terms}")
+    print(f"Filters: {filters}")
+    print(f"Page: {page}, Per Page: {per_page}")
+    print("=" * 70)
+
+    # ========== LIVE-SEARCH PRÜFUNG ==========
+    LIVE_SEARCH_BOOL = str(os.getenv("LIVE_SEARCH", "false")).strip().lower() in ("true", "1", "yes", "on")
+    EBAY_CLIENT_ID = os.getenv("EBAY_CLIENT_ID")
+    EBAY_CLIENT_SECRET = os.getenv("EBAY_CLIENT_SECRET")
+
+    print(f"[DEBUG] LIVE_SEARCH={LIVE_SEARCH_BOOL}")
+    print(f"[DEBUG] EBAY_CLIENT_ID={'vorhanden' if EBAY_CLIENT_ID else 'FEHLT!'}")
+    print(f"[DEBUG] EBAY_CLIENT_SECRET={'vorhanden' if EBAY_CLIENT_SECRET else 'FEHLT!'}")
+
+    if not LIVE_SEARCH_BOOL or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
+        print("[WARNUNG] Live-Suche nicht möglich → Fallback zu Demo-Modus")
+        # Annahme: Diese Funktion existiert
+        from app import _backend_search_demo
+        return _backend_search_demo(terms, filters, page, per_page)
+
+    # ========== FILTER BAUEN ==========
+    print("\n--- Filter werden gebaut ---")
+    filter_str = _build_ebay_filters(filters)
+    sort = _map_sort(filters.get("sort", "best"))
+
+    print(f"[DEBUG] Filter-String: {filter_str or 'KEINE FILTER'}")
+    print(f"[DEBUG] Sort-Parameter: {sort or 'BEST_MATCH (default)'}")
+
+    # ========== MARKETPLACE BASIEREND AUF LAND ==========
+    marketplace_map = {
+        "DE": "EBAY_DE",
+        "CH": "EBAY_CH",
+        "AT": "EBAY_AT",
+        "GB": "EBAY_GB",
+        "US": "EBAY_US",
+    }
+    location_country = (filters.get("location_country") or "DE").upper()
+    marketplace_id = marketplace_map.get(location_country, EBAY_MARKETPLACE_ID)
+
+    print(f"[DEBUG] Location Country: {location_country}")
+    print(f"[DEBUG] Marketplace ID: {marketplace_id}")
+
+    # ========== SUCHE PRO BEGRIFF ==========
+    n = max(1, len(terms))
+    per_term = max(1, per_page // n)
+    offset = (page - 1) * per_term
+
+    print(f"\n--- Suche {n} Begriff(e), {per_term} Ergebnisse pro Begriff, Offset {offset} ---")
+
+    items_all: List[Dict] = []
+    totals: List[int] = []
+
+    for i, t in enumerate(terms, 1):
+        print(f"\n[{i}/{n}] Suche Begriff: '{t}'")
+        items, total = ebay_search_one(t, per_term, offset, filter_str, sort, marketplace_id=marketplace_id)
+        items_all.extend(items)
+        if isinstance(total, int):
+            totals.append(total)
+        print(f"[{i}/{n}] Gefunden: {len(items)} Items, Total: {total}")
+
+    # ========== AUFFÜLLEN MIT ERSTEM BEGRIFF ==========
+    if len(items_all) < per_page and terms:
+        rest = per_page - len(items_all)
+        base = offset + per_term
+        print(f"\n--- Fülle auf mit {rest} weiteren Ergebnissen von '{terms[0]}', Offset {base} ---")
+        extra, _ = ebay_search_one(terms[0], rest, base, filter_str, sort, marketplace_id=marketplace_id)
+        items_all.extend(extra)
+        print(f"--- {len(extra)} zusätzliche Items geladen ---")
+
+    total_estimated = sum(totals) if totals else None
+
+    print(f"\n=== ENDERGEBNIS: {len(items_all)} Items, Geschätzt insgesamt: {total_estimated} ===")
+    print("=" * 70 + "\n")
+
+    return items_all[:per_page], total_estimated
+
+
+# ========== DEMO-BACKEND FÜR TESTS ==========
 def _backend_search_demo(
-    terms: List[str], filters: dict, page: int, per_page: int
+    terms: List[str],
+    filters: dict,
+    page: int,
+    per_page: int
 ) -> Tuple[List[Dict], int]:
-    """Demo-Backend mit Filter-Simulation."""
+    """
+    Demo-Backend mit Filter-Simulation für lokale Tests.
+    """
     print("[DEMO MODE] Verwende simulierte eBay-Daten")
 
+    # Parse Filter
     try:
         pmin = float(filters.get("price_min") or 0) if (filters.get("price_min") or "") != "" else None
     except:
@@ -589,6 +888,9 @@ def _backend_search_demo(
     location_country = (filters.get("location_country") or "").upper()
     free_shipping = filters.get("free_shipping") is True or str(filters.get("free_shipping", "")).strip() == "1"
 
+    print(f"[DEMO] Filter: Preis {pmin}-{pmax}, Zustand {conds}, Land {location_country}, Versand frei: {free_shipping}")
+
+    # Generiere Pool
     pool: List[Dict] = []
     pool_size = max(60, len(terms) * 40)
 
@@ -614,30 +916,45 @@ def _backend_search_demo(
         }
         pool.append(item)
 
+    # Filter anwenden
     def keep(it):
+        # Term Match
         if terms:
             t0 = (terms[0] or "").strip().lower()
             if t0 and t0 not in (it["title"] or "").lower():
                 return False
+
+        # Preis
         if pmin is not None and it["price_val"] < pmin:
             return False
         if pmax is not None and it["price_val"] > pmax:
             return False
+
+        # Zustand
         if conds and it.get("condition", "").upper() not in conds:
             return False
+
+        # Land
         if location_country and it.get("country", "").upper() != location_country:
             return False
+
+        # Kostenloser Versand
         if free_shipping and not it.get("free_shipping", False):
             return False
+
         return True
 
     filtered = [it for it in pool if keep(it)]
     total = len(filtered)
 
+    # Pagination
     start = (page - 1) * per_page
     stop = start + per_page
     page_items = filtered[start:stop]
 
+    print(f"[DEMO] {total} gefilterte Items, zeige {len(page_items)} auf Seite {page}")
+
+    # Zurück zur erwarteten Struktur
     items: List[Dict] = []
     for it in page_items:
         items.append({
@@ -651,57 +968,6 @@ def _backend_search_demo(
         })
 
     return items, total
-
-
-def _backend_search_ebay(
-    terms: List[str],
-    filters: dict,
-    page: int,
-    per_page: int
-) -> Tuple[List[Dict], Optional[int]]:
-    """eBay-Suche mit korrekter Filter-Anwendung."""
-
-    LIVE_SEARCH_BOOL = str(os.getenv("LIVE_SEARCH", "false")).strip().lower() in ("true", "1", "yes", "on")
-
-    if not LIVE_SEARCH_BOOL or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
-        print("[WARNUNG] Live-Suche nicht möglich → Fallback zu Demo-Modus")
-        return _backend_search_demo(terms, filters, page, per_page)
-
-    filter_str = _build_ebay_filters(filters)
-    sort = _map_sort(filters.get("sort", "best"))
-
-    marketplace_map = {
-        "DE": "EBAY_DE",
-        "CH": "EBAY_CH",
-        "AT": "EBAY_AT",
-        "GB": "EBAY_GB",
-        "US": "EBAY_US",
-    }
-    location_country = (filters.get("location_country") or "DE").upper()
-    marketplace_id = marketplace_map.get(location_country, EBAY_MARKETPLACE_ID)
-
-    n = max(1, len(terms))
-    per_term = max(1, per_page // n)
-    offset = (page - 1) * per_term
-
-    items_all: List[Dict] = []
-    totals: List[int] = []
-
-    for t in terms:
-        items, total = ebay_search_one(t, per_term, offset, filter_str, sort, marketplace_id=marketplace_id)
-        items_all.extend(items)
-        if isinstance(total, int):
-            totals.append(total)
-
-    if len(items_all) < per_page and terms:
-        rest = per_page - len(items_all)
-        base = offset + per_term
-        extra, _ = ebay_search_one(terms[0], rest, base, filter_str, sort, marketplace_id=marketplace_id)
-        items_all.extend(extra)
-
-    total_estimated = sum(totals) if totals else None
-    return items_all[:per_page], total_estimated
-
 
 
 # -------------------------------------------------------------------
@@ -859,7 +1125,7 @@ def _search_with_cache(terms: List[str], filters: dict, page: int, per_page: int
 # E-Mail: Versand + De-Duping
 # -------------------------------------------------------------------
 def _send_email(to_email: str, subject: str, html_body: str) -> bool:
-    """Send email using agent.py mail settings"""
+    """Send email using agent.py mail settings (Postmark or SMTP)"""
     try:
         mail_settings = get_mail_settings()
         success = send_mail(mail_settings, [to_email], subject, html_body)
@@ -876,6 +1142,7 @@ def _make_search_hash(terms: List[str], filters: dict) -> str:
         "terms": [t.strip() for t in terms if t.strip()],
         "filters": {
             "price_min": filters.get("price_min") or "",
+
             "price_max": filters.get("price_max") or "",
             "sort": filters.get("sort") or "best",
             "conditions": sorted(filters.get("conditions") or []),
@@ -924,37 +1191,39 @@ def _render_items_html(title: str, items: List[Dict]) -> str:
 def _mark_and_filter_new(
     user_email: str, search_hash: str, src: str, items: List[Dict]
 ) -> List[Dict]:
-    """Nur Items zurückgeben, die noch nicht gemailt wurden."""
+    """Nur Items zurückgeben, die für diese Suche/Person/Src noch nicht (oder nach Cooldown) gemailt wurden."""
     if not items:
         return []
-
     now = int(time.time())
     conn = get_db()
-    cur = dict_cursor(conn)
-    ph = get_placeholder()
-
+    cur = conn.cursor()
     new_items: List[Dict] = []
-
     for it in items:
         iid = str(it.get("id") or it.get("url") or it.get("title"))[:255]
-
         cur.execute(
-            f"SELECT last_sent FROM alert_seen WHERE user_email={ph} AND search_hash={ph} AND src={ph} AND item_id={ph}",
-            (user_email, search_hash, src, iid)
+            """
+            SELECT last_sent FROM alert_seen
+            WHERE user_email=? AND search_hash=? AND src=? AND item_id=?
+        """,
+            (user_email, search_hash, src, iid),
         )
         row = cur.fetchone()
-
         if not row:
             new_items.append(it)
             cur.execute(
-                f"INSERT INTO alert_seen (user_email, search_hash, src, item_id, first_seen, last_sent) VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 0)",
-                (user_email, search_hash, src, iid, now)
+                """
+                INSERT INTO alert_seen (user_email, search_hash, src, item_id, first_seen, last_sent)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+                (user_email, search_hash, src, iid, now, 0),
             )
         else:
             last_sent = int(row["last_sent"])
-            if last_sent == 0 or (now - last_sent >= NOTIFY_COOLDOWN_MIN * 60):
+            if last_sent == 0:
                 new_items.append(it)
-
+            else:
+                if now - last_sent >= NOTIFY_COOLDOWN_MIN * 60:
+                    new_items.append(it)
     conn.commit()
     conn.close()
     return new_items
@@ -969,34 +1238,84 @@ def _group_by_src(items: List[Dict]) -> Dict[str, List[Dict]]:
 
 
 def _mark_sent(user_email: str, search_hash: str, src: str, items: List[Dict]) -> None:
-    """Markiert Items als versendet"""
     now = int(time.time())
     if not items:
         return
-
     conn = get_db()
-    cur = dict_cursor(conn)
-    ph = get_placeholder()
-
+    cur = conn.cursor()
     for it in items:
         iid = str(it.get("id") or it.get("url") or it.get("title"))[:255]
         cur.execute(
-            f"UPDATE alert_seen SET last_sent={ph} WHERE user_email={ph} AND search_hash={ph} AND src={ph} AND item_id={ph}",
-            (now, user_email, search_hash, src, iid)
+            """
+            UPDATE alert_seen
+               SET last_sent=?
+             WHERE user_email=? AND search_hash=? AND src=? AND item_id=?
+        """,
+            (now, user_email, search_hash, src, iid),
         )
-
     conn.commit()
     conn.close()
 
 
-
-
 # -------------------------------------------------------------------
 # DB (Users + Alerts/Seen)
+# -------------------------------------------------------------------
+def get_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(DB_FILE), detect_types=sqlite3.PARSE_DECLTYPES)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
+def init_db() -> None:
+    conn = get_db()
+    cur = conn.cursor()
+    # users
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            is_premium INTEGER NOT NULL DEFAULT 0
+        )
+    """
+    )
+    # items gesehen/versendet
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alert_seen (
+            user_email   TEXT    NOT NULL,
+            search_hash  TEXT    NOT NULL,
+            src          TEXT    NOT NULL,
+            item_id      TEXT    NOT NULL,
+            first_seen   INTEGER NOT NULL,
+            last_sent    INTEGER NOT NULL,
+            PRIMARY KEY (user_email, search_hash, src, item_id)
+        )
+    """
+    )
+    # gespeicherte Alerts (für Cron)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS search_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email   TEXT NOT NULL,
+            terms_json   TEXT NOT NULL,
+            filters_json TEXT NOT NULL,
+            per_page     INTEGER NOT NULL DEFAULT 20,
+            is_active    INTEGER NOT NULL DEFAULT 1,
+            last_run_ts  INTEGER NOT NULL DEFAULT 0
+        )
+    """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alerts_active ON search_alerts(is_active)"
+    )
+    conn.commit()
+    conn.close()
 
 
+init_db()
 
 
 # -------------------------------------------------------------------
@@ -1025,6 +1344,9 @@ def safe_render(template_name: str, **ctx):
 </body></html>"""
 
 
+# -------------------------------------------------------------------
+# Context-Processor
+# -------------------------------------------------------------------
 def _build_query(existing: dict, **extra) -> str:
     merged = {**existing, **{k: v for k, v in extra.items() if v is not None}}
     pairs = []
@@ -1045,22 +1367,24 @@ def inject_globals():
     return {
         "FREE_SEARCH_LIMIT": FREE_SEARCH_LIMIT,
         "PREMIUM_SEARCH_LIMIT": PREMIUM_SEARCH_LIMIT,
-        "STRIPE_PRICE": STRIPE_PRICE,
+        "STRIPE_PRICE_BASIC": STRIPE_PRICE_BASIC,  # NEU
+        "STRIPE_PRICE_PRO": STRIPE_PRICE_PRO,  # NEU
+        "STRIPE_PRICE_TEAM": STRIPE_PRICE_TEAM,  # NEU
         "qs": _build_query,
         "plausible_domain": PLAUSIBLE_DOMAIN,
+        "AMZ_TAG": os.getenv("AMZ_ASSOC_TAG", ""),
+        "AMZ_COUNTRY": os.getenv("AMZ_COUNTRY", "DE"),
     }
 
 
 # -------------------------------------------------------------------
-# Session Defaults
+# Session-Defaults + UTM
 # -------------------------------------------------------------------
-
 @app.before_request
 def _ensure_session_defaults():
     session.setdefault("free_search_count", 0)
     session.setdefault("is_premium", False)
     session.setdefault("user_email", "guest")
-
     # UTM nur einmalig erfassen
     if not session.get("utm"):
         utm_keys = [
@@ -1079,14 +1403,10 @@ def _user_search_limit() -> int:
     return PREMIUM_SEARCH_LIMIT if session.get("is_premium") else FREE_SEARCH_LIMIT
 
 
-
 # -------------------------------------------------------------------
 # Auth (Demo)
 # -------------------------------------------------------------------
 
-# -------------------------------------------------------------------
-# Auth Routes (Login, Register, Logout)
-# -------------------------------------------------------------------
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -1100,28 +1420,35 @@ def register():
         flash("Bitte E-Mail und Passwort angeben.", "warning")
         return redirect(url_for("register"))
 
-    conn = get_db()
-    cur = dict_cursor(conn)
-    ph = get_placeholder()
+    # Passwort hashen!
+    from werkzeug.security import generate_password_hash
+    password_hash = generate_password_hash(password)
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.exc import IntegrityError
+
+    db_url = os.getenv("DATABASE_URL", f"sqlite:///{DB_FILE}")
+    engine = create_engine(db_url)
 
     try:
-        cur.execute(
-            f"INSERT INTO users (email, password, is_premium) VALUES ({ph}, {ph}, 0)",
-            (email, password)
-        )
-        conn.commit()
-        flash("Registrierung erfolgreich. Bitte einloggen.", "success")
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO users (email, password, is_premium) VALUES (:email, :password, 0)"),
+                {"email": email, "password": password_hash}
+            )
+        flash("✅ Registrierung erfolgreich. Bitte einloggen.", "success")
         return redirect(url_for("login"))
-    except Exception as e:
-        error_msg = str(e).lower()
-        if "unique" in error_msg or "duplicate" in error_msg:
-            flash("Diese E-Mail ist bereits registriert.", "warning")
-        else:
-            flash(f"Fehler bei der Registrierung.", "danger")
-            print(f"[Register Error] {e}")
+
+    except IntegrityError:
+        flash("Diese E-Mail ist bereits registriert.", "warning")
         return redirect(url_for("register"))
-    finally:
-        conn.close()
+    except Exception as e:
+        print(f"[REGISTER] Error: {e}")
+        flash("Fehler bei der Registrierung.", "danger")
+        return redirect(url_for("register"))
+
+
+
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1129,36 +1456,36 @@ def login():
     if request.method == "GET":
         return safe_render("login.html", title="Login")
 
+    print(f"[DEBUG] DATABASE_URL: {os.getenv('DATABASE_URL', 'NOT SET')}")
+    print(f"[DEBUG] DB_FILE: {DB_FILE}")
+
     email = (request.form.get("email") or "").strip().lower()
     password = (request.form.get("password") or "").strip()
 
-    print(f"[LOGIN DEBUG] Email: {email}")
-    print(f"[LOGIN DEBUG] Password: {password}")
+    # SQLAlchemy statt get_db()
+    from sqlalchemy import create_engine, text
+    from werkzeug.security import check_password_hash
 
-    conn = get_db()
-    cur = dict_cursor(conn)
-    ph = get_placeholder()
+    db_url = os.getenv("DATABASE_URL", f"sqlite:///{DB_FILE}")
+    engine = create_engine(db_url)
 
-    cur.execute(
-        f"SELECT id, password, is_premium FROM users WHERE email = {ph}",
-        (email,)
-    )
-    row = cur.fetchone()
-    conn.close()
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT id, password, is_premium FROM users WHERE email = :email"),
+            {"email": email}
+        )
+        row = result.fetchone()
 
-    if not row or row["password"] != password:
-        print("[LOGIN DEBUG] Login failed - redirecting back")
+    # Passwort-Check mit Hash-Vergleich
+    if not row or not check_password_hash(row[1], password):
         flash("E-Mail oder Passwort ist falsch.", "warning")
         return redirect(url_for("login"))
 
-    print("[LOGIN DEBUG] Login successful!")
-    session["user_id"] = int(row["id"])
+    session["user_id"] = int(row[0])
     session["user_email"] = email
-    session["is_premium"] = bool(row["is_premium"])
-    session.permanent = True
+    session["is_premium"] = bool(row[2])
     flash("Login erfolgreich.", "success")
     return redirect(url_for("dashboard"))
-
 
 @app.route("/logout")
 def logout():
@@ -1168,52 +1495,26 @@ def logout():
 
 
 # -------------------------------------------------------------------
-# Watchlist Stats Funktion
+# Public / Dashboard / Free-Start
 # -------------------------------------------------------------------
+@app.route("/")
+def root_redirect():
+    return redirect(url_for("public_home"))
 
-def get_watchlist_stats(user_email, conn):
-    """Holt Watchlist-Statistiken"""
-    cur = dict_cursor(conn)
-    ph = get_placeholder()
 
-    # Aktive Alerts
-    cur.execute(
-        f"SELECT COUNT(*) as count FROM search_alerts WHERE user_email = {ph} AND is_active = 1",
-        (user_email,)
+@app.route("/public")
+def public_home():
+    return safe_render("public_home.html", title="Start – ebay-agent-cockpit")
+
+
+@app.route("/pricing")
+def public_pricing():
+    ev_free_limit_hit = bool(session.pop("ev_free_limit_hit", False))
+    return safe_render(
+        "public_pricing.html",
+        title="Preise – ebay-agent-cockpit",
+        ev_free_limit_hit=ev_free_limit_hit,
     )
-    row = cur.fetchone()
-    active_alerts = row["count"] if row else 0
-
-    # Benachrichtigungen heute
-    today_start = int(time.time()) - (24 * 3600)
-    cur.execute(
-        f"SELECT COUNT(*) as count FROM alert_seen WHERE user_email = {ph} AND first_seen > {ph}",
-        (user_email, today_start)
-    )
-    row = cur.fetchone()
-    notifications_today = row["count"] if row else 0
-
-    # Plan-Limits
-    cur.execute(f"SELECT plan_type FROM users WHERE email = {ph}", (user_email,))
-    user = cur.fetchone()
-    plan = user["plan_type"] if user else "free"
-
-    plan_limits = {
-        "free": {"max_alerts": 3, "check_interval": 5},
-        "basic": {"max_alerts": 10, "check_interval": 3},
-        "pro": {"max_alerts": 50, "check_interval": 1},
-        "team": {"max_alerts": 150, "check_interval": 1},
-    }
-
-    limits = plan_limits.get(plan, plan_limits["free"])
-
-    return {
-        "active_alerts": active_alerts,
-        "max_alerts": limits["max_alerts"],
-        "notifications_today": notifications_today,
-        "plan": plan,
-        "check_interval": limits["check_interval"],
-    }
 
 
 @app.route("/dashboard")
@@ -1227,14 +1528,13 @@ def dashboard():
 
     try:
         conn = get_db()
-        cur = dict_cursor(conn)
-        ph = get_placeholder()
+        cur = conn.cursor()
 
         # User-Daten holen
-        cur.execute(f"""
+        cur.execute("""
             SELECT email, telegram_chat_id, telegram_enabled, telegram_verified,
                    telegram_username, plan_type, is_premium
-            FROM users WHERE email = {ph}
+            FROM users WHERE email = ?
         """, (user_email,))
 
         user_row = cur.fetchone()
@@ -1252,10 +1552,10 @@ def dashboard():
         stats = get_watchlist_stats(user_email, conn)
 
         # Recent Alerts holen
-        cur.execute(f"""
+        cur.execute("""
             SELECT id, terms_json, filters_json, last_run_ts
             FROM search_alerts
-            WHERE user_email = {ph} AND is_active = 1
+            WHERE user_email = ? AND is_active = 1
             ORDER BY id DESC LIMIT 10
         """, (user_email,))
 
@@ -1276,15 +1576,202 @@ def dashboard():
             except:
                 continue
 
-        # Watchlist count
-        watchlist_count = stats.get("active_alerts", 0)
+        conn.close()
 
-        # Letzte Benachrichtigung
-        last_notification_time = "–"
+        context = {
+            "title": "Dashboard",
+            "user": user,
+            "stats": stats,
+            "recent_alerts": recent_alerts,
+            "watchlist_count": stats.get("active_alerts", 0),
+            "notifications_today": stats.get("notifications_today", 0),
+            "last_notification_time": "5"
+        }
+
+        return safe_render("dashboard.html", **context)
+
+    except Exception as e:
+        print(f"[Dashboard] Fehler: {e}")
+        return safe_render("dashboard.html",
+            title="Dashboard",
+            user={"email": user_email, "telegram_verified": False},
+            stats={"active_alerts": 0, "max_alerts": 3, "notifications_today": 0,
+                   "plan": "free", "check_interval": 5},
+            recent_alerts=[],
+            watchlist_count=0,
+            notifications_today=0
+        )
+
+# Watchlist Stats Funktion (ersetzt Import von watchlist_integration)
+# -------------------------
+# Watchlist-Statistiken
+# -------------------------
+def get_watchlist_stats(user_email, conn):
+    """Holt Watchlist-Statistiken"""
+    cur = conn.cursor()
+
+    # Aktive Alerts
+    cur.execute(
+        """
+        SELECT COUNT(*) as count
+        FROM search_alerts
+        WHERE user_email = ? AND is_active = 1
+        """,
+        (user_email,),
+    )
+    row = cur.fetchone()
+    active_alerts = row["count"] if row and "count" in row else 0
+
+    # Benachrichtigungen heute
+    import time
+    today_start = int(time.time()) - (24 * 3600)
+    cur.execute(
+        """
+        SELECT COUNT(*) as count
+        FROM alert_seen
+        WHERE user_email = ? AND first_seen > ?
+        """,
+        (user_email, today_start),
+    )
+    row = cur.fetchone()
+    notifications_today = row["count"] if row and "count" in row else 0
+
+    # Plan-Limits
+    cur.execute("SELECT plan_type FROM users WHERE email = ?", (user_email,))
+    user = cur.fetchone()
+    plan = user["plan_type"] if user and "plan_type" in user else "free"
+
+    plan_limits = {
+        "free": {"max_alerts": 3, "check_interval": 5},
+        "basic": {"max_alerts": 10, "check_interval": 3},
+        "pro": {"max_alerts": 50, "check_interval": 1},
+        "team": {"max_alerts": 150, "check_interval": 1},
+    }
+
+    limits = plan_limits.get(plan, plan_limits["free"])
+
+    return {
+        "active_alerts": active_alerts,
+        "max_alerts": limits["max_alerts"],
+        "notifications_today": notifications_today,
+        "plan": plan,
+        "check_interval": limits["check_interval"],
+    }
+
+
+# -------------------------
+# Dashboard-Route
+# -------------------------
+@app.route("/dashboard2")
+def dashboard2():
+    """Dashboard mit Telegram-Status, Alerts, Statistiken"""
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+
+        # User-Daten holen
+        cur.execute(
+            """
+            SELECT email, telegram_chat_id, telegram_enabled, telegram_verified,
+                   telegram_username, plan_type, is_premium
+            FROM users WHERE email = ?
+            """,
+            (user_email,),
+        )
+        user_row = cur.fetchone()
+        user = (
+            dict(user_row)
+            if user_row
+            else {
+                "email": user_email,
+                "telegram_chat_id": None,
+                "telegram_enabled": False,
+                "telegram_verified": False,
+                "telegram_username": None,
+                "plan_type": "free",
+                "is_premium": False,
+            }
+        )
+
+        # Stats holen
+        stats = get_watchlist_stats(user_email, conn)
+
+        # ============================================================
+        # RECENT ALERTS (Letzte 10)
+        # ============================================================
+        cur.execute(
+            """
+            SELECT id, terms_json, filters_json, last_run_ts
+            FROM search_alerts
+            WHERE user_email = ? AND is_active = 1
+            ORDER BY id DESC
+            LIMIT 10
+            """,
+            (user_email,),
+        )
+
+        alerts_raw = cur.fetchall()
+        recent_alerts = []
+        for row in alerts_raw:
+            row = dict(row)
+            try:
+                terms = json.loads(row.get("terms_json") or "[]")
+                filters = json.loads(row.get("filters_json") or "{}")
+                recent_alerts.append(
+                    {
+                        "id": row.get("id"),
+                        "search_term": terms[0] if terms else "Unbekannt",
+                        "price_min": filters.get("price_min", ""),
+                        "price_max": filters.get("price_max", ""),
+                        "location": filters.get("location_country", "DE"),
+                        "free_shipping": filters.get("free_shipping", False),
+                        "last_check": row.get("last_run_ts", 0),
+                    }
+                )
+            except Exception as e:
+                app.logger.debug("[Dashboard] Alert-Parse-Fehler: %s", e)
+                continue
+
+        # ============================================================
+        # WATCHLIST COUNT (für alte Kompatibilität)
+        # ============================================================
+        watchlist_count = stats.get("active_alerts", 0)
         try:
             cur.execute(
-                f"SELECT MAX(first_seen) as last_seen FROM alert_seen WHERE user_email = {ph}",
-                (user_email,)
+                """
+                SELECT COUNT(*) as count
+                FROM watchlist
+                WHERE user_email = ?
+                """,
+                (user_email,),
+            )
+            old_watchlist_count = cur.fetchone()
+            if old_watchlist_count and "count" in old_watchlist_count:
+                watchlist_count = old_watchlist_count["count"]
+        except Exception:
+            # watchlist Tabelle existiert ggf. nicht — safe fallback
+            pass
+
+        # ============================================================
+        # LETZTE BENACHRICHTIGUNG (optional)
+        # ============================================================
+        last_notification_time = "–"
+        try:
+            import time
+
+            cur.execute(
+                """
+                SELECT MAX(first_seen) as last_seen
+                FROM alert_seen
+                WHERE user_email = ?
+                """,
+                (user_email,),
             )
             last_row = cur.fetchone()
             if last_row and last_row.get("last_seen"):
@@ -1294,15 +1781,18 @@ def dashboard():
 
                 if minutes_ago < 60:
                     last_notification_time = f"{minutes_ago}"
-                elif minutes_ago < 1440:
+                elif minutes_ago < 1440:  # < 24 Stunden
                     last_notification_time = f"{minutes_ago // 60}h"
                 else:
                     last_notification_time = f"{minutes_ago // 1440}d"
         except Exception as e:
-            print(f"[Dashboard] Last-Notification-Fehler: {e}")
+            app.logger.debug("[Dashboard] Last-Notification-Fehler: %s", e)
 
         conn.close()
 
+        # ============================================================
+        # CONTEXT ZUSAMMENSTELLEN
+        # ============================================================
         context = {
             "title": "Dashboard",
             "user": user,
@@ -1311,16 +1801,14 @@ def dashboard():
             "watchlist_count": watchlist_count,
             "notifications_today": stats.get("notifications_today", 0),
             "last_notification_time": last_notification_time,
+            "avg_price_saved": 0,  # Optional: Später berechnen
         }
 
         return safe_render("dashboard.html", **context)
 
     except Exception as e:
-        print(f"[Dashboard] Fehler: {e}")
-        import traceback
-        traceback.print_exc()
-
-        # Fallback
+        # Fehler-Fallback
+        app.logger.exception("[Dashboard] Kritischer Fehler")
         context = {
             "title": "Dashboard",
             "user": {"email": user_email, "telegram_verified": False},
@@ -1339,29 +1827,8 @@ def dashboard():
         return safe_render("dashboard.html", **context)
 
 
-# -------------------------------------------------------------------
-# Public Routes
-# -------------------------------------------------------------------
 
-@app.route("/")
-def root_redirect():
-    return redirect(url_for("public_home"))
-
-
-@app.route("/public")
-def public_home():
-    return safe_render("public_home.html", title="Start – ebay-agent-cockpit")
-
-
-@app.route("/pricing")
-def public_pricing():
-    ev_free_limit_hit = bool(session.pop("ev_free_limit_hit", False))
-    return safe_render(
-        "public_pricing.html",
-        title="Preise – ebay-agent-cockpit",
-        ev_free_limit_hit=ev_free_limit_hit,
-    )
-
+@app.route("/start-free")
 @app.route("/free")
 def start_free():
     session["is_premium"] = False
@@ -3435,15 +3902,19 @@ def admin_stats_recalc():
         {"HX-Redirect": f"/admin/stats{q}"},
     )  # funktioniert normal & mit HTMX
 
+    # ============================================================================
+# WATCHLIST & TELEGRAM INTEGRATION
+# ============================================================================
+
+# ============================================================================
+# WATCHLIST ROUTES (direkt in app.py definiert)
+# ============================================================================
+# Integration-Dateien wurden deaktiviert, Routes sind direkt hier definiert
+
+
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
-    debug = os.getenv("FLASK_DEBUG", "0") == "1"
-
-    print("\n" + "="*50)
-    print("🚀 Flask App startet...")
-    print(f"   Port: {port}")
-    print(f"   Debug: {debug}")
-    print(f"   Database: {'PostgreSQL' if IS_POSTGRES else 'SQLite'}")
-    print("="*50 + "\n")
-
+    debug = as_bool(os.getenv("FLASK_DEBUG", "1"))
     app.run(host="0.0.0.0", port=port, debug=debug)
