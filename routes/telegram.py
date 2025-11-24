@@ -13,6 +13,7 @@ pending_verifications = {}
 @bp.route("/settings")
 @login_required
 def settings():
+    print(f"[DEBUG] current_user: {current_user}, authenticated: {current_user.is_authenticated}")
     db = SessionLocal()
     try:
         user = db.query(User).filter_by(id=current_user.id).first()
