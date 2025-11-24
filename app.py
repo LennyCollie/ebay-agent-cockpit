@@ -57,10 +57,28 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 # WICHTIG: SESSION KONFIGURATION (NEU!)
 # ===================================================================
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-CHANGE-IN-PRODUCTION')
-app.config['SESSION_COOKIE_SECURE'] = True  # Nur über HTTPS
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Cookie Settings - unterschiedlich für Lokal vs. Production
+IS_PRODUCTION = os.getenv('RENDER') or os.getenv('DATABASE_URL', '').startswith('postgresql')
+
+if IS_PRODUCTION:
+    # Production (Render mit HTTPS)
+    app.config['SESSION_COOKIE_SECURE'] = False  # ← WICHTIG: False wegen Render Proxy!
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_DOMAIN'] = None  # ← Lässt Flask automatisch bestimmen
+    print("[Session] Production Mode - Cookie Secure: False (behind proxy)")
+else:
+    # Lokal (HTTP)
+    app.config['SESSION_COOKIE_SECURE'] = False
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    print("[Session] Development Mode")
+
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 Stunden
+
+
+
 
 # DEBUG: Zeige alle Umgebungsvariablen
 print("\n" + "="*50)
