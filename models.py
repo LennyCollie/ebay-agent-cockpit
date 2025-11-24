@@ -83,6 +83,28 @@ class User(UserMixin, Base):          # ← DAS WAR’S!!! DAS WAR DER LETZTE BU
         return f"<User {self.email} ({self.plan})>"
 
 
+    def is_active(self):
+        return self.is_active  # oder einfach: return True
+
+    def is_anonymous(self):
+        return False
+
+    def get_id(self):
+        return str(self.id)
+
+        def get_id(self):
+            return str(self.id)
+
+    def is_active(self):
+        return self.is_active  # oder einfach: return True
+
+    def is_anonymous(self):
+        return False
+
+    def is_authenticated(self):
+        return True
+
+
 class SearchAgent(Base):
     __tablename__ = "search_agents"
 
