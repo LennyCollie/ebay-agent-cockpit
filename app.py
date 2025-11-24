@@ -15,6 +15,7 @@ from alert_checker import run_alert_check
 
 # NEU: Database Import
 from database import get_db, dict_cursor, init_db, IS_POSTGRES, get_placeholder
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import requests
 import stripe
@@ -56,28 +57,34 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 # ===================================================================
 # WICHTIG: SESSION KONFIGURATION (NEU!)
 # ===================================================================
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-CHANGE-IN-PRODUCTION')
+# ===================================================================
+# WICHTIG: SESSION KONFIGURATION FÜR RENDER.COM (2025 FIX)
+# ===================================================================
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or os.urandom(32)
 
-# Cookie Settings - unterschiedlich für Lokal vs. Production
-IS_PRODUCTION = os.getenv('RENDER') or os.getenv('DATABASE_URL', '').startswith('postgresql')
+# Immer die gleichen sicheren Cookie-Settings – egal ob local oder prod
+app.config['SESSION_COOKIE_SECURE'] = True      # Ja, True! Weil Browser nur HTTPS sieht
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAME_SITE'] = 'Lax'  # Korrektur: SAME_SITE (nicht SAMESITE)
 
-if IS_PRODUCTION:
-    # Production (Render mit HTTPS)
-    app.config['SESSION_COOKIE_SECURE'] = False  # ← WICHTIG: False wegen Render Proxy!
-    app.config['SESSION_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-    app.config['SESSION_COOKIE_DOMAIN'] = None  # ← Lässt Flask automatisch bestimmen
-    print("[Session] Production Mode - Cookie Secure: False (behind proxy)")
-else:
-    # Lokal (HTTP)
-    app.config['SESSION_COOKIE_SECURE'] = False
-    app.config['SESSION_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-    print("[Session] Development Mode")
+# Render ist ein Reverse Proxy → Flask muss das wissen!
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,      # X-Forwarded-For
+    x_proto=1,    # X-Forwarded-Proto (https!)
+    x_host=1,     # X-Forwarded-Host
+    x_port=1,
+    x_prefix=1
+)
 
+# Optional: Session-Lebensdauer
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 Stunden
 
-
+# Klarer Debug-Output
+IS_PRODUCTION = bool(os.getenv('RENDER'))
+print(f"[Session] {'Production' if IS_PRODUCTION else 'Development'} Mode")
+print(f"[Session] SESSION_COOKIE_SECURE = True (dank ProxyFix)")
+print(f"[Session] SECRET_KEY = {'SET' if os.getenv('SECRET_KEY') else 'MISSING!!!'}")
 
 
 # DEBUG: Zeige alle Umgebungsvariablen
