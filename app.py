@@ -11,14 +11,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
-from alert_checker import run_alert_check
 
-# NEU: Database Import
+from alert_checker import run_alert_check
 from database import get_db, dict_cursor, init_db, IS_POSTGRES, get_placeholder
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import requests
 import stripe
+
 from flask import (
     Blueprint,
     Flask,
@@ -32,6 +32,7 @@ from flask import (
     session,
     url_for,
 )
+from flask_login import LoginManager, UserMixin, login_user, current_user
 
 from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from routes.search import bp_search as search_bp
@@ -55,50 +56,75 @@ except Exception:
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 # ===================================================================
-# WICHTIG: SESSION KONFIGURATION (NEU!)
-# ===================================================================
-# ===================================================================
-# WICHTIG: SESSION KONFIGURATION FÜR RENDER.COM (2025 FIX)
+# SESSION + PROXYFIX + FLASK-LOGIN KONFIGURATION (2025 RENDER FIX)
 # ===================================================================
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or os.urandom(32)
 
-# Immer die gleichen sicheren Cookie-Settings – egal ob local oder prod
-app.config['SESSION_COOKIE_SECURE'] = True      # Ja, True! Weil Browser nur HTTPS sieht
+# Sichere Cookies (Browser sieht immer HTTPS dank Render)
+app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAME_SITE'] = 'Lax'  # Korrektur: SAME_SITE (nicht SAMESITE)
+app.config['SESSION_COOKIE_SAME_SITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 Stunden
 
-# Render ist ein Reverse Proxy → Flask muss das wissen!
+# Render ist ein Reverse Proxy → Flask muss das wissen
 app.wsgi_app = ProxyFix(
     app.wsgi_app,
-    x_for=1,      # X-Forwarded-For
-    x_proto=1,    # X-Forwarded-Proto (https!)
-    x_host=1,     # X-Forwarded-Host
+    x_for=1,
+    x_proto=1,
+    x_host=1,
     x_port=1,
     x_prefix=1
 )
 
-# Optional: Session-Lebensdauer
-app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 Stunden
+# Flask-Login initialisieren
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
+login_manager.login_message = "Bitte melde dich an, um diese Seite zu sehen."
+login_manager.login_message_category = "warning"
 
-# Klarer Debug-Output
+# Minimaler UserMixin für Flask-Login (kompatibel mit deiner DB-Struktur)
+class User(UserMixin):
+    def __init__(self, id, email, is_premium=False):
+        self.id = str(id)           # Flask-Login erwartet String als get_id()
+        self.email = email
+        self.is_premium = is_premium
+
+    def get_id(self):
+        return self.id
+
+@login_manager.user_loader
+def load_user(user_id):
+    """Wird von Flask-Login bei jedem Request aufgerufen"""
+    try:
+        conn = get_db()
+        cur = dict_cursor(conn)
+        cur.execute("SELECT id, email, is_premium FROM users WHERE id = %s", (int(user_id),))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return User(row["id"], row["email"], bool(row["is_premium"]))
+    except Exception as e:
+        print(f"[user_loader] Fehler: {e}")
+    return None
+
+# Debug-Ausgabe beim Start
 IS_PRODUCTION = bool(os.getenv('RENDER'))
 print(f"[Session] {'Production' if IS_PRODUCTION else 'Development'} Mode")
 print(f"[Session] SESSION_COOKIE_SECURE = True (dank ProxyFix)")
 print(f"[Session] SECRET_KEY = {'SET' if os.getenv('SECRET_KEY') else 'MISSING!!!'}")
-
-
-# DEBUG: Zeige alle Umgebungsvariablen
 print("\n" + "="*50)
 print("ENV VARS DEBUG:")
 print(f"LIVE_SEARCH = {os.getenv('LIVE_SEARCH')}")
 print(f"EBAY_CLIENT_ID = {os.getenv('EBAY_CLIENT_ID', 'MISSING')}")
 print(f"EBAY_CLIENT_SECRET = {os.getenv('EBAY_CLIENT_SECRET', 'MISSING')}")
 print(f"EBAY_MARKETPLACE_ID = {os.getenv('EBAY_MARKETPLACE_ID')}")
-print(f"SECRET_KEY = {'SET' if os.getenv('SECRET_KEY') else 'MISSING!'}")
 print(f"DATABASE = {'PostgreSQL' if IS_POSTGRES else 'SQLite'}")
 print("="*50 + "\n")
 
-# Blueprints registrieren
+# -------------------------------------------------------------------
+# Blueprints & weitere Config (unverändert)
+# -------------------------------------------------------------------
 from routes.inbound import bp as inbound_bp
 from routes.vision_test import bp as vision_test_bp
 
@@ -107,7 +133,6 @@ app.register_blueprint(telegram_bp)
 app.register_blueprint(vision_test_bp)
 app.register_blueprint(watchlist_bp)
 
-# App Config
 app.config.from_object(Config)
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
 app.config["PRICE_TO_PLAN"] = PRICE_TO_PLAN
@@ -1158,32 +1183,58 @@ def login():
     password = (request.form.get("password") or "").strip()
 
     print(f"[LOGIN DEBUG] Email: {email}")
-    print(f"[LOGIN DEBUG] Password: {password}")
+    print(f"[LOGIN DEBUG] Password: {'*' * len(password)}")  # Sicherer: Passwort nicht im Klartext loggen!
 
     conn = get_db()
     cur = dict_cursor(conn)
     ph = get_placeholder()
 
-    cur.execute(
-        f"SELECT id, password, is_premium FROM users WHERE email = {ph}",
-        (email,)
-    )
-    row = cur.fetchone()
-    conn.close()
+    try:
+        cur.execute(
+            f"SELECT id, password, is_premium FROM users WHERE email = {ph}",
+            (email,)
+        )
+        row = cur.fetchone()
+    except Exception as e:
+        print(f"[LOGIN DEBUG] DB-Fehler: {e}")
+        flash("Datenbankfehler. Bitte später erneut versuchen.", "danger")
+        return redirect(url_for("login"))
+    finally:
+        conn.close()
 
+    # --- Login prüfen ---
     if not row or row["password"] != password:
-        print("[LOGIN DEBUG] Login failed - redirecting back")
+        print("[LOGIN DEBUG] Login failed - falsche Zugangsdaten")
         flash("E-Mail oder Passwort ist falsch.", "warning")
         return redirect(url_for("login"))
 
+    # --- Erfolgreich eingeloggt ---
     print("[LOGIN DEBUG] Login successful!")
+
+    # Flask-Login User-Objekt erstellen
+    user = User(
+        id=row["id"],
+        email=email,
+        is_premium=bool(row["is_premium"])
+    )
+
+    # Session-Variablen beibehalten (für deine alten Templates)
     session["user_id"] = int(row["id"])
     session["user_email"] = email
     session["is_premium"] = bool(row["is_premium"])
     session.permanent = True
-    flash("Login erfolgreich.", "success")
-    return redirect(url_for("dashboard"))
 
+    # WICHTIG: Flask-Login aktivieren!
+    login_user(user, remember=True)  # remember=True → Cookie bleibt 30 Tage
+
+    flash("Login erfolgreich.", "success")
+
+    # Sicherer Redirect: vermeidet Open Redirects
+    next_page = request.args.get("next")
+    if not next_page or not next_page.startswith("/"):
+        next_page = url_for("dashboard")
+
+    return redirect(next_page)
 
 @app.route("/logout")
 def logout():
