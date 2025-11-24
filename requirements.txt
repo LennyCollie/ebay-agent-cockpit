@@ -15,4 +15,4 @@ opencv-python-headless==4.10.0.84
 numpy>=1.24
 Pillow>=10.3
 openai>=1.40
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.11
