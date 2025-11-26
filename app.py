@@ -1,11 +1,10 @@
-
-# ==================== app.py – DIE EINZIGE WAHRE VERSION ====================
-import os
 import base64
 import csv
+import hashlib
 import io
 import json
 import math
+import os
 import time
 import urllib.parse
 from datetime import datetime
@@ -13,42 +12,33 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
-import requests
-import stripe
+from alert_checker import run_alert_check
+from database import get_db, dict_cursor, init_db, IS_POSTGRES, get_placeholder
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import requests
+import stripe
+
 from flask import (
+    Blueprint,
     Flask,
-    flash,
-    redirect,
-    url_for,
+    abort,
     current_app,
+    flash,
+    jsonify,
+    redirect,
     render_template,
     request,
     session,
-    abort,
-    jsonify,
-    Blueprint,
+    url_for,
 )
+from flask_login import LoginManager, UserMixin, login_user, current_user
 
-# ==================== WICHTIG: DEIN ECHTES USER-MODELL ====================
-from models import User, SessionLocal          # ← Das ist der Schlüssel zum Himmel!
-
-# ==================== FLASK-LOGIN ====================
-from flask_login import LoginManager, login_user, current_user
-
-# ==================== DEINE BLUEPRINTS ====================
+from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from routes.search import bp_search as search_bp
 from routes.telegram import bp as telegram_bp
 from routes.watchlist import bp as watchlist_bp
-from routes.inbound import bp as inbound_bp
-from routes.vision_test import bp as vision_test_bp
-
-# ==================== CONFIG & HELFER ====================
-from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from agent import get_mail_settings, send_mail
-from alert_checker import run_alert_check
-from database import init_db, IS_POSTGRES
 
 # -------------------------------------------------------------------
 # .env laden
@@ -61,51 +51,98 @@ except Exception:
     pass
 
 # -------------------------------------------------------------------
-# FLASK APP ERSTELLEN – NUR EINMAL!
+# App & Basis-Konfig
 # -------------------------------------------------------------------
 app = Flask(__name__, template_folder="templates", static_folder="static")
+
+# ===================================================================
+# SESSION + PROXYFIX + FLASK-LOGIN KONFIGURATION (2025 RENDER FIX)
+# ===================================================================
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or os.urandom(32)
 
-# Session-Sicherheit für Render (HTTPS)
+# Sichere Cookies (Browser sieht immer HTTPS dank Render)
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAME_SITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 Stunden
 
-# Render Reverse Proxy Fix
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+# Render ist ein Reverse Proxy → Flask muss das wissen
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,
+    x_proto=1,
+    x_host=1,
+    x_port=1,
+    x_prefix=1
+)
 
-# ==================== FLASK-LOGIN – NUR HIER! ====================
+# Flask-Login initialisieren
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = "login"                        # Muss genau so heißen!
-login_manager.login_message = "Bitte melde dich an!"
+login_manager.login_view = "login"
+login_manager.login_message = "Bitte melde dich an, um diese Seite zu sehen."
 login_manager.login_message_category = "warning"
+
+# Minimaler UserMixin für Flask-Login (kompatibel mit deiner DB-Struktur)
+class User(UserMixin):
+    def __init__(self, id, email, is_premium=False):
+        self.id = str(id)           # Flask-Login erwartet String als get_id()
+        self.email = email
+        self.is_premium = is_premium
+
+    def get_id(self):
+        return self.id
 
 @login_manager.user_loader
 def load_user(user_id):
-    db = SessionLocal()
+    """Wird von Flask-Login bei jedem Request aufgerufen"""
     try:
-        return db.query(User).get(int(user_id))
-    finally:
-        db.close()
+        conn = get_db()
+        cur = dict_cursor(conn)
+        cur.execute("SELECT id, email, is_premium FROM users WHERE id = %s", (int(user_id),))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return User(row["id"], row["email"], bool(row["is_premium"]))
+    except Exception as e:
+        print(f"[user_loader] Fehler: {e}")
+    return None
 
-# ==================== WEITERE CONFIG ====================
+# Debug-Ausgabe beim Start
+IS_PRODUCTION = bool(os.getenv('RENDER'))
+print(f"[Session] {'Production' if IS_PRODUCTION else 'Development'} Mode")
+print(f"[Session] SESSION_COOKIE_SECURE = True (dank ProxyFix)")
+print(f"[Session] SECRET_KEY = {'SET' if os.getenv('SECRET_KEY') else 'MISSING!!!'}")
+print("\n" + "="*50)
+print("ENV VARS DEBUG:")
+print(f"LIVE_SEARCH = {os.getenv('LIVE_SEARCH')}")
+print(f"EBAY_CLIENT_ID = {os.getenv('EBAY_CLIENT_ID', 'MISSING')}")
+print(f"EBAY_CLIENT_SECRET = {os.getenv('EBAY_CLIENT_SECRET', 'MISSING')}")
+print(f"EBAY_MARKETPLACE_ID = {os.getenv('EBAY_MARKETPLACE_ID')}")
+print(f"DATABASE = {'PostgreSQL' if IS_POSTGRES else 'SQLite'}")
+print("="*50 + "\n")
+
+# -------------------------------------------------------------------
+# Blueprints & weitere Config (unverändert)
+# -------------------------------------------------------------------
+from routes.inbound import bp as inbound_bp
+from routes.vision_test import bp as vision_test_bp
+
+app.register_blueprint(inbound_bp)
+app.register_blueprint(telegram_bp)
+app.register_blueprint(vision_test_bp)
+app.register_blueprint(watchlist_bp)
+
 app.config.from_object(Config)
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
 app.config["PRICE_TO_PLAN"] = PRICE_TO_PLAN
 app.config["PLAUSIBLE_DOMAIN"] = os.getenv("PLAUSIBLE_DOMAIN", "")
 
+import stripe
 stripe.api_key = (Config.STRIPE_SECRET_KEY or os.getenv("STRIPE_SECRET_KEY", "")).strip()
+STRIPE_OK = bool(stripe.api_key and len(stripe.api_key) > 10)
 
-# ==================== BLUEPRINTS REGISTRIEREN ====================
-app.register_blueprint(inbound_bp)
-app.register_blueprint(telegram_bp)
-app.register_blueprint(vision_test_bp)
-app.register_blueprint(watchlist_bp)
-app.register_blueprint(search_bp)
-
-# ==================== SECURITY HEADERS ====================
+# --- Security Headers ---
 @app.after_request
 def add_security_headers(resp):
     resp.headers["X-Frame-Options"] = "DENY"
@@ -114,12 +151,6 @@ def add_security_headers(resp):
     resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     return resp
-
-# ==================== OPTIONAL: SCHÖNE FEHLERMELDUNG ====================
-@login_manager.unauthorized_handler
-def unauthorized():
-    flash("Du musst eingeloggt sein!", "warning")
-    return redirect(url_for("login"))
 
 # --- Helfer Funktionen ---
 def as_bool(val: Optional[str]) -> bool:
