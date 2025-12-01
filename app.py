@@ -15,6 +15,10 @@ from urllib.parse import urlencode
 from alert_checker import run_alert_check
 from database import get_db, dict_cursor, init_db, IS_POSTGRES, get_placeholder
 from werkzeug.middleware.proxy_fix import ProxyFix
+from services.kleinanzeigen import search_kleinanzeigen, check_dependencies as ka_check_dependencies
+from typing import List, Dict, Tuple, Optional
+
+
 
 import requests
 import stripe
@@ -38,6 +42,7 @@ from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from routes.search import bp_search as search_bp
 from routes.telegram import bp as telegram_bp
 from routes.watchlist import bp as watchlist_bp
+from routes.alerts import bp as alerts_bp
 from agent import get_mail_settings, send_mail
 
 # -------------------------------------------------------------------
@@ -132,6 +137,7 @@ app.register_blueprint(inbound_bp)
 app.register_blueprint(telegram_bp)
 app.register_blueprint(vision_test_bp)
 app.register_blueprint(watchlist_bp)
+app.register_blueprint(alerts_bp)
 
 app.config.from_object(Config)
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
@@ -751,6 +757,43 @@ def _backend_search_ebay(
 
     total_estimated = sum(totals) if totals else None
     return items_all[:per_page], total_estimated
+
+
+
+# -------------------------------------------------------
+# Kleinanzeigen-Suche (Stub / Platzhalter-Implementierung)
+# -------------------------------------------------------
+def search_kleinanzeigen(
+    terms: List[str],
+    filters: dict,
+    page: int,
+    per_page: int
+) -> Tuple[List[Dict], Optional[int]]:
+    """
+    Placeholder-Suche für Kleinanzeigen.
+    Hier kannst du später echtes Scraping oder eine API einbauen.
+    Für jetzt: Wir tun so, als gäbe es Kleinanzeigen-Treffer und markieren sie
+    sauber mit src='kleinanzeigen', damit das UI funktioniert.
+    """
+    query = " ".join(terms) if terms else ""
+    items: List[Dict] = []
+
+    # Demo: einfach ein paar Fake-Ergebnisse erzeugen,
+    # nur damit du im Frontend die grünen Badges siehst.
+    for i in range(per_page):
+        items.append({
+            "id": f"ka-{page}-{i}",
+            "title": f"Kleinanzeige {i+1} zu {query or 'ohne Begriff'}",
+            "price": "VB",
+            "url": "https://www.kleinanzeigen.de/",
+            "img": "https://via.placeholder.com/160x120?text=KA",
+            "term": query,
+            "src": "kleinanzeigen",   # <--- WICHTIG!
+        })
+
+    # total_estimated für Kleinanzeigen lassen wir auf None
+    return items, None
+
 
 
 
@@ -1451,6 +1494,8 @@ def start_free():
 # -------------------------------------------------------------------
 from urllib.parse import urlencode
 
+from urllib.parse import urlencode
+
 @app.route("/search", methods=["GET", "POST"])
 def search():
     # DEBUG: Log eingehender Request-Daten
@@ -1462,14 +1507,13 @@ def search():
     except Exception:
         current_app.logger.debug("request.json: <error>")
 
-    # --------------------
-    # POST -> Redirect mit Querystring (PRG)
-    # --------------------
+    # ------------------------------------------------------------------
+    # POST  →  PRG-Pattern: Redirect mit Querystring
+    # ------------------------------------------------------------------
     if request.method == "POST":
-        # DEBUG: show form content
         current_app.logger.debug("[DEBUG] POST received! Form data: %s", dict(request.form))
 
-        # Parameter sammeln (condition als Liste) – FIX: Checkboxen nur wenn gesendet!
+        # Basis-Parameter einsammeln
         params = {
             "q1": (request.form.get("q1") or "").strip(),
             "q2": (request.form.get("q2") or "").strip(),
@@ -1478,19 +1522,25 @@ def search():
             "price_max": (request.form.get("price_max") or "").strip(),
             "sort": (request.form.get("sort") or "best").strip(),
             "per_page": (request.form.get("per_page") or "").strip(),
-            "condition": request.form.getlist("condition"),
-            # Erweiterte Filter – FIX: Nur senden, wenn vorhanden (kein "0"!)
             "location_country": (request.form.get("location_country") or "DE").strip(),
-            "free_shipping": request.form.get("free_shipping"),  # None oder "1" → urlencode ignoriert None
-            "returns_accepted": request.form.get("returns_accepted"),
-            "top_rated_only": request.form.get("top_rated_only"),
-            "listing_type": request.form.get("listing_type", "").strip(),  # NEU: Auktion/Sofortkauf
+            "listing_type": (request.form.get("listing_type") or "").strip(),
+            "source": (request.form.get("source") or "ebay").strip(),
+            # Mehrfachauswahl Zustand
+            "condition": request.form.getlist("condition"),
         }
 
-        # Free-Limit zählen (vor Redirect)
+        # Bool-Filter NUR setzen, wenn Checkbox angehakt ist
+        if request.form.get("free_shipping") == "1":
+            params["free_shipping"] = "1"
+        if request.form.get("returns_accepted") == "1":
+            params["returns_accepted"] = "1"
+        if request.form.get("top_rated_only") == "1":
+            params["top_rated_only"] = "1"
+
+        # Free-Search-Limit (deine bestehende Logik beibehalten)
         if not session.get("is_premium", False):
             count = int(session.get("free_search_count", 0))
-            if count >= FREE_SEARCH_LIMIT:  # Deine Config
+            if count >= FREE_SEARCH_LIMIT:
                 session["ev_free_limit_hit"] = True
                 flash(
                     f"Kostenloses Limit ({FREE_SEARCH_LIMIT}) erreicht – bitte Upgrade buchen.",
@@ -1499,94 +1549,137 @@ def search():
                 return redirect(url_for("public_pricing"))
             session["free_search_count"] = count + 1
 
-        # Seite auf 1 setzen
-        params["page"] = 1
+            params["page"] = 1
+            query = urlencode(params, doseq=True)
+            redirect_url = url_for("search") + "?" + query
+            return redirect(redirect_url)
 
-        # DEBUG: raw params zeigen
         current_app.logger.debug("POST -> redirect params (raw): %s", params)
 
-        # Querystring bauen (doseq=True sorgt für condition=a&condition=b; None-Werte werden ignoriert)
+        # Querystring bauen (doseq=True für condition=a&condition=b)
         query = urlencode(params, doseq=True)
-        redirect_url = url_for("search") + "?" + query
+        redirect_url = url_for("search") + ("?" + query if query else "")
         current_app.logger.debug("Redirecting to: %s", redirect_url)
         return redirect(redirect_url)
 
-    # --------------------
-    # GET -> tatsächliche Suche
-    # --------------------
-    terms = [
-        t
-        for t in [
-            (request.args.get("q1") or "").strip(),
-            (request.args.get("q2") or "").strip(),
-            (request.args.get("q3") or "").strip(),
-        ]
-        if t
-    ]
+    # ------------------------------------------------------------------
+    # GET  →  tatsächliche Suche
+    # ------------------------------------------------------------------
+    # Suchbegriffe einsammeln
+    terms = []
+    for key in ("q1", "q2", "q3"):
+        v = (request.args.get(key) or "").strip()
+        if v:
+            terms.append(v)
 
+    # Quelle: ebay / kleinanzeigen / both
+    source = (request.args.get("source") or "ebay").strip()
+
+    # Wenn keine Begriffe: nur Formular anzeigen, KEIN Backend-Call
     if not terms:
-        return safe_render("search.html", title="Suche")  # Deine safe_render-Funktion
+        print("📄 /search GET ohne Begriffe → nur Formular")
+        return safe_render(
+            "search_results.html",
+            title="Suche",
+            terms=[],
+            results=[],
+            filters={},
+            pagination={
+                "page": 1,
+                "per_page": int(request.args.get("per_page") or PER_PAGE_DEFAULT),
+                "total_estimated": None,
+                "total_pages": None,
+                "has_prev": False,
+                "has_next": False,
+            },
+            base_qs=request.args.to_dict(flat=False),
+            source=source,
+        )
 
-    # Filter aus request.args extrahieren
+    # Filter aus Querystring
     filters = {
         "price_min": request.args.get("price_min", "").strip(),
         "price_max": request.args.get("price_max", "").strip(),
         "sort": request.args.get("sort", "best").strip(),
         "conditions": request.args.getlist("condition") or [],
-        # Erweiterte Filter – FIX: Bool nur wenn "1" vorhanden
         "location_country": request.args.get("location_country", "DE").strip(),
         "free_shipping": request.args.get("free_shipping") == "1",
         "returns_accepted": request.args.get("returns_accepted") == "1",
         "top_rated_only": request.args.get("top_rated_only") == "1",
-        "listing_type": request.args.get("listing_type", "").strip(),  # NEU
+        "listing_type": request.args.get("listing_type", "").strip(),
     }
 
-    # ✅ DEBUG: Jetzt NACH der filters-Definition!
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("🔍 SEARCH ROUTE - GET REQUEST")
-    print("="*70)
+    print("=" * 70)
     print(f"Terms: {terms}")
-    print(f"\nFilters:")
+    print(f"Source: {source}")
+    print("\nFilters:")
     for key, value in filters.items():
         print(f"  {key}: {value!r}")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
+    # Pagination-Parameter
     try:
         page = max(1, int(request.args.get("page", 1)))
     except Exception:
         page = 1
 
     try:
-        per_page = min(100, max(5, int(request.args.get("per_page", PER_PAGE_DEFAULT))))  # Deine Config
+        per_page = min(100, max(5, int(request.args.get("per_page", PER_PAGE_DEFAULT))))
     except Exception:
         per_page = PER_PAGE_DEFAULT
 
-    # DEBUG: Backend-Aufruf
-    current_app.logger.debug("Calling _backend_search_ebay with terms=%s filters=%s page=%s per_page=%s",
-                             terms, filters, page, per_page)
-    print(f"📞 Calling _backend_search_ebay(")
-    print(f"     terms={terms},")
-    print(f"     filters={filters},")
-    print(f"     page={page},")
-    print(f"     per_page={per_page}")
-    print(f"   )\n")
+        # ------------------------------------------------------------------
+    # Backend-Aufruf je nach Quelle
+    # ------------------------------------------------------------------
+    items = []
+    total_estimated = None
 
-    # Backend aufrufen
-    items, total_estimated = _backend_search_ebay(terms, filters, page, per_page)
+    if source == "kleinanzeigen":
+        print("📦 Calling search_kleinanzeigen(...)")
+        ka_res = search_kleinanzeigen(terms, filters, page, per_page)
+        # Falls die Funktion (items, total) zurückgibt:
+        if isinstance(ka_res, tuple):
+            items, total_estimated = ka_res
+        else:
+            items = ka_res
+            total_estimated = None  # kein Total von Kleinanzeigen
 
-    # DEBUG: Backend-Resultat
+    elif source == "both":
+        print("📦 Calling both: eBay + Kleinanzeigen")
+        ebay_items, ebay_total = _backend_search_ebay(terms, filters, page, per_page)
+
+        ka_res = search_kleinanzeigen(terms, filters, page, per_page)
+        if isinstance(ka_res, tuple):
+            kleinanzeigen_items, _ = ka_res
+        else:
+            kleinanzeigen_items = ka_res
+
+        # eBay + Kleinanzeigen in einer Liste
+        items = ebay_items + kleinanzeigen_items
+        # Gesamtanzahl kommt weiter von eBay (für Pagination)
+        total_estimated = ebay_total
+
+    else:
+        print("📦 Calling ebay only ...")
+        ebay_items, ebay_total = _backend_search_ebay(terms, filters, page, per_page)
+        items = ebay_items
+        total_estimated = ebay_total
+
+
     print(f"✅ Backend returned: {len(items)} items, total_estimated={total_estimated}\n")
 
     # Pagination berechnen
     total_pages = (
-        math.ceil(total_estimated / per_page) if total_estimated is not None else None
+        math.ceil(total_estimated / per_page) if total_estimated else None
     )
     has_prev = page > 1
     has_next = (total_pages and page < total_pages) or (
         not total_pages and len(items) == per_page
     )
 
-    # Base Query-String für Pagination
+    # Base Query-String für Pagination und Toolbar
     base_qs = {
         "q1": request.args.get("q1", ""),
         "q2": request.args.get("q2", ""),
@@ -1596,15 +1689,17 @@ def search():
         "sort": filters["sort"],
         "condition": filters["conditions"],
         "per_page": per_page,
-        # Erweiterte Filter in base_qs – FIX: Nur "1" wenn True
         "location_country": filters["location_country"],
-        "free_shipping": "1" if filters["free_shipping"] else None,  # None → ignoriert in urlencode
-        "returns_accepted": "1" if filters["returns_accepted"] else None,
-        "top_rated_only": "1" if filters["top_rated_only"] else None,
-        "listing_type": filters.get("listing_type", ""),  # NEU
+        "listing_type": filters["listing_type"],
+        "source": source,
     }
+    if filters["free_shipping"]:
+        base_qs["free_shipping"] = "1"
+    if filters["returns_accepted"]:
+        base_qs["returns_accepted"] = "1"
+    if filters["top_rated_only"]:
+        base_qs["top_rated_only"] = "1"
 
-    # Template rendern
     return safe_render(
         "search_results.html",
         title="Suchergebnisse",
@@ -1620,7 +1715,10 @@ def search():
             "has_next": has_next,
         },
         base_qs=base_qs,
+        source=source,
     )
+
+
 
 @app.route("/cron/check-alerts", methods=["POST", "GET"])
 def cron_check_alerts():
@@ -1730,61 +1828,78 @@ def email_test():
 # -------------------------------------------------------------------
 # Alerts: Subscribe / Send-now / Cron (HTTP-Trigger-Variante siehe unten)
 # -------------------------------------------------------------------
-@app.post("/alerts/subscribe")
+@app.route("/alerts/subscribe", methods=["POST"])
 def alerts_subscribe():
-    """Speichert die aktuelle Suche als Alert (für Cron)."""
-    user_email = session.get("user_email") or ""
-    if not user_email or user_email.lower() == "guest" or "@" not in user_email:
-        flash("Bitte einloggen, um Alarme zu speichern.", "warning")
-        return redirect(url_for("login"))
+    """Speichert einen Such-Alarm (Search-Agent) für den aktuellen User."""
+    from flask_login import current_user
 
-    terms = [
-        t
-        for t in [
-            (request.form.get("q1") or "").strip(),
-            (request.form.get("q2") or "").strip(),
-            (request.form.get("q3") or "").strip(),
-        ]
-        if t
-    ]
+    form = request.form
+
+    # 1) Suchbegriffe
+    q1 = (form.get("q1") or form.get("q") or "").strip()
+    q2 = (form.get("q2") or "").strip()
+    q3 = (form.get("q3") or "").strip()
+    terms = [q for q in (q1, q2, q3) if q]
+
     if not terms:
         flash("Keine Suchbegriffe übergeben.", "warning")
-        return redirect(url_for("search"))
+        return redirect(request.referrer or url_for("search"))
+
+    # 2) Filter aus Formular
+    conditions = form.getlist("condition") or []
 
     filters = {
-        "price_min": (request.form.get("price_min") or "").strip(),
-        "price_max": (request.form.get("price_max") or "").strip(),
-        "sort": (request.form.get("sort") or "best").strip(),
-        "conditions": request.form.getlist("condition"),
+        "price_min": (form.get("price_min") or "").strip(),
+        "price_max": (form.get("price_max") or "").strip(),
+        "sort": (form.get("sort") or "best").strip(),
+        "conditions": conditions,
+        "location_country": (form.get("location_country") or "DE").strip(),
+        "free_shipping": (form.get("free_shipping") == "1"),
+        "returns_accepted": (form.get("returns_accepted") == "1"),
+        "top_rated_only": (form.get("top_rated_only") == "1"),
+        "listing_type": (form.get("listing_type") or "").strip(),
+        # 🆕 Quelle für Alerts mit speichern
+        "source": (form.get("source") or request.args.get("source") or "ebay").strip().lower(),
     }
-    per_page = 30
-    try:
-        per_page = min(100, max(5, int(request.form.get("per_page", "30"))))
-    except Exception:
-        pass
 
+    # 3) User ermitteln
+    user_email = None
+    if current_user.is_authenticated:
+        user_email = getattr(current_user, "email", None)
+
+    if not user_email:
+        user_email = session.get("user_email")
+
+    if not user_email:
+        flash("Bitte melde dich an, um einen Alarm zu speichern.", "warning")
+        return redirect(url_for("login"))
+
+    # 4) In DB schreiben
     conn = get_db()
-    cur = conn.cursor()
+    cur = dict_cursor(conn)
+    ph = get_placeholder()
+
     cur.execute(
-        """
-        INSERT INTO search_alerts (user_email, terms_json, filters_json, per_page, is_active, last_run_ts)
-        VALUES (?, ?, ?, ?, 1, 0)
-    """,
+        f"""
+        INSERT INTO search_alerts
+            (user_email, terms_json, filters_json, last_run_ts, is_active)
+        VALUES ({ph}, {ph}, {ph}, {ph}, 1)
+        """,
         (
             user_email,
-            json.dumps(terms, ensure_ascii=False),
-            json.dumps(filters, ensure_ascii=False),
-            per_page,
+            json.dumps(terms),
+            json.dumps(filters),
+            0,  # last_run_ts
         ),
     )
     conn.commit()
     conn.close()
 
-    flash(
-        "Alarm gespeichert. Du erhältst eine E-Mail, wenn neue Treffer gefunden werden.",
-        "success",
-    )
-    return redirect(url_for("search", **{**request.form}))
+    flash("Such-Alarm gespeichert – du wirst bei neuen Treffern benachrichtigt.", "success")
+
+    # Zurück zu den Suchergebnissen
+    return redirect(request.referrer or url_for("search", q1=q1))
+
 
 
 @app.post("/alerts/send-now")
@@ -2036,6 +2151,13 @@ def pilot_info_page():
         practice=practice,
         year=datetime.now().year,
     )
+
+
+@app.get("/debug/run-alerts")
+def debug_run_alerts():
+    """Manueller Trigger für den Alert-Check (nur DEV)."""
+    res = run_alert_check()
+    return jsonify(res)
 
 
 # -------------------------------------------------------------------

@@ -35,6 +35,26 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+BASE_URL = "https://www.kleinanzeigen.de"
+
+
+def _build_search_url(search_term: str) -> str:
+    """
+    Baue eine gültige Kleinanzeigen-Such-URL.
+
+    Beispiele:
+        "iphone 13" -> https://www.kleinanzeigen.de/s-iphone-13/k0
+    """
+    # Whitespace aufräumen
+    cleaned = " ".join(search_term.strip().split())
+    # Kleinanzeigen-Slug: Leerzeichen -> Bindestriche
+    slug = "-".join(cleaned.split())
+    encoded_slug = quote_plus(slug)
+
+    # k0 = alle Kategorien, ganze DE-Suche
+    return f"{BASE_URL}/s-{encoded_slug}/k0"
+
+
 
 def _politeness_delay():
     """Add random delay between requests for politeness."""
@@ -73,14 +93,14 @@ def _extract_price(price_str: str) -> Optional[str]:
     """
     if not price_str:
         return None
-    
+
     # Remove common text like "VB", "€", whitespace
     price_str = price_str.replace("VB", "").replace("€", "").strip()
-    
+
     # Handle "zu verschenken" / free items
     if not price_str or price_str.lower() in ["zu verschenken", "kostenlos"]:
         return "0"
-    
+
     try:
         # Convert German format: 1.234,56 -> 1234.56
         price_str = price_str.replace(".", "").replace(",", ".")
@@ -94,7 +114,7 @@ def _extract_price(price_str: str) -> Optional[str]:
 def _parse_article(article) -> Optional[Dict]:
     """
     Parse a single article element from Kleinanzeigen search results.
-    
+
     Returns normalized dict with keys:
         id: str (prefixed with 'kleinanzeigen:')
         title: str
@@ -106,7 +126,7 @@ def _parse_article(article) -> Optional[Dict]:
     """
     try:
         # Multiple selector strategies for robustness
-        
+
         # Title selectors (try multiple patterns)
         title = (
             _safe_get_text(article, "a.ellipsis") or
@@ -114,24 +134,24 @@ def _parse_article(article) -> Optional[Dict]:
             _safe_get_text(article, "[class*='title']") or
             _safe_get_text(article, "a[title]")
         )
-        
+
         if not title:
             log.debug("Article has no title, skipping")
             return None
-        
+
         # URL selectors
         url = (
             _safe_get_attr(article, "a.ellipsis", "href") or
             _safe_get_attr(article, "a[href*='/s-anzeige/']", "href")
         )
-        
+
         if url and not url.startswith("http"):
             url = f"https://www.kleinanzeigen.de{url}"
-        
+
         if not url:
             log.debug(f"Article '{title}' has no URL, skipping")
             return None
-        
+
         # Extract ID from URL
         # URL format: /s-anzeige/title/123456789-123-4567
         article_id = None
@@ -143,10 +163,10 @@ def _parse_article(article) -> Optional[Dict]:
                 # Extract numeric part
                 if "-" in last_part:
                     article_id = last_part.split("-")[0]
-        
+
         if not article_id:
             article_id = str(abs(hash(url)))[:12]  # fallback: hash of URL
-        
+
         # Price selectors
         price_text = (
             _safe_get_text(article, "p[class*='price']") or
@@ -154,21 +174,21 @@ def _parse_article(article) -> Optional[Dict]:
             _safe_get_text(article, "p.text-module-begin")
         )
         price = _extract_price(price_text)
-        
+
         # Image selectors
         img = (
             _safe_get_attr(article, "img", "src") or
             _safe_get_attr(article, "img", "data-src") or
             _safe_get_attr(article, "img[class*='image']", "src")
         )
-        
+
         # Ensure image URL is absolute
         if img and not img.startswith("http"):
             if img.startswith("//"):
                 img = f"https:{img}"
             elif img.startswith("/"):
                 img = f"https://www.kleinanzeigen.de{img}"
-        
+
         return {
             "id": f"kleinanzeigen:{article_id}",
             "title": title,
@@ -178,7 +198,7 @@ def _parse_article(article) -> Optional[Dict]:
             "img": img,
             "source": "kleinanzeigen"
         }
-    
+
     except Exception as e:
         log.warning(f"Error parsing article: {e}")
         return None
@@ -190,14 +210,14 @@ def search_kleinanzeigen(
 ) -> List[Dict]:
     """
     Search eBay-Kleinanzeigen for items matching the search term.
-    
+
     Args:
         search_term: Search query string
         max_results: Maximum number of results to return (default 20)
-    
+
     Returns:
         List of normalized item dictionaries. Empty list on error.
-    
+
     Example:
         >>> results = search_kleinanzeigen("iphone 13", max_results=10)
         >>> print(f"Found {len(results)} items")
@@ -210,24 +230,20 @@ def search_kleinanzeigen(
             "Install: pip install requests beautifulsoup4 lxml"
         )
         return []
-    
+
     if not search_term or not search_term.strip():
         log.warning("Empty search term provided")
         return []
-    
+
     results = []
-    
+
     try:
-        # Build search URL
-        encoded_term = quote_plus(search_term.strip())
-        search_url = f"https://www.kleinanzeigen.de/s-suchanfrage.html?keywords={encoded_term}"
-        
+        # Build search URL (neues Format)
+        search_url = _build_search_url(search_term)
+
         log.info(f"Searching Kleinanzeigen for: {search_term}")
-        log.debug(f"URL: {search_url}")
-        
-        # Make request with politeness delay
-        _politeness_delay()
-        
+        log.debug(f"Kleinanzeigen URL: {search_url}")
+
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -237,7 +253,7 @@ def search_kleinanzeigen(
             "Connection": "keep-alive",
             "Upgrade-Insecure-Requests": "1"
         }
-        
+
         response = requests.get(
             search_url,
             headers=headers,
@@ -245,10 +261,10 @@ def search_kleinanzeigen(
             allow_redirects=True
         )
         response.raise_for_status()
-        
+
         # Parse HTML
         soup = BeautifulSoup(response.text, "lxml")
-        
+
         # Find article containers - try multiple selectors for robustness
         articles = (
             soup.select("article[class*='aditem']") or
@@ -256,22 +272,22 @@ def search_kleinanzeigen(
             soup.select("article") or
             []
         )
-        
+
         log.info(f"Found {len(articles)} article elements")
-        
+
         for article in articles[:max_results]:
             item = _parse_article(article)
             if item:
                 results.append(item)
                 log.debug(f"Parsed: {item['title']}")
-        
+
         log.info(f"Successfully parsed {len(results)} items from Kleinanzeigen")
-        
+
     except requests.RequestException as e:
         log.error(f"Request error searching Kleinanzeigen: {e}")
     except Exception as e:
         log.error(f"Unexpected error searching Kleinanzeigen: {e}")
-    
+
     return results
 
 
@@ -284,17 +300,17 @@ if __name__ == "__main__":
     # Quick test
     logging.basicConfig(level=logging.INFO)
     print("Testing Kleinanzeigen scraper...")
-    
+
     if not check_dependencies():
         print("ERROR: Missing dependencies!")
         print("Install with: pip install requests beautifulsoup4 lxml")
         exit(1)
-    
+
     test_term = "iphone"
     print(f"\nSearching for: {test_term}")
-    
+
     items = search_kleinanzeigen(test_term, max_results=5)
-    
+
     print(f"\nFound {len(items)} items:\n")
     for item in items:
         print(f"- {item['title']}")

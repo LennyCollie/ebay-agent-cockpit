@@ -9,12 +9,63 @@
 {% set pagination = pagination|default({'page': 1, 'has_prev': False, 'has_next': False, 'total_estimated': None, 'total_pages': None}) %}
 {% set terms = terms|default([]) %}
 {% set results = results|default([]) %}
+{% set source = source|default(base_qs.get('source', request.args.get('source', 'ebay'))) %}
+
 
 <div class="container py-4">
   <div class="text-center mb-4">
     <h1 class="h3">Suche</h1>
     <p class="text-muted mb-0">Gib 1–3 Begriffe an, setze optional Filter — unten erscheinen die Treffer.</p>
   </div>
+
+  {# ---------- Toolbar: Alert speichern ---------- #}
+<div class="d-flex gap-2 mb-3">
+  <form action="{{ url_for('alerts_subscribe') }}" method="post" class="m-0">
+
+    {# Suchbegriffe #}
+    <input type="hidden" name="q1" value="{{ (terms[0] if terms is defined and terms else '') }}">
+    {% if terms|length > 1 %}
+      <input type="hidden" name="q2" value="{{ terms[1] }}">
+    {% endif %}
+    {% if terms|length > 2 %}
+      <input type="hidden" name="q3" value="{{ terms[2] }}">
+    {% endif %}
+
+    {# Filter – falls definiert #}
+    {% if filters %}
+      <input type="hidden" name="price_min" value="{{ filters.get('price_min','') }}">
+      <input type="hidden" name="price_max" value="{{ filters.get('price_max','') }}">
+      <input type="hidden" name="sort" value="{{ filters.get('sort','best') }}">
+      <input type="hidden" name="location_country" value="{{ filters.get('location_country','DE') }}">
+      <input type="hidden" name="listing_type" value="{{ filters.get('listing_type','') }}">
+
+      {# conditions ist eine Liste #}
+      {% for c in filters.get('conditions', []) %}
+        <input type="hidden" name="condition" value="{{ c }}">
+      {% endfor %}
+
+      {# Bool-Filter nur setzen, wenn True #}
+      {% if filters.get('free_shipping') %}
+        <input type="hidden" name="free_shipping" value="1">
+      {% endif %}
+      {% if filters.get('returns_accepted') %}
+        <input type="hidden" name="returns_accepted" value="1">
+      {% endif %}
+      {% if filters.get('top_rated_only') %}
+        <input type="hidden" name="top_rated_only" value="1">
+      {% endif %}
+    {% endif %}
+
+    {# Quelle (ebay / kleinanzeigen / both) #}
+    <input type="hidden" name="source" value="{{ source or 'ebay' }}">
+
+    <button type="submit" class="btn btn-outline-primary">
+      🔔 Alarm speichern
+    </button>
+  </form>
+</div>
+
+
 
 
 <form id="searchForm" action="{{ url_for('search') }}" method="post" class="card mb-4">
@@ -123,6 +174,24 @@
           <option value="US" {% if _lc=='US' %}selected{% endif %}>🇺🇸 USA</option>
         </select>
       </div>
+            <div class="col-md-3">
+        <label class="form-label d-block">Quelle</label>
+        {% set _source = source or 'ebay' %}
+        <div class="btn-group" role="group" aria-label="Quelle auswählen">
+          <input type="radio" class="btn-check" name="source" id="srcEbay" value="ebay"
+                 {% if _source == 'ebay' %}checked{% endif %}>
+          <label class="btn btn-outline-primary btn-sm" for="srcEbay">eBay</label>
+
+          <input type="radio" class="btn-check" name="source" id="srcKA" value="kleinanzeigen"
+                 {% if _source == 'kleinanzeigen' %}checked{% endif %}>
+          <label class="btn btn-outline-success btn-sm" for="srcKA">Kleinanzeigen</label>
+
+          <input type="radio" class="btn-check" name="source" id="srcBoth" value="both"
+                 {% if _source == 'both' %}checked{% endif %}>
+          <label class="btn btn-outline-secondary btn-sm" for="srcBoth">Beides</label>
+        </div>
+      </div>
+
     </div>
     <div class="d-flex gap-2 mt-4">
       <button type="submit" class="btn btn-primary">🔎 Suchen</button>
@@ -145,6 +214,19 @@
       {% endif %}
     </div>
 
+    {% if source == 'kleinanzeigen' %}
+     <div class="alert alert-warning py-2 small">
+       Aktuell werden Kleinanzeigen-Treffer als Demo-Daten angezeigt.
+       Später kannst du hier echte Kleinanzeigen-Suchergebnisse einbinden.
+     </div>
+    {% elif source == 'both' %}
+     <div class="alert alert-info py-2 small">
+      Es werden sowohl eBay- als auch Kleinanzeigen-Daten angezeigt.
+      Kleinanzeigen-Treffer sind momentan noch Demo-Daten.
+     </div>
+    {% endif %}
+
+
     <div class="row g-3">
       {% for item in results %}
         <div class="col-12 col-md-6 col-lg-4">
@@ -162,6 +244,8 @@
                       <span class="badge rounded-pill text-bg-warning text-dark">Amazon</span>
                     {% elif src == 'ebay' %}
                       <span class="badge rounded-pill text-bg-primary">eBay</span>
+                    {% elif src == 'kleinanzeigen' %}
+                      <span class="badge rounded-pill text-bg-success">Kleinanzeigen</span>
                     {% elif src == 'demo' %}
                       <span class="badge rounded-pill text-bg-secondary">Demo</span>
                     {% endif %}
@@ -235,33 +319,49 @@ document.addEventListener('DOMContentLoaded', function () {
   // Build share URL etc.
   const form = document.getElementById('searchForm');
   const share = document.getElementById('shareUrl');
-  function updateShareUrl() {
+    function updateShareUrl() {
     if (!form || !share) return;
     const params = new URLSearchParams();
+
     const q1 = (form.q1.value || '').trim();
     const q2 = (form.q2.value || '').trim();
     const q3 = (form.q3.value || '').trim();
     if (q1) params.set('q1', q1);
     if (q2) params.set('q2', q2);
     if (q3) params.set('q3', q3);
+
     const pmin = (form.price_min.value || '').trim();
     const pmax = (form.price_max.value || '').trim();
     if (pmin) params.set('price_min', pmin);
     if (pmax) params.set('price_max', pmax);
+
     const sort = (form.sort.value || 'best').trim();
     if (sort) params.set('sort', sort);
+
     const per = (form.per_page.value || '').trim();
     if (per) params.set('per_page', per);
+
     form.querySelectorAll('input[name="condition"]:checked').forEach(cb => params.append('condition', cb.value));
+
     const lc = (form.location_country && form.location_country.value) ? form.location_country.value : '';
     if (lc) params.set('location_country', lc);
-    if (form.free_shipping && form.free_shipping.checked) params.set('free_shipping','1');
-    if (form.returns_accepted && form.returns_accepted.checked) params.set('returns_accepted','1');
-    if (form.top_rated_only && form.top_rated_only.checked) params.set('top_rated_only','1');
-    if (share) share.value = '{{ url_for("search") }}' + (params.toString() ? '?' + params.toString() : '');
+
+    if (form.free_shipping && form.free_shipping.checked) params.set('free_shipping', '1');
+    if (form.returns_accepted && form.returns_accepted.checked) params.set('returns_accepted', '1');
+    if (form.top_rated_only && form.top_rated_only.checked) params.set('top_rated_only', '1');
+
     const lt = (form.listing_type && form.listing_type.value) ? form.listing_type.value : '';
     if (lt) params.set('listing_type', lt);
+
+    // 🔹 NEU: Quelle (source) aus Radio-Buttons
+    const srcInput = form.querySelector('input[name="source"]:checked');
+    if (srcInput) {
+      params.set('source', srcInput.value);
+    }
+
+    share.value = '{{ url_for("search") }}' + (params.toString() ? '?' + params.toString() : '');
   }
+
   if (form) {
     form.addEventListener('input', updateShareUrl);
     form.addEventListener('change', updateShareUrl);

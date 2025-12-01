@@ -5,19 +5,26 @@ Automatische Alert-Prüfung für eBay Items
 Prüft alle aktiven Search-Alerts und sendet Telegram-Benachrichtigungen
 bei neuen Treffern.
 
-Wird vom Cron-Job alle X Minuten aufgerufen.
+Wird vom Cron-Job oder von /debug/run-alerts aufgerufen.
 """
 
 import json
 import os
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from telegram_bot import send_new_item_alert
+from database import dict_cursor, get_placeholder
+from dotenv import load_dotenv
+load_dotenv()
+
 
 # Konfiguration aus .env
 ALERT_CHECK_INTERVAL = int(os.getenv("ALERT_CHECK_INTERVAL", "3"))  # Minuten
+
+# Placeholder für SQLite / Postgres
+PH = get_placeholder()
 
 
 def check_all_alerts(db_connection) -> Dict[str, int]:
@@ -38,18 +45,20 @@ def check_all_alerts(db_connection) -> Dict[str, int]:
         "alerts_checked": 0,
         "new_items_found": 0,
         "notifications_sent": 0,
-        "errors": 0
+        "errors": 0,
     }
 
-    cur = db_connection.cursor()
+    # WICHTIG: dict_cursor, damit wir Dict-Rows bekommen
+    cur = dict_cursor(db_connection)
 
     # Hole alle aktiven Alerts
-    cur.execute("""
+    cur.execute(
+        """
         SELECT id, user_email, terms_json, filters_json, last_run_ts
         FROM search_alerts
         WHERE is_active = 1
-    """)
-
+        """
+    )
     alerts = cur.fetchall()
 
     if not alerts:
@@ -58,13 +67,19 @@ def check_all_alerts(db_connection) -> Dict[str, int]:
 
     print(f"📋 Gefunden: {len(alerts)} aktive Alert(s)\n")
 
-    for alert in alerts:
+    for alert_row in alerts:
         try:
-            process_single_alert(alert, cur, db_connection, stats)
+            process_single_alert(alert_row, cur, db_connection, stats)
         except Exception as e:
-            print(f"❌ Fehler bei Alert {alert['id']}: {e}")
+            # bei DictCursor ist alert_row schon ein dict
+            try:
+                aid = alert_row.get("id")
+            except Exception:
+                aid = "?"
+            print(f"❌ Fehler bei Alert {aid}: {e}")
             stats["errors"] += 1
             import traceback
+
             traceback.print_exc()
 
     db_connection.commit()
@@ -82,13 +97,13 @@ def check_all_alerts(db_connection) -> Dict[str, int]:
     return stats
 
 
-def process_single_alert(alert, cursor, connection, stats: Dict) -> None:
+def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
     """Verarbeitet einen einzelnen Alert"""
-    # Konvertiere Row zu Dict
-    alert = dict(alert)  # ← NEU! Diese Zeile MUSS als ERSTES rein!
 
-    alert_id = alert["id"]  # ← Jetzt OK!
+    # Bei dict_cursor ist alert_row bereits ein dict
+    alert = dict(alert_row)
 
+    alert_id = alert["id"]
     user_email = alert["user_email"]
     terms = json.loads(alert["terms_json"])
     filters = json.loads(alert["filters_json"])
@@ -110,12 +125,14 @@ def process_single_alert(alert, cursor, connection, stats: Dict) -> None:
     stats["alerts_checked"] += 1
 
     # Hole Telegram Chat-ID des Users
-    cursor.execute("""
+    cursor.execute(
+        f"""
         SELECT telegram_chat_id, telegram_enabled, telegram_verified
         FROM users
-        WHERE email = ?
-    """, (user_email,))
-
+        WHERE email = {PH}
+        """,
+        (user_email,),
+    )
     user_row = cursor.fetchone()
 
     if not user_row:
@@ -123,13 +140,11 @@ def process_single_alert(alert, cursor, connection, stats: Dict) -> None:
         update_alert_timestamp(alert_id, now, cursor)
         return
 
-    # Konvertiere Row zu Dict
-    user_row = dict(user_row)  # ← DAS HAST DU SCHON!
+    user_row = dict(user_row)
 
     telegram_chat_id = user_row.get("telegram_chat_id")
-
-    telegram_enabled = user_row.get("telegram_enabled", False)
-    telegram_verified = user_row.get("telegram_verified", False)
+    telegram_enabled = bool(user_row.get("telegram_enabled"))
+    telegram_verified = bool(user_row.get("telegram_verified"))
 
     if not (telegram_chat_id and telegram_enabled and telegram_verified):
         print(f"   ℹ️  Telegram nicht aktiviert/verifiziert")
@@ -140,8 +155,7 @@ def process_single_alert(alert, cursor, connection, stats: Dict) -> None:
     print(f"   🔎 Führe Suche durch...")
 
     try:
-        # WICHTIG: Diese Funktion muss aus app.py importiert werden!
-        # Workaround: Nutze direkte Funktion wenn verfügbar
+        # nutzt die bereits in app.py vorhandene Funktion
         from app import _backend_search_ebay
 
         items, total = _backend_search_ebay(terms, filters, page=1, per_page=10)
@@ -163,7 +177,7 @@ def process_single_alert(alert, cursor, connection, stats: Dict) -> None:
 
         # Sende Benachrichtigungen (max 5 um Spam zu vermeiden)
         for item in new_items[:5]:
-            success = send_telegram_alert(telegram_chat_id, item, agent_name)
+            success = send_telegram_alert(str(telegram_chat_id), item, agent_name)
             if success:
                 stats["notifications_sent"] += 1
             time.sleep(1)  # 1 Sekunde Pause zwischen Nachrichten
@@ -183,13 +197,13 @@ def find_new_items(
     alert_id: int,
     user_email: str,
     cursor,
-    connection
+    connection,
 ) -> List[Dict]:
     """
     Filtert neue Items heraus (die noch nicht gesehen wurden).
     Markiert gesehene Items in der DB.
     """
-    new_items = []
+    new_items: List[Dict] = []
     now = int(time.time())
 
     for item in items:
@@ -200,10 +214,13 @@ def find_new_items(
             continue
 
         # Prüfe ob schon gesehen
-        cursor.execute("""
+        cursor.execute(
+            f"""
             SELECT item_id FROM alert_seen
-            WHERE user_email = ? AND search_hash = ? AND item_id = ?
-        """, (user_email, str(alert_id), item_id))
+            WHERE user_email = {PH} AND search_hash = {PH} AND item_id = {PH}
+            """,
+            (user_email, str(alert_id), item_id),
+        )
 
         if cursor.fetchone():
             # Schon gesehen
@@ -213,11 +230,15 @@ def find_new_items(
         new_items.append(item)
 
         # In DB markieren
-        cursor.execute("""
+        cursor.execute(
+            f"""
             INSERT INTO alert_seen
-            (user_email, search_hash, src, item_id, first_seen, last_sent)
-            VALUES (?, ?, 'ebay', ?, ?, ?)
-        """, (user_email, str(alert_id), item_id, now, now))
+                (user_email, search_hash, src, item_id, first_seen, last_sent)
+            VALUES
+                ({PH}, {PH}, 'ebay', {PH}, {PH}, {PH})
+            """,
+            (user_email, str(alert_id), item_id, now, now),
+        )
 
     connection.commit()
     return new_items
@@ -235,12 +256,11 @@ def send_telegram_alert(chat_id: str, item: Dict, agent_name: str) -> bool:
             "price": str(item.get("price", "N/A")),
             "currency": item.get("currency", "EUR"),
             "url": item.get("url", ""),
-            "image_url": item.get("image_url") or item.get("image") or "",  # FIX: Mehrere Felder prüfen
+            "image_url": item.get("image_url") or item.get("image") or "",
             "condition": item.get("condition", ""),
             "location": item.get("location", ""),
         }
 
-        # Debug: Zeige welches Bild verwendet wird
         if formatted_item["image_url"]:
             print(f"      🖼️  Bild-URL: {formatted_item['image_url'][:60]}...")
         else:
@@ -250,7 +270,7 @@ def send_telegram_alert(chat_id: str, item: Dict, agent_name: str) -> bool:
             chat_id=chat_id,
             item=formatted_item,
             agent_name=agent_name,
-            with_image=bool(formatted_item["image_url"])  # Nur mit Bild wenn vorhanden
+            with_image=bool(formatted_item["image_url"]),
         )
 
         if success:
@@ -267,21 +287,24 @@ def send_telegram_alert(chat_id: str, item: Dict, agent_name: str) -> bool:
 
 def update_alert_timestamp(alert_id: int, timestamp: int, cursor) -> None:
     """Aktualisiert den last_run_ts eines Alerts"""
-    cursor.execute("""
+    cursor.execute(
+        f"""
         UPDATE search_alerts
-        SET last_run_ts = ?
-        WHERE id = ?
-    """, (timestamp, alert_id))
+        SET last_run_ts = {PH}
+        WHERE id = {PH}
+        """,
+        (timestamp, alert_id),
+    )
 
 
 # ============================================================================
-# HAUPTFUNKTION für Cron-Job
+# HAUPTFUNKTION für Cron-Job / Debug-Route
 # ============================================================================
 
 def run_alert_check():
     """
     Haupt-Entry-Point für den Cron-Job.
-    Wird von der /cron/check-alerts Route aufgerufen.
+    Wird von der /cron/check-alerts oder /debug/run-alerts Route aufgerufen.
     """
     try:
         # DB-Connection holen (muss aus app.py importiert werden)
@@ -294,18 +317,19 @@ def run_alert_check():
         return {
             "success": True,
             "stats": stats,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
     except Exception as e:
         print(f"\n❌ KRITISCHER FEHLER im Alert-Check: {e}")
         import traceback
+
         traceback.print_exc()
 
         return {
             "success": False,
             "error": str(e),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
 
@@ -313,17 +337,23 @@ def run_alert_check():
 # TEST / DEBUG
 # ============================================================================
 
+# ============================================================================
+# DIREKTSTART (Cron-Job / Lokaler Test)
+# ============================================================================
+
 if __name__ == "__main__":
-    print("🧪 Alert-Checker Test-Modus\n")
+    print("🔔 Alert-Checker Direktstart\n")
+    print(f"⏰ Check-Interval: {ALERT_CHECK_INTERVAL} Minuten")
 
-    # Prüfe Konfiguration
-    from telegram_bot import TelegramBot
-
-    bot = TelegramBot()
-    if bot.is_configured():
+    # Optional: Status von Telegram anzeigen
+    if os.getenv("TELEGRAM_BOT_TOKEN"):
         print("✅ Telegram Bot ist konfiguriert")
     else:
-        print("❌ TELEGRAM_BOT_TOKEN fehlt!")
+        print("⚠️ TELEGRAM_BOT_TOKEN nicht gesetzt – es werden keine Telegram-Nachrichten verschickt")
 
-    print(f"⏰ Check-Interval: {ALERT_CHECK_INTERVAL} Minuten")
-    print("\nZum Ausführen: Starte den Cron-Job oder rufe /cron/check-alerts auf")
+    # Jetzt wirklich den Check ausführen
+    result = run_alert_check()
+
+    # Ergebnis kurz ausgeben
+    print("\nErgebnis zusammengefasst:")
+    print(json.dumps(result, indent=2, ensure_ascii=False))

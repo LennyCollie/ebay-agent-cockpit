@@ -81,9 +81,14 @@ def search_results():
     if strict:
         results = [r for r in results if r.get("verdict") != "damaged"]
 
-    return render_template(
-        "search_results.html", results=results, q=q, params=request.args, items=items or []
+        return render_template(
+        "search_results.html",
+        results=results,
+        q=q,
+        params=request.args,
+        items=results,  # oder [] – Hauptsache definiert
     )
+
 
 
 def _to_view_items(payload: Dict) -> List[Dict]:

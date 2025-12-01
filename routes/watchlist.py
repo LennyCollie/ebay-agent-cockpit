@@ -9,12 +9,15 @@ from flask import (
     jsonify,
     current_app,
 )
-from flask_login import login_required, current_user   # ← NEU!
-from datetime import datetime
-from sqlalchemy.orm import Session
-from models import SessionLocal, User, WatchedItem, ItemPriceTracking
 
-bp = Blueprint('watchlist', __name__, url_prefix='/watchlist')
+from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask_login import login_required, current_user
+
+# WICHTIG: aus models importieren – nicht aus routes
+from models import SessionLocal, WatchedItem
+
+bp = Blueprint("watchlist", __name__, url_prefix="/watchlist")
+
 
 
 @bp.route('/')

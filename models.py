@@ -280,6 +280,14 @@ def init_db():
     print("✅ Datenbank-Tabellen erstellt!")
 
 
+try:
+    Base.metadata.create_all(bind=engine)
+    print("✅ models.py: Tabellen initialisiert")
+except Exception as e:
+    print(f"[models] Fehler beim Erstellen der Tabellen: {e}")
+
+
+
 # Helper Functions
 def get_db():
     """Gibt eine DB-Session zurück (für Flask Routes)"""
