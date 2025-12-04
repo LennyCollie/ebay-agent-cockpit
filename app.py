@@ -138,7 +138,7 @@ app.register_blueprint(telegram_bp)
 app.register_blueprint(vision_test_bp)
 app.register_blueprint(watchlist_bp)
 app.register_blueprint(alerts_bp)
-#app.register_blueprint(search_bp)
+app.register_blueprint(search_bp)
 
 app.config.from_object(Config)
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
