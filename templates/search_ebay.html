@@ -1,0 +1,146 @@
+{% extends "base.html" %} {% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">🔍 eBay-Suche <span class="text-primary">(Beta)</span></h1>
+    <div>
+      <a href="{{ url_for('search.search_page') }}" class="btn btn-outline-secondary me-2">
+        Zur klassischen Suche
+      </a>
+      <a href="{{ url_for('watchlist.index') }}" class="btn btn-outline-primary"> 📌 Watchlist </a>
+    </div>
+  </div>
+
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  <form method="get" action="{{ url_for('search.search_ebay') }}" class="card p-4 mb-4 shadow-sm">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Suchbegriff 1</label>
+        <input
+          type="text"
+          name="q1"
+          value="{{ args.q or '' }}"
+          class="form-control"
+          placeholder="z. B. iPhone 12"
+        />
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Suchbegriff 2</label>
+        <input type="text" name="q2" class="form-control" placeholder="optional" />
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Suchbegriff 3</label>
+        <input type="text" name="q3" class="form-control" placeholder="optional" />
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Preis von (€)</label>
+        <input type="number" name="price_min" class="form-control" />
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">bis (€)</label>
+        <input type="number" name="price_max" class="form-control" />
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Zustand</label>
+        <select name="condition" class="form-select">
+          <option value="">Alle</option>
+          <option value="NEW">Neu</option>
+          <option value="USED">Gebraucht</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Art des Angebots</label>
+        <select name="listing_type" class="form-select">
+          <option value="">Alle</option>
+          <option value="auction">Auktion</option>
+          <option value="buyItNow">Sofortkauf</option>
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <div class="form-check mt-4">
+          <input class="form-check-input" type="checkbox" name="free_shipping" value="1" />
+          <label class="form-check-label">Kostenloser Versand</label>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="form-check mt-4">
+          <input class="form-check-input" type="checkbox" name="returns_accepted" value="1" />
+          <label class="form-check-label">Rückgabe akzeptiert</label>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="form-check mt-4">
+          <input class="form-check-input" type="checkbox" name="top_rated_only" value="1" />
+          <label class="form-check-label">Nur Top-Verkäufer</label>
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Land</label>
+        <select name="location_country" class="form-select">
+          <option value="DE">Deutschland</option>
+          <option value="AT">Österreich</option>
+          <option value="CH">Schweiz</option>
+          <option value="EU">EU</option>
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Sortieren nach</label>
+        <select name="sort" class="form-select">
+          <option value="best">Beste Treffer</option>
+          <option value="price_asc">Preis aufsteigend</option>
+          <option value="price_desc">Preis absteigend</option>
+          <option value="newly_listed">Neu eingestellt</option>
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Treffer pro Seite</label>
+        <select name="per_page" class="form-select">
+          <option value="20">20</option>
+          <option value="40">40</option>
+          <option value="60">60</option>
+        </select>
+      </div>
+
+      <div class="col-md-4 d-flex align-items-end justify-content-end">
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="bi bi-search"></i> Suchen
+        </button>
+      </div>
+    </div>
+  </form>
+
+  {% if results %}
+  <h5 class="mb-3">Ergebnisse ({{ results|length }})</h5>
+  <div class="row g-3">
+    {% for item in results %}
+    <div class="col-md-3">
+      <div class="card h-100">
+        {% if item.img %}
+        <img src="{{ item.img }}" class="card-img-top" alt="{{ item.title }}" />
+        {% endif %}
+        <div class="card-body">
+          <h6 class="card-title">
+            <a href="{{ item.url }}" target="_blank">{{ item.title }}</a>
+          </h6>
+          <p class="card-text text-muted small mb-1">{{ item.price }}</p>
+          <a
+            href="{{ url_for('watchlist.add_item', url=item.url, title=item.title) }}"
+            class="btn btn-sm btn-outline-primary"
+          >
+            ➕ Zur Watchlist
+          </a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

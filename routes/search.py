@@ -11,12 +11,16 @@ from flask import (
     render_template,
     request,
     url_for,
+    jsonify,
 )
 
 from services.ebay_api import ebay_search
 from utils.ebay_browse import browse_search
 from utils.ebay_finding import finding_search
 from utils.ebay_normalize import normalize_browse, normalize_finding
+
+# ⭐ NEU: Kleinanzeigen-Import
+from services.kleinanzeigen import search_kleinanzeigen
 
 bp_search = Blueprint("search", __name__)
 
@@ -31,6 +35,52 @@ def search_results():
     ship_to = (request.args.get("ship_to") or "").strip() or None
     located_in = (request.args.get("located_in") or "").strip() or None
 
+    # ⭐ NEU: Source-Parameter (ebay oder kleinanzeigen)
+    source = (request.args.get("source") or "ebay").strip().lower()
+    price_min = request.args.get("price_min")
+    price_max = request.args.get("price_max")
+
+    # ========================================
+    # KLEINANZEIGEN-SUCHE (NEU!)
+    # ========================================
+    if source == "kleinanzeigen":
+        try:
+            # Kleinanzeigen durchsuchen
+            ka_results = search_kleinanzeigen(
+                query=q,
+                price_min=float(price_min) if price_min else None,
+                price_max=float(price_max) if price_max else None,
+                location=postal,
+                radius_km=radius
+            )
+
+            # Konvertiere zu deinem Standard-Format
+            results = _normalize_kleinanzeigen(ka_results)
+
+            return render_template(
+                "search_results.html",
+                results=results,
+                q=q,
+                params=request.args,
+                items=results,
+                source="kleinanzeigen"
+            )
+
+        except Exception as e:
+            current_app.logger.error(f"Kleinanzeigen-Fehler: {e}")
+            flash(f"Kleinanzeigen-Suche fehlgeschlagen: {e}", "danger")
+            return render_template(
+                "search_results.html",
+                results=[],
+                q=q,
+                params=request.args,
+                items=[],
+                source="kleinanzeigen"
+            )
+
+    # ========================================
+    # EBAY-SUCHE (DEIN BESTEHENDER CODE)
+    # ========================================
     # API-Auswahl: auto = Finding bei Radius, sonst Browse
     mode = (current_app.config.get("EBAY_MODE") or "auto").lower()
     use_finding = (mode == "finding") or (mode == "auto" and postal and radius)
@@ -48,7 +98,6 @@ def search_results():
         )
         results = normalize_finding(raw)
     else:
-        # für EU-Region: located_in="EU" → wird in browse_search zu itemLocationRegion gemappt
         raw = browse_search(
             q,
             auction=auction,
@@ -81,14 +130,45 @@ def search_results():
     if strict:
         results = [r for r in results if r.get("verdict") != "damaged"]
 
-        return render_template(
+    return render_template(
         "search_results.html",
         results=results,
         q=q,
         params=request.args,
-        items=results,  # oder [] – Hauptsache definiert
+        items=results,
+        source="ebay"
     )
 
+
+# ========================================
+# ⭐ NEU: Kleinanzeigen-Normalisierung
+# ========================================
+def _normalize_kleinanzeigen(ka_results: List[Dict]) -> List[Dict]:
+    """
+    Konvertiert Kleinanzeigen-Ergebnisse in dein Standard-Format
+    """
+    normalized = []
+
+    for item in ka_results:
+        normalized.append({
+            "title": item.get("title", "Ohne Titel"),
+            "price": f"{item.get('price', 0):.2f} EUR" if item.get('price') else "Preis auf Anfrage",
+            "url": item.get("url", "#"),
+            "img": item.get("image_url", ""),
+            "images": [item.get("image_url")] if item.get("image_url") else [],
+            "location": item.get("location", ""),
+            "postal_code": item.get("postal_code", ""),
+            "description": item.get("description", ""),
+            "condition": item.get("condition", "Gebraucht"),
+            "published_date": item.get("published_date"),
+            "source": "kleinanzeigen",
+            "item_id": item.get("item_id"),
+            "term": "",
+            "verdict": "unknown",
+            "score": None
+        })
+
+    return normalized
 
 
 def _to_view_items(payload: Dict) -> List[Dict]:
@@ -107,6 +187,7 @@ def _to_view_items(payload: Dict) -> List[Dict]:
                 "url": it.get("itemWebUrl") or "#",
                 "img": (it.get("image") or {}).get("imageUrl") or "",
                 "term": "",
+                "source": "ebay"
             }
         )
     return out
@@ -120,7 +201,6 @@ def _parse_args() -> Dict[str, Optional[str]]:
     category_ids = (src.get("category_ids") or "").strip()
     sort = (src.get("sort") or "bestMatch").strip()
 
-    # Bedingungen: akzeptiere entweder "condition=NEW,USED" oder Checkboxen new/used
     conds: List[str] = []
     cond_field = (src.get("condition") or src.get("conditions") or "").strip()
     if cond_field:
@@ -131,7 +211,6 @@ def _parse_args() -> Dict[str, Optional[str]]:
         if (src.get("used") or "").lower() in {"on", "1", "true"}:
             conds.append("USED")
 
-    # Filter bauen: price:[min..max],conditions:{NEW|USED}
     filters = []
     if price_min or price_max:
         lo = price_min if price_min else "*"
@@ -155,7 +234,6 @@ def _parse_args() -> Dict[str, Optional[str]]:
 def search_page():
     args = _parse_args()
 
-    # GET ohne q -> nur Formular anzeigen
     if request.method == "GET" and not args["q"]:
         return render_template("search.html")
 
@@ -165,7 +243,7 @@ def search_page():
 
     try:
         payload = ebay_search(
-            args["q"],  # type: ignore[arg-type]
+            args["q"],
             limit=24,
             sort=args["sort"] or "bestMatch",
             category_ids=args["category_ids"],
@@ -184,3 +262,76 @@ def search_page():
         terms=[args["q"]],
         results=items,
     )
+
+
+@bp_search.route("/search_ebay", methods=["GET", "POST"])
+def search_ebay():
+    """
+    Vorläufige eBay-Beta-Suche
+    """
+    data = request.form if request.method == "POST" else request.args
+    params = data.to_dict(flat=True)
+    return redirect(url_for("search.search_page", **params))
+
+
+@bp_search.route("/search/kleinanzeigen", methods=["GET", "POST"])
+def search_kleinanzeigen_page():
+    """
+    Dedizierte Route für Kleinanzeigen-Suche
+    """
+    if request.method == "POST":
+        data = request.form
+    else:
+        data = request.args
+
+    q = (data.get("q") or "").strip()
+    price_min = data.get("price_min")
+    price_max = data.get("price_max")
+    postal = (data.get("postal") or "").strip() or None
+    radius = int(data.get("radius_km") or 0) or None
+
+    if not q:
+        flash("Bitte einen Suchbegriff eingeben.", "warning")
+        return render_template("search.html", source="kleinanzeigen")
+
+    try:
+        ka_results = search_kleinanzeigen(
+            query=q,
+            price_min=float(price_min) if price_min else None,
+            price_max=float(price_max) if price_max else None,
+            location=postal,
+            radius_km=radius
+        )
+
+        results = _normalize_kleinanzeigen(ka_results)
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True,
+                'results': results,
+                'count': len(results)
+            })
+
+        return render_template(
+            "search_results.html",
+            results=results,
+            q=q,
+            params=data,
+            items=results,
+            source="kleinanzeigen"
+        )
+
+    except Exception as e:
+        current_app.logger.error(f"Kleinanzeigen-Fehler: {e}")
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
+        flash(f"Fehler bei der Kleinanzeigen-Suche: {e}", "danger")
+        return render_template(
+            "search.html",
+            source="kleinanzeigen"
+        )

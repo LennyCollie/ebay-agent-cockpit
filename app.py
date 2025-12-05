@@ -45,6 +45,8 @@ from routes.watchlist import bp as watchlist_bp
 from routes.alerts import bp as alerts_bp
 from agent import get_mail_settings, send_mail
 
+
+
 # -------------------------------------------------------------------
 # .env laden
 # -------------------------------------------------------------------
@@ -138,6 +140,10 @@ app.register_blueprint(telegram_bp)
 app.register_blueprint(vision_test_bp)
 app.register_blueprint(watchlist_bp)
 app.register_blueprint(alerts_bp)
+app.register_blueprint(search_bp)
+#app.register_blueprint(search_bp, url_prefix="/beta-search")#
+
+
 
 app.config.from_object(Config)
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
@@ -769,29 +775,32 @@ def search_kleinanzeigen(
     page: int,
     per_page: int
 ) -> Tuple[List[Dict], Optional[int]]:
-    """
-    Placeholder-Suche für Kleinanzeigen.
-    Hier kannst du später echtes Scraping oder eine API einbauen.
-    Für jetzt: Wir tun so, als gäbe es Kleinanzeigen-Treffer und markieren sie
-    sauber mit src='kleinanzeigen', damit das UI funktioniert.
-    """
-    query = " ".join(terms) if terms else ""
-    items: List[Dict] = []
+    """Wrapper für die echte Kleinanzeigen-Suche"""
+    from services.kleinanzeigen import search_kleinanzeigen as ka_search
 
-    # Demo: einfach ein paar Fake-Ergebnisse erzeugen,
-    # nur damit du im Frontend die grünen Badges siehst.
-    for i in range(per_page):
+    # Konvertiere Parameter
+    query = " ".join(terms) if terms else ""
+
+    results = ka_search(
+        query=query,
+        price_min=float(filters.get("price_min") or 0) if filters.get("price_min") else None,
+        price_max=float(filters.get("price_max") or 0) if filters.get("price_max") else None,
+        limit=per_page
+    )
+
+    # Konvertiere zu deinem Format
+    items = []
+    for item in results:
         items.append({
-            "id": f"ka-{page}-{i}",
-            "title": f"Kleinanzeige {i+1} zu {query or 'ohne Begriff'}",
-            "price": "VB",
-            "url": "https://www.kleinanzeigen.de/",
-            "img": "https://via.placeholder.com/160x120?text=KA",
+            "id": item.get("item_id"),
+            "title": item.get("title"),
+            "price": f"{item.get('price'):.2f} EUR" if item.get('price') else "VB",
+            "url": item.get("url"),
+            "img": item.get("image_url"),
             "term": query,
-            "src": "kleinanzeigen",   # <--- WICHTIG!
+            "src": "kleinanzeigen",
         })
 
-    # total_estimated für Kleinanzeigen lassen wir auf None
     return items, None
 
 
@@ -1496,7 +1505,7 @@ from urllib.parse import urlencode
 
 from urllib.parse import urlencode
 
-@app.route("/search", methods=["GET", "POST"])
+@app.route("/search-legacy", methods=["GET", "POST"])
 def search():
     # DEBUG: Log eingehender Request-Daten
     current_app.logger.debug("=== /search called, method=%s ===", request.method)
