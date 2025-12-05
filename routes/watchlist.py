@@ -15,6 +15,8 @@ from flask_login import login_required, current_user
 
 # WICHTIG: aus models importieren – nicht aus routes
 from models import SessionLocal, WatchedItem
+from database import get_db, get_placeholder
+
 
 bp = Blueprint("watchlist", __name__, url_prefix="/watchlist")
 
@@ -142,18 +144,34 @@ def add():
 def remove(item_id):
     db = SessionLocal()
     try:
+        # 1. Watchlist-Eintrag per ORM suchen
         item = db.query(WatchedItem).filter_by(id=item_id, user_id=current_user.id).first()
-        if not item:
-            return jsonify({'success': False, 'error': 'Item nicht gefunden'}), 404
 
-        item.is_active = False
-        db.commit()
-        return jsonify({'success': True, 'message': f"'{item.item_title[:40]}...' entfernt"})
+        if item:
+            item.is_active = False
+            db.commit()
+            return jsonify({'success': True, 'message': f"'{item.item_title[:40]}...' entfernt"})
+
+        # 2. Fallback: Alert aus search_alerts (DB-Layer mit get_db)
+        conn = get_db()
+        cur = conn.cursor()
+        ph = get_placeholder()   # ? für SQLite, %s für Postgres
+
+        cur.execute(
+            f"DELETE FROM search_alerts WHERE id = {ph} AND user_email = {ph}",
+            (item_id, current_user.email)
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'Alert gelöscht'})
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         db.close()
+
+
 
 
 @bp.route('/update-price/<int:item_id>', methods=['POST'])

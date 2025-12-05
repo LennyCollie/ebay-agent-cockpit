@@ -35,8 +35,17 @@ from flask import (
     request,
     session,
     url_for,
+
 )
-from flask_login import LoginManager, UserMixin, login_user, current_user
+
+from flask_login import (
+    LoginManager,
+    login_user,
+    logout_user,
+    current_user,
+    login_required,
+    UserMixin,
+)
 
 from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from routes.search import bp_search as search_bp
@@ -44,6 +53,7 @@ from routes.telegram import bp as telegram_bp
 from routes.watchlist import bp as watchlist_bp
 from routes.alerts import bp as alerts_bp
 from agent import get_mail_settings, send_mail
+
 
 
 
@@ -2071,6 +2081,8 @@ def create_agent():
         "success",
     )
     return redirect(url_for("dashboard"))
+
+
 
 
 # ALT/Kompatibilität (deprecated): Query-basiertes Cron-Endpoint
