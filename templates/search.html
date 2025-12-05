@@ -17,15 +17,12 @@
   {% endwith %}
 
   <div class="text-center mb-4">
-    <h1 class="fw-bold">
-      🔍 Super-Agent Suche (Test 02.12.- lokal)
-    </h1>
+    <h1 class="fw-bold">🔍 Super-Agent Suche</h1>
     <p class="text-muted mb-0">
       Gib 1–3 Begriffe an, setze optionale Filter – unten erscheinen die Treffer.
     </p>
   </div>
 
-  {# Hauptkarte #}
   <div class="card shadow-sm border-0">
     <div class="card-header bg-gradient"
          style="background: linear-gradient(135deg, #0d6efd, #6610f2); color: #fff;">
@@ -33,20 +30,13 @@
         <div>
           <strong>Vorlagen:</strong>
           <button type="button" class="btn btn-sm btn-light ms-2 me-1"
-                  onclick="fillPreset('iphone 12', '100', '900')">
-            Allround-Suche
-          </button>
+                  onclick="fillPreset('iphone 12', '100', '900')">Allround-Suche</button>
           <button type="button" class="btn btn-sm btn-outline-light me-1"
-                  onclick="fillPreset('Schnäppchen', '0', '100')">
-            Schnäppchen
-          </button>
+                  onclick="fillPreset('Schnäppchen', '0', '100')">Schnäppchen</button>
           <button type="button" class="btn btn-sm btn-outline-light"
-                  onclick="fillPreset('wie neu', '', '')">
-            Wie neu
-          </button>
+                  onclick="fillPreset('wie neu', '', '')">Wie neu</button>
         </div>
-        <button type="button" class="btn btn-sm btn-outline-light"
-                onclick="resetSearchForm()">
+        <button type="button" class="btn btn-sm btn-outline-light" onclick="resetSearchForm()">
           Zurücksetzen
         </button>
       </div>
@@ -54,7 +44,8 @@
 
     <div class="card-body">
 
-      <form method="POST" action="/search" id="search-form">
+      {# FORMULAR START #}
+      <form method="GET" action="{{ url_for('search.search_page') }}" id="search-form">
 
         {# --- Begriffe --------------------------------------------------- #}
         <div class="row g-3 mb-3">
@@ -119,29 +110,20 @@
 
         <hr>
 
-        {# --- eBay Filter: Zustand / Versand / Land ----------------------- #}
+        {# --- Filterblöcke ----------------------------------------------- #}
         <div class="row g-3 mb-3">
           <div class="col-md-4">
             <label class="form-label d-block">Zustand</label>
             {% set conds = request.args.getlist('condition') %}
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="cond_new"
-                     name="condition" value="NEW"
-                     {% if 'NEW' in conds %}checked{% endif %}>
-              <label class="form-check-label" for="cond_new">Neu</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="cond_used"
-                     name="condition" value="USED"
-                     {% if 'USED' in conds %}checked{% endif %}>
-              <label class="form-check-label" for="cond_used">Gebraucht</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="cond_refurb"
-                     name="condition" value="CERTIFIED_REFURBISHED"
-                     {% if 'CERTIFIED_REFURBISHED' in conds %}checked{% endif %}>
-              <label class="form-check-label" for="cond_refurb">Refurbished (zert.)</label>
-            </div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" id="cond_new"
+              name="condition" value="NEW" {% if 'NEW' in conds %}checked{% endif %}>
+              <label class="form-check-label" for="cond_new">Neu</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" id="cond_used"
+              name="condition" value="USED" {% if 'USED' in conds %}checked{% endif %}>
+              <label class="form-check-label" for="cond_used">Gebraucht</label></div>
+            <div class="form-check"><input class="form-check-input" type="checkbox" id="cond_refurb"
+              name="condition" value="CERTIFIED_REFURBISHED" {% if 'CERTIFIED_REFURBISHED' in conds %}checked{% endif %}>
+              <label class="form-check-label" for="cond_refurb">Refurbished (zert.)</label></div>
             <small class="text-muted">Mehrfachauswahl möglich.</small>
           </div>
 
@@ -152,20 +134,17 @@
             {% set tr = request.args.get('top_rated_only','') %}
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="fs_only"
-                     name="free_shipping" value="1"
-                     {% if fs %}checked{% endif %}>
+                     name="free_shipping" value="1" {% if fs %}checked{% endif %}>
               <label class="form-check-label" for="fs_only">Nur kostenloser Versand</label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="ra_only"
-                     name="returns_accepted" value="1"
-                     {% if ra %}checked{% endif %}>
+                     name="returns_accepted" value="1" {% if ra %}checked{% endif %}>
               <label class="form-check-label" for="ra_only">Nur mit Rückgaberecht</label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="tr_only"
-                     name="top_rated_only" value="1"
-                     {% if tr %}checked{% endif %}>
+                     name="top_rated_only" value="1" {% if tr %}checked{% endif %}>
               <label class="form-check-label" for="tr_only">Nur Top-bewertete Verkäufer</label>
             </div>
           </div>
@@ -184,57 +163,42 @@
 
             <label class="form-label mt-2 d-block">Angebotsart</label>
             {% set lt = request.args.get('listing_type','all') %}
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="listing_type" id="lt_all"
-                     value="all" {% if lt == 'all' %}checked{% endif %}>
-              <label class="form-check-label" for="lt_all">Alle</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="listing_type" id="lt_fix"
-                     value="buy_it_now" {% if lt == 'buy_it_now' %}checked{% endif %}>
-              <label class="form-check-label" for="lt_fix">Sofort-Kaufen</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="listing_type" id="lt_auc"
-                     value="auction" {% if lt == 'auction' %}checked{% endif %}>
-              <label class="form-check-label" for="lt_auc">Auktion</label>
-            </div>
+            <div class="form-check"><input class="form-check-input" type="radio" name="listing_type"
+              id="lt_all" value="all" {% if lt == 'all' %}checked{% endif %}>
+              <label class="form-check-label" for="lt_all">Alle</label></div>
+            <div class="form-check"><input class="form-check-input" type="radio" name="listing_type"
+              id="lt_fix" value="buy_it_now" {% if lt == 'buy_it_now' %}checked{% endif %}>
+              <label class="form-check-label" for="lt_fix">Sofort-Kaufen</label></div>
+            <div class="form-check"><input class="form-check-input" type="radio" name="listing_type"
+              id="lt_auc" value="auction" {% if lt == 'auction' %}checked{% endif %}>
+              <label class="form-check-label" for="lt_auc">Auktion</label></div>
           </div>
         </div>
 
         <hr>
 
-        {# --- Quelle: eBay / Kleinanzeigen / Beides ---------------------- #}
-        <div class="row mb-3">
+        {# --- Quelle + Button -------------------------------------------- #}
+        <div class="row mb-3 align-items-end">
           <div class="col-md-6">
             <label class="form-label d-block">Quelle</label>
             {% set src = request.args.get('source','ebay') %}
             <div class="btn-group" role="group" aria-label="Quelle wählen">
               <input type="radio" class="btn-check" name="source" id="src_ebay"
-                     value="ebay" autocomplete="off"
-                     {% if src == 'ebay' %}checked{% endif %}>
+                     value="ebay" autocomplete="off" {% if src == 'ebay' %}checked{% endif %}>
               <label class="btn btn-outline-primary" for="src_ebay">Nur eBay</label>
 
               <input type="radio" class="btn-check" name="source" id="src_ka"
-                     value="kleinanzeigen" autocomplete="off"
-                     {% if src == 'kleinanzeigen' %}checked{% endif %}>
+                     value="kleinanzeigen" autocomplete="off" {% if src == 'kleinanzeigen' %}checked{% endif %}>
               <label class="btn btn-outline-primary" for="src_ka">Nur Kleinanzeigen</label>
 
               <input type="radio" class="btn-check" name="source" id="src_both"
-                     value="both" autocomplete="off"
-                     {% if src == 'both' %}checked{% endif %}>
+                     value="both" autocomplete="off" {% if src == 'both' %}checked{% endif %}>
               <label class="btn btn-outline-primary" for="src_both">Beides (Agent)</label>
             </div>
-            <small class="text-muted d-block mt-1">
-              Hinweis: In der aktuellen Version werden Kleinanzeigen vor allem
-              in den Hintergrund-Alerts genutzt.
-            </small>
           </div>
 
-          <div class="col-md-6 text-md-end text-center mt-3 mt-md-0">
-            <button type="submit" class="btn btn-primary btn-lg">
-              Ergebnisse anzeigen
-            </button>
+          <div class="col-md-6 d-flex justify-content-md-end justify-content-center mt-3 mt-md-0">
+            <button type="submit" class="btn btn-lg btn-search-main">Ergebnisse anzeigen</button>
           </div>
         </div>
 
@@ -242,6 +206,22 @@
     </div>
   </div>
 </div>
+
+<style>
+  .btn-search-main {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    border: none;
+    color: #fff;
+    padding-inline: 2.5rem;
+    font-weight: 600;
+    transition: all 0.15s ease;
+  }
+  .btn-search-main:hover {
+    background: linear-gradient(135deg, #16a34a, #15803d);
+    color: #fff;
+    transform: translateY(-1px);
+  }
+</style>
 
 <script>
   function fillPreset(term, minPrice, maxPrice) {
@@ -254,7 +234,6 @@
     }
     if (minPrice !== undefined) f.price_min.value = minPrice;
     if (maxPrice !== undefined) f.price_max.value = maxPrice;
-    // gleich absenden:
     f.submit();
   }
 
@@ -262,7 +241,6 @@
     const f = document.getElementById('search-form');
     if (!f) return;
     f.reset();
-    // URL ohne Query-Parameter neu laden
     window.location.href = '/search';
   }
 </script>

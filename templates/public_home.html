@@ -1,11 +1,17 @@
-{% extends "base.html" %}
-{% block content %}
+{% extends "base.html" %} {% block content %}
 
 <!-- Small styles just for this page -->
 <style>
-  .hero-gradient{background:radial-gradient(120% 120% at 50% 0%, #0d6efd 0%, #0a58ca 35%, #0b2239 100%);}
-  .card-hover{transition:transform .15s ease, box-shadow .15s ease}
-  .card-hover:hover{transform:translateY(-2px); box-shadow:0 .5rem 1rem rgba(0,0,0,.15)}
+  .hero-gradient {
+    background: radial-gradient(120% 120% at 50% 0%, #0d6efd 0%, #0a58ca 35%, #0b2239 100%);
+  }
+  .card-hover {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+  }
 </style>
 
 <!-- =================== HERO =================== -->
@@ -13,14 +19,19 @@
   <div class="container py-4">
     <span class="badge text-bg-success mb-3">3 Suchen gratis – keine Registrierung nötig</span>
     <h1 class="display-5 fw-bold mb-3">Verpasse nie wieder eBay‑Schnäppchen</h1>
-    <p class="lead mx-auto text-white-50" style="max-width: 760px;">
-      Erhalte <strong class="text-white">Echtzeit‑E‑Mails</strong>, sobald neue eBay‑Angebote zu deinen Suchbegriffen online gehen – mit Preis‑ &amp; Zustands‑Filtern.
+    <p class="lead mx-auto text-white-50" style="max-width: 760px">
+      Erhalte <strong class="text-white">Echtzeit‑E‑Mails</strong>, sobald neue eBay‑Angebote zu
+      deinen Suchbegriffen online gehen – mit Preis‑ &amp; Zustands‑Filtern.
     </p>
 
     <div class="d-flex justify-content-center gap-2 flex-wrap mt-4">
-      <a href="{{ url_for('search') }}" class="btn btn-light btn-lg px-4">Suche öffnen</a>
+      <a href="{{ url_for('search.search_page') }}" class="btn btn-light btn-lg px-4"
+        >Suche öffnen</a
+      >
       <a href="#popular-searches" class="btn btn-outline-light btn-lg px-4">Beliebte Suchen</a>
-      <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-light btn-lg px-4">Preise ansehen</a>
+      <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-light btn-lg px-4"
+        >Preise ansehen</a
+      >
     </div>
 
     <!-- Nutzen-Bullets + Trust -->
@@ -48,8 +59,10 @@
   <div class="row g-3 row-cols-1 row-cols-sm-2 row-cols-lg-3">
     <!-- Karte 1: LEGO Technic 42115 -->
     <div class="col">
-      <a href="/search?q1=lego+technic+42115&price_max=200&sort=newly&per_page=100&condition=USED"
-         class="card card-hover h-100 text-decoration-none border-primary border-2">
+      <a
+        href="/search?q1=lego+technic+42115&price_max=200&sort=newly&per_page=100&condition=USED"
+        class="card card-hover h-100 text-decoration-none border-primary border-2"
+      >
         <div class="card-body">
           <span class="badge text-bg-primary mb-2">Neu eingestellt</span>
           <h3 class="h6 text-dark mb-1">LEGO Technic 42115 „Lamborghini Sián“</h3>
@@ -61,8 +74,10 @@
 
     <!-- Karte 2: GameCube Controller -->
     <div class="col">
-      <a href="/search?q1=nintendo+gamecube+controller+original&price_max=30&sort=newly&per_page=100&condition=USED"
-         class="card card-hover h-100 text-decoration-none border-success border-2">
+      <a
+        href="/search?q1=nintendo+gamecube+controller+original&price_max=30&sort=newly&per_page=100&condition=USED"
+        class="card card-hover h-100 text-decoration-none border-success border-2"
+      >
         <div class="card-body">
           <span class="badge text-bg-success mb-2">Schnäppchen</span>
           <h3 class="h6 text-dark mb-1">Nintendo GameCube Controller (Original)</h3>
@@ -74,8 +89,10 @@
 
     <!-- Karte 3: iPhone 12 Display -->
     <div class="col">
-      <a href="/search?q1=iphone+12+display+original&price_min=40&price_max=80&sort=newly&per_page=60&condition=CERTIFIED_REFURBISHED"
-         class="card card-hover h-100 text-decoration-none border-warning border-2">
+      <a
+        href="/search?q1=iphone+12+display+original&price_min=40&price_max=80&sort=newly&per_page=60&condition=CERTIFIED_REFURBISHED"
+        class="card card-hover h-100 text-decoration-none border-warning border-2"
+      >
         <div class="card-body">
           <span class="badge text-bg-warning mb-2">Refurbished</span>
           <h3 class="h6 text-dark mb-1">iPhone 12 Display (Original/Refurbished)</h3>
@@ -87,8 +104,10 @@
 
     <!-- Karte 4: Dyson V11 Absolute -->
     <div class="col">
-      <a href="/search?q1=dyson+v11+absolute&price_max=250&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=dysonv11"
-         class="card card-hover h-100 text-decoration-none border-info border-2">
+      <a
+        href="/search?q1=dyson+v11+absolute&price_max=250&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=dysonv11"
+        class="card card-hover h-100 text-decoration-none border-info border-2"
+      >
         <div class="card-body">
           <span class="badge text-bg-info mb-2">Haushalt</span>
           <h3 class="h6 text-dark mb-1">Dyson V11 Absolute</h3>
@@ -100,8 +119,10 @@
 
     <!-- Karte 5: AirPods Pro 2 (refurb) -->
     <div class="col">
-      <a href="/search?q1=airpods+pro+2&price_min=120&price_max=190&sort=newly&per_page=60&condition=CERTIFIED_REFURBISHED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=airpodspro2"
-         class="card card-hover h-100 text-decoration-none border-warning border-2">
+      <a
+        href="/search?q1=airpods+pro+2&price_min=120&price_max=190&sort=newly&per_page=60&condition=CERTIFIED_REFURBISHED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=airpodspro2"
+        class="card card-hover h-100 text-decoration-none border-warning border-2"
+      >
         <div class="card-body">
           <span class="badge text-bg-warning mb-2">Refurbished</span>
           <h3 class="h6 text-dark mb-1">AirPods Pro 2</h3>
@@ -113,8 +134,10 @@
 
     <!-- Karte 6: Bosch GSR 18V-55 -->
     <div class="col">
-      <a href="/search?q1=bosch+professional+gsr+18v-55&price_max=120&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=gsr18v55"
-         class="card card-hover h-100 text-decoration-none border-secondary border-2">
+      <a
+        href="/search?q1=bosch+professional+gsr+18v-55&price_max=120&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=gsr18v55"
+        class="card card-hover h-100 text-decoration-none border-secondary border-2"
+      >
         <div class="card-body">
           <span class="badge text-bg-secondary mb-2">Werkzeug</span>
           <h3 class="h6 text-dark mb-1">Bosch GSR 18V-55</h3>
@@ -126,8 +149,10 @@
 
     <!-- Karte 7: Game Boy Advance SP -->
     <div class="col">
-      <a href="/search?q1=game+boy+advance+sp&price_max=90&sort=newly&per_page=100&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=gbasp"
-         class="card card-hover h-100 text-decoration-none border-dark border-2">
+      <a
+        href="/search?q1=game+boy+advance+sp&price_max=90&sort=newly&per_page=100&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=gbasp"
+        class="card card-hover h-100 text-decoration-none border-dark border-2"
+      >
         <div class="card-body">
           <span class="badge text-bg-dark mb-2">Retro</span>
           <h3 class="h6 text-dark mb-1">Game Boy Advance SP</h3>
@@ -139,8 +164,10 @@
 
     <!-- Karte 8: GoPro HERO 10 -->
     <div class="col">
-      <a href="/search?q1=gopro+hero+10&price_max=220&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=gopro10"
-         class="card card-hover h-100 text-decoration-none border-danger border-2">
+      <a
+        href="/search?q1=gopro+hero+10&price_max=220&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=gopro10"
+        class="card card-hover h-100 text-decoration-none border-danger border-2"
+      >
         <div class="card-body">
           <span class="badge text-bg-danger mb-2">Foto/Action</span>
           <h3 class="h6 text-dark mb-1">GoPro HERO 10</h3>
@@ -152,8 +179,10 @@
 
     <!-- Karte 9: Sonos One SL -->
     <div class="col">
-      <a href="/search?q1=sonos+one+sl&price_max=150&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch3&utm_content=sonosone"
-         class="card card-hover h-100 text-decoration-none border-primary border-2">
+      <a
+        href="/search?q1=sonos+one+sl&price_max=150&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch3&utm_content=sonosone"
+        class="card card-hover h-100 text-decoration-none border-primary border-2"
+      >
         <div class="card-body">
           <span class="badge text-bg-primary mb-2">Audio</span>
           <h3 class="h6 text-dark mb-1">Sonos One SL</h3>
@@ -166,36 +195,45 @@
   <!-- row END -->
 </section>
 
-
 <!-- ===== WHY NOT JUST EBAY ALERTS? / FAQ BLOCK ===== -->
 <section class="container py-5" id="why-not-ebay">
   <div class="text-center mb-4">
     <h2 class="h2 fw-bold">Warum nicht einfach eBay‑Alerts?</h2>
-    <p class="text-muted">Super‑Agent richtet sich an Power‑User – schneller & präziser als Standard‑Benachrichtigungen.</p>
+    <p class="text-muted">
+      Super‑Agent richtet sich an Power‑User – schneller & präziser als Standard‑Benachrichtigungen.
+    </p>
   </div>
   <div class="row g-3">
     <div class="col-12 col-md-6">
       <div class="border rounded p-3 h-100">
         <div class="fw-semibold mb-2">⏱️ Schneller</div>
-        <p class="mb-0 text-muted small">Alerts in Minuten statt Stunden. Fokus auf „Neu eingestellt“ und frische Treffer.</p>
+        <p class="mb-0 text-muted small">
+          Alerts in Minuten statt Stunden. Fokus auf „Neu eingestellt“ und frische Treffer.
+        </p>
       </div>
     </div>
     <div class="col-12 col-md-6">
       <div class="border rounded p-3 h-100">
         <div class="fw-semibold mb-2">🎯 Genauer</div>
-        <p class="mb-0 text-muted small">Include/Exclude‑Keywords, Verkäufer‑Filter, nur „neu seit letztem Check“.</p>
+        <p class="mb-0 text-muted small">
+          Include/Exclude‑Keywords, Verkäufer‑Filter, nur „neu seit letztem Check“.
+        </p>
       </div>
     </div>
     <div class="col-12 col-md-6">
       <div class="border rounded p-3 h-100">
         <div class="fw-semibold mb-2">📦 Mehr Märkte</div>
-        <p class="mb-0 text-muted small">Optional mehrere Länder/Plattformen in einem Agenten bündeln (roadmapfähig).</p>
+        <p class="mb-0 text-muted small">
+          Optional mehrere Länder/Plattformen in einem Agenten bündeln (roadmapfähig).
+        </p>
       </div>
     </div>
     <div class="col-12 col-md-6">
       <div class="border rounded p-3 h-100">
         <div class="fw-semibold mb-2">🧰 Pro‑Workflows</div>
-        <p class="mb-0 text-muted small">CSV‑Import, Teilen‑Links, Telegram/Discord, Duplikat‑Schutz – alles im Cockpit.</p>
+        <p class="mb-0 text-muted small">
+          CSV‑Import, Teilen‑Links, Telegram/Discord, Duplikat‑Schutz – alles im Cockpit.
+        </p>
       </div>
     </div>
   </div>
@@ -205,44 +243,83 @@
     <div class="accordion" id="faqAccPublic">
       <div class="accordion-item">
         <h2 class="accordion-header" id="fq1">
-          <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#fa1" aria-expanded="true" aria-controls="fa1">
+          <button
+            class="accordion-button"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#fa1"
+            aria-expanded="true"
+            aria-controls="fa1"
+          >
             Gibt’s das nicht schon bei eBay?
           </button>
         </h2>
-        <div id="fa1" class="accordion-collapse collapse show" aria-labelledby="fq1" data-bs-parent="#faqAccPublic">
+        <div
+          id="fa1"
+          class="accordion-collapse collapse show"
+          aria-labelledby="fq1"
+          data-bs-parent="#faqAccPublic"
+        >
           <div class="accordion-body">
-            Ja, eBay bietet gespeicherte Suchen. Super‑Agent ist für Power‑User: **schneller**, **genauer** und mit **mehr Kontrolle** (Include/Exclude, Verkäufer‑Filter, CSV‑Import, Telegram u. a.).
+            Ja, eBay bietet gespeicherte Suchen. Super‑Agent ist für Power‑User: **schneller**,
+            **genauer** und mit **mehr Kontrolle** (Include/Exclude, Verkäufer‑Filter, CSV‑Import,
+            Telegram u. a.).
           </div>
         </div>
       </div>
       <div class="accordion-item">
         <h2 class="accordion-header" id="fq2">
-          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#fa2" aria-expanded="false" aria-controls="fa2">
+          <button
+            class="accordion-button collapsed"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#fa2"
+            aria-expanded="false"
+            aria-controls="fa2"
+          >
             Wie lege ich gute Agenten an?
           </button>
         </h2>
-        <div id="fa2" class="accordion-collapse collapse" aria-labelledby="fq2" data-bs-parent="#faqAccPublic">
+        <div
+          id="fa2"
+          class="accordion-collapse collapse"
+          aria-labelledby="fq2"
+          data-bs-parent="#faqAccPublic"
+        >
           <div class="accordion-body">
-            Nutze präzise Begriffe (Marke+Modell), setze realistische Preisgrenzen und wähle den passenden Zustand. Lege 2–3 Varianten mit unterschiedlichen Winkeln an.
+            Nutze präzise Begriffe (Marke+Modell), setze realistische Preisgrenzen und wähle den
+            passenden Zustand. Lege 2–3 Varianten mit unterschiedlichen Winkeln an.
           </div>
         </div>
       </div>
       <div class="accordion-item">
         <h2 class="accordion-header" id="fq3">
-          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#fa3" aria-expanded="false" aria-controls="fa3">
+          <button
+            class="accordion-button collapsed"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#fa3"
+            aria-expanded="false"
+            aria-controls="fa3"
+          >
             Wie schnell sind die E‑Mails?
           </button>
         </h2>
-        <div id="fa3" class="accordion-collapse collapse" aria-labelledby="fq3" data-bs-parent="#faqAccPublic">
+        <div
+          id="fa3"
+          class="accordion-collapse collapse"
+          aria-labelledby="fq3"
+          data-bs-parent="#faqAccPublic"
+        >
           <div class="accordion-body">
-            In der Regel in Minuten, abhängig von deinen Intervall‑Einstellungen und Plattform‑Limits. Ziel ist, **so früh wie möglich** zu informieren.
+            In der Regel in Minuten, abhängig von deinen Intervall‑Einstellungen und
+            Plattform‑Limits. Ziel ist, **so früh wie möglich** zu informieren.
           </div>
         </div>
       </div>
     </div>
   </div>
 </section>
-
 
 <!-- =================== FEATURES =================== -->
 <section class="container py-5">
@@ -251,27 +328,48 @@
     <div class="col">
       <div class="card h-100 shadow-sm card-hover">
         <div class="card-body">
-          <div class="rounded-circle bg-primary-subtle d-inline-flex align-items-center justify-content-center mb-2" style="width:48px;height:48px;">⚡</div>
+          <div
+            class="rounded-circle bg-primary-subtle d-inline-flex align-items-center justify-content-center mb-2"
+            style="width: 48px; height: 48px"
+          >
+            ⚡
+          </div>
           <h5 class="card-title mb-2">Schnell & einfach</h5>
-          <p class="card-text text-muted mb-0">In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.</p>
+          <p class="card-text text-muted mb-0">
+            In wenigen Minuten startklar. Schlanke Oberfläche, klare Prozesse.
+          </p>
         </div>
       </div>
     </div>
     <div class="col">
       <div class="card h-100 shadow-sm card-hover">
         <div class="card-body">
-          <div class="rounded-circle bg-success-subtle d-inline-flex align-items-center justify-content-center mb-2" style="width:48px;height:48px;">🔒</div>
+          <div
+            class="rounded-circle bg-success-subtle d-inline-flex align-items-center justify-content-center mb-2"
+            style="width: 48px; height: 48px"
+          >
+            🔒
+          </div>
           <h5 class="card-title mb-2">Sicher</h5>
-          <p class="card-text text-muted mb-0">Login, Sessions & Best Practices standardmäßig aktiv.</p>
+          <p class="card-text text-muted mb-0">
+            Login, Sessions & Best Practices standardmäßig aktiv.
+          </p>
         </div>
       </div>
     </div>
     <div class="col">
       <div class="card h-100 shadow-sm card-hover">
         <div class="card-body">
-          <div class="rounded-circle bg-warning-subtle d-inline-flex align-items-center justify-content-center mb-2" style="width:48px;height:48px;">📈</div>
+          <div
+            class="rounded-circle bg-warning-subtle d-inline-flex align-items-center justify-content-center mb-2"
+            style="width: 48px; height: 48px"
+          >
+            📈
+          </div>
           <h5 class="card-title mb-2">Skalierbar</h5>
-          <p class="card-text text-muted mb-0">Vom lokalen Test bis zum Render‑Deploy. Für die Zukunft vorbereitet.</p>
+          <p class="card-text text-muted mb-0">
+            Vom lokalen Test bis zum Render‑Deploy. Für die Zukunft vorbereitet.
+          </p>
         </div>
       </div>
     </div>
@@ -298,22 +396,28 @@
               <li class="mb-1">✔ Basisfunktionen</li>
               <li class="mb-1">✔ Teilen-Links</li>
             </ul>
-            <a href="{{ url_for('search') }}" class="btn btn-outline-primary">Kostenlos starten</a>
+            <a href="{{ url_for('search.search_page') }}" class="btn btn-outline-primary"
+              >Kostenlos starten</a
+            >
           </div>
         </div>
       </div>
 
       <!-- Bezahlte Pläne (Teaser) -->
       <div class="col">
-        <div class="card h-100 shadow-sm border-0 card-hover"
-             style="background:linear-gradient(135deg,#0d6efd,#6610f2);">
+        <div
+          class="card h-100 shadow-sm border-0 card-hover"
+          style="background: linear-gradient(135deg, #0d6efd, #6610f2)"
+        >
           <div class="card-body p-4 text-white">
             <div class="d-flex justify-content-between align-items-start">
               <h3 class="h5 mb-1">Bezahlte Pläne</h3>
               <span class="badge text-bg-light text-dark">Neu</span>
             </div>
 
-            <div class="display-6 fw-bold">ab 7 € <span class="fs-6 fw-normal text-white-50">/ Monat</span></div>
+            <div class="display-6 fw-bold">
+              ab 7 € <span class="fs-6 fw-normal text-white-50">/ Monat</span>
+            </div>
             <p class="text-white-50 small mb-3">Basic · Pro · Team (7 / 15 / 29 €)</p>
 
             <ul class="list-unstyled small my-3">
@@ -338,11 +442,20 @@
 </section>
 
 <!-- =================== FINAL CTA =================== -->
-<section class="py-5 text-center border-top" style="background:linear-gradient(135deg,#f8f9fa,#e9efff);">
+<section
+  class="py-5 text-center border-top"
+  style="background: linear-gradient(135deg, #f8f9fa, #e9efff)"
+>
   <div class="container">
-    <p class="text-muted mb-3">Ohne Registrierung sind 3 Suchen gratis. Mit Konto kannst du später jederzeit upgraden.</p>
-    <a href="{{ url_for('search') }}" class="btn btn-primary btn-lg">Kostenlos starten</a>
-    <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-primary btn-lg ms-2">Zu den Preisen</a>
+    <p class="text-muted mb-3">
+      Ohne Registrierung sind 3 Suchen gratis. Mit Konto kannst du später jederzeit upgraden.
+    </p>
+    <a href="{{ url_for('search.search_page') }}" class="btn btn-primary btn-lg"
+      >Kostenlos starten</a
+    >
+    <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-primary btn-lg ms-2"
+      >Zu den Preisen</a
+    >
   </div>
 </section>
 

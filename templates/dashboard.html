@@ -313,6 +313,26 @@
       </p>
       {% endif %}
 
+      <!-- E-Mail Test & Benachrichtigungs-Button -->
+      <hr class="my-3" />
+      <p class="card-subtitle mb-2"><strong>E-Mail:</strong> {{ user.email }}</p>
+      <form action="{{ url_for('email_test') }}" method="POST" class="d-flex flex-wrap gap-2 mb-2">
+        <input
+          type="email"
+          name="email"
+          class="form-control form-control-sm"
+          style="max-width: 260px"
+          placeholder="Test-Adresse (optional)"
+          value="{{ user.email }}"
+        />
+        <button type="submit" class="btn btn-outline-secondary btn-sm">
+          ✉️ Test-E-Mail senden
+        </button>
+      </form>
+      <small class="text-muted">
+        Wenn diese Testmail ankommt, sind deine E-Mail-Benachrichtigungen korrekt eingerichtet.
+      </small>
+
       <a href="/search" class="quick-action"> 🔍 Neue Suche starten </a>
     </div>
   </div>
