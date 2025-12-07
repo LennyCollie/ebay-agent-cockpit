@@ -9,7 +9,7 @@
 {% set pagination = pagination|default({'page': 1, 'has_prev': False, 'has_next': False, 'total_estimated': None, 'total_pages': None}) %}
 {% set terms = terms|default([]) %}
 {% set results = results|default([]) %}
-{% set source = source|default(base_qs.get('source', request.args.get('source', 'ebay'))) %}
+{% set source = request.args.get('source', base_qs.get('source', 'ebay')) %}
 
 
 <div class="container py-4">
@@ -18,8 +18,8 @@
     <p class="text-muted mb-0">Gib 1–3 Begriffe an, setze optional Filter — unten erscheinen die Treffer.</p>
   </div>
 
-  {# ---------- Toolbar: Alert speichern ---------- #}
-<div class="d-flex gap-2 mb-3">
+  {# ---------- Toolbar: Alert speichern + Kanäle ---------- #}
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
   <form action="{{ url_for('alerts_subscribe') }}" method="post" class="m-0">
 
     {# Suchbegriffe #}
@@ -39,12 +39,10 @@
       <input type="hidden" name="location_country" value="{{ filters.get('location_country','DE') }}">
       <input type="hidden" name="listing_type" value="{{ filters.get('listing_type','') }}">
 
-      {# conditions ist eine Liste #}
       {% for c in filters.get('conditions', []) %}
         <input type="hidden" name="condition" value="{{ c }}">
       {% endfor %}
 
-      {# Bool-Filter nur setzen, wenn True #}
       {% if filters.get('free_shipping') %}
         <input type="hidden" name="free_shipping" value="1">
       {% endif %}
@@ -57,13 +55,41 @@
     {% endif %}
 
     {# Quelle (ebay / kleinanzeigen / both) #}
-    <input type="hidden" name="source" value="{{ source or 'ebay' }}">
+    <input type="hidden" name="source" value="{{ source|default(request.args.get('source', 'ebay')) }}">
 
-    <button type="submit" class="btn btn-outline-primary">
-      🔔 Alarm speichern
-    </button>
+    <div class="d-flex flex-wrap align-items-center gap-3 mt-2">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="small text-muted">Benachrichtigung per:</span>
+
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input"
+                 type="checkbox"
+                 id="notify_email"
+                 name="notify_email"
+                 value="1"
+                 {% if current_user.is_authenticated %}checked{% endif %}>
+          <label class="form-check-label small" for="notify_email">E-Mail</label>
+        </div>
+
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input"
+                 type="checkbox"
+                 id="notify_telegram"
+                 name="notify_telegram"
+                 value="1"
+                 {% if current_user.is_authenticated and current_user.telegram_verified %}checked{% endif %}>
+          <label class="form-check-label small" for="notify_telegram">Telegram</label>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-outline-primary">
+        🔔 Alarm speichern
+      </button>
+    </div>
+
   </form>
 </div>
+
 
 
 

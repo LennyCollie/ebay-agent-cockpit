@@ -1847,77 +1847,78 @@ def email_test():
 # -------------------------------------------------------------------
 # Alerts: Subscribe / Send-now / Cron (HTTP-Trigger-Variante siehe unten)
 # -------------------------------------------------------------------
-@app.route("/alerts/subscribe", methods=["POST"])
+@app.post("/alerts/subscribe")
 def alerts_subscribe():
-    """Speichert einen Such-Alarm (Search-Agent) für den aktuellen User."""
-    from flask_login import current_user
-
-    form = request.form
-
-    # 1) Suchbegriffe
-    q1 = (form.get("q1") or form.get("q") or "").strip()
-    q2 = (form.get("q2") or "").strip()
-    q3 = (form.get("q3") or "").strip()
-    terms = [q for q in (q1, q2, q3) if q]
-
-    if not terms:
-        flash("Keine Suchbegriffe übergeben.", "warning")
-        return redirect(request.referrer or url_for("search"))
-
-    # 2) Filter aus Formular
-    conditions = form.getlist("condition") or []
-
-    filters = {
-        "price_min": (form.get("price_min") or "").strip(),
-        "price_max": (form.get("price_max") or "").strip(),
-        "sort": (form.get("sort") or "best").strip(),
-        "conditions": conditions,
-        "location_country": (form.get("location_country") or "DE").strip(),
-        "free_shipping": (form.get("free_shipping") == "1"),
-        "returns_accepted": (form.get("returns_accepted") == "1"),
-        "top_rated_only": (form.get("top_rated_only") == "1"),
-        "listing_type": (form.get("listing_type") or "").strip(),
-        # 🆕 Quelle für Alerts mit speichern
-        "source": (form.get("source") or request.args.get("source") or "ebay").strip().lower(),
-    }
-
-    # 3) User ermitteln
-    user_email = None
-    if current_user.is_authenticated:
-        user_email = getattr(current_user, "email", None)
-
-    if not user_email:
-        user_email = session.get("user_email")
-
-    if not user_email:
-        flash("Bitte melde dich an, um einen Alarm zu speichern.", "warning")
+    """Speichert die aktuelle Suche als Alert (inkl. Quelle & Benachrichtigungskanäle)."""
+    user_email = session.get("user_email") or ""
+    if not user_email or user_email.lower() == "guest" or "@" not in user_email:
+        flash("Bitte einloggen, um Alarme zu speichern.", "warning")
         return redirect(url_for("login"))
 
-    # 4) In DB schreiben
-    conn = get_db()
-    cur = dict_cursor(conn)
-    ph = get_placeholder()
+    # --- Begriffe sammeln ---
+    terms = [
+        t.strip()
+        for t in [
+            request.form.get("q1", ""),
+            request.form.get("q2", ""),
+            request.form.get("q3", "")
+        ]
+        if t.strip()
+    ]
+    if not terms:
+        flash("Keine Suchbegriffe übergeben.", "warning")
+        return redirect(url_for("search"))
 
+    # --- Filter speichern ---
+    filters = {
+        "price_min": (request.form.get("price_min") or "").strip(),
+        "price_max": (request.form.get("price_max") or "").strip(),
+        "sort": (request.form.get("sort") or "best").strip(),
+        "conditions": request.form.getlist("condition"),
+        "location_country": request.form.get("location_country", "DE"),
+        "listing_type": request.form.get("listing_type", "all"),
+    }
+
+    per_page = 30
+    try:
+        per_page = min(100, max(5, int(request.form.get("per_page", "30"))))
+    except Exception:
+        pass
+
+    # --- Quelle (ebay / kleinanzeigen / both) ---
+    source = request.form.get("source", "ebay").lower()
+    if source not in ["ebay", "kleinanzeigen", "both"]:
+        source = "ebay"
+
+    # --- Benachrichtigungskanäle ---
+    notify_email = 1 if request.form.get("notify_email") else 0
+    notify_telegram = 1 if request.form.get("notify_telegram") else 0
+
+    # --- In DB speichern ---
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute(
-        f"""
+        """
         INSERT INTO search_alerts
-            (user_email, terms_json, filters_json, last_run_ts, is_active)
-        VALUES ({ph}, {ph}, {ph}, {ph}, 1)
-        """,
+            (user_email, terms_json, filters_json, per_page, is_active,
+             last_run_ts, source, notify_email, notify_telegram)
+        VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)
+        """.replace("?", "%s"),  # wichtig für PostgreSQL
         (
             user_email,
-            json.dumps(terms),
-            json.dumps(filters),
-            0,  # last_run_ts
+            json.dumps(terms, ensure_ascii=False),
+            json.dumps(filters, ensure_ascii=False),
+            per_page,
+            source,
+            notify_email,
+            notify_telegram,
         ),
     )
     conn.commit()
     conn.close()
 
-    flash("Such-Alarm gespeichert – du wirst bei neuen Treffern benachrichtigt.", "success")
-
-    # Zurück zu den Suchergebnissen
-    return redirect(request.referrer or url_for("search", q1=q1))
+    flash("🔔 Alert gespeichert – neue Treffer werden automatisch geprüft.", "success")
+    return redirect(url_for("search", **{**request.form}))
 
 
 
