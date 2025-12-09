@@ -32,6 +32,8 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 ALERT_CHECK_INTERVAL = int(os.getenv("ALERT_CHECK_INTERVAL", "3"))  # Minuten
 PH = get_placeholder()
+ALERT_INTERVAL_FREE = int(os.getenv("ALERT_INTERVAL_FREE", "30"))
+ALERT_INTERVAL_PREMIUM = int(os.getenv("ALERT_INTERVAL_PREMIUM", "3"))
 
 
 # ---------------------------------------------------------------------------
@@ -150,31 +152,24 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
     if source not in ("ebay", "kleinanzeigen"):
         source = "ebay"
 
-    # Benachrichtigungs-Kanäle aus der DB (0/1 -> bool)
+        # Benachrichtigungs-Kanäle aus der DB (0/1 -> bool)
     notify_telegram = bool(alert.get("notify_telegram", 1))
     notify_email = bool(alert.get("notify_email", 0))
 
     agent_name = f"Alert #{alert_id} ({source.upper()})"
     now = int(time.time())
 
-    # Rate-Limiting
-    check_interval_seconds = ALERT_CHECK_INTERVAL * 60
-    if now - last_run < check_interval_seconds:
-        time_left = check_interval_seconds - (now - last_run)
-        print(f"⏭️  Alert {alert_id} ({agent_name}): Übersprungen (noch {time_left}s)")
-        return
-
-    print(f"🔍 Alert {alert_id} ({agent_name})")
-    print(f"   User: {user_email}")
-    print(f"   Suchbegriffe: {terms}")
-    print(f"   Quelle: {source.upper()}")
-    print(f"   Kanäle: Telegram={notify_telegram}, E-Mail={notify_email}")
-    stats["alerts_checked"] += 1
-
-    # User-Telegram-Status laden
+    # ------------------------------------------------------------
+    # User-Daten laden (inkl. Plan & Premium-Flag)
+    # ------------------------------------------------------------
     cursor.execute(
         f"""
-        SELECT telegram_chat_id, telegram_enabled, telegram_verified
+        SELECT
+            telegram_chat_id,
+            telegram_enabled,
+            telegram_verified,
+            plan_type,
+            is_premium
         FROM users
         WHERE email = {PH}
         """,
@@ -188,14 +183,65 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
         return
 
     user_row = dict(user_row)
+
     telegram_chat_id = user_row.get("telegram_chat_id")
     telegram_enabled = bool(user_row.get("telegram_enabled"))
     telegram_verified = bool(user_row.get("telegram_verified"))
 
-    # Telegram nur dann "hart prüfen", wenn der Alert Telegram nutzen will
+    # Plan & Premium sauber initialisieren
+    plan_type = (user_row.get("plan_type") or "").strip().lower()
+    is_premium = bool(user_row.get("is_premium"))
+
+    # ------------------------------------------------------------
+    # Plan-Logik: welche Kanäle sind erlaubt?
+    # ------------------------------------------------------------
+    if not (plan_type in ("pro", "premium") or is_premium):
+        # FREE-Plan: Telegram abschalten
+        if notify_telegram:
+            print("   ℹ️  Telegram ist im FREE-Plan nicht erlaubt – deaktiviere für diesen Alert.")
+        notify_telegram = False
+        # notify_email lassen wir an – das ist dein „Freemium“-Channel
+
+    # ------------------------------------------------------------
+    # Intervall je nach Plan bestimmen
+    # ------------------------------------------------------------
+    if plan_type in ("pro", "premium") or is_premium:
+        alert_interval_min = ALERT_INTERVAL_PREMIUM
+    else:
+        alert_interval_min = ALERT_INTERVAL_FREE
+
+    check_interval_seconds = alert_interval_min * 60
+
+    # Debug-Ausgabe
+    print(f"🔍 Alert {alert_id} ({agent_name})")
+    print(f"   User: {user_email}")
+    print(f"   Suchbegriffe: {terms}")
+    print(f"   Quelle: {source.upper()}")
+    print(
+        f"   Plan: '{plan_type or 'free'}', PremiumFlag={is_premium}, "
+        f"Intervall={alert_interval_min} Min"
+    )
+    print(f"   Kanäle: Telegram={notify_telegram}, E-Mail={notify_email}")
+    stats["alerts_checked"] += 1
+
+    # ------------------------------------------------------------
+    # Rate-Limiting basierend auf Plan (Free vs. Premium/Pro)
+    # ------------------------------------------------------------
+    if now - last_run < check_interval_seconds:
+        time_left = check_interval_seconds - (now - last_run)
+        print(
+            f"⏭️  Alert {alert_id} ({agent_name}): Übersprungen "
+            f"(noch {time_left}s, Intervall={alert_interval_min} Min, Plan='{plan_type or 'free'}')"
+        )
+        return
+
+    # ------------------------------------------------------------
+    # Telegram-Status hart prüfen, falls der Alert Telegram nutzen will
+    # ------------------------------------------------------------
     if notify_telegram and not (telegram_chat_id and telegram_enabled and telegram_verified):
         print("   ℹ️  Telegram nicht aktiviert/verifiziert – Telegram wird für diesen Alert deaktiviert")
         notify_telegram = False
+
 
     # Wenn weder Telegram noch Mail aktiv sind, trotzdem suchen (damit Items ggf. als gesehen markiert werden),
     # aber nichts verschicken.

@@ -1,35 +1,121 @@
-<header class="border-b">
-  <div class="container flex items-center justify-between h-14">
-    <a href="{{ url_for('public_home') }}" class="font-semibold">ebay-agent-cockpit</a>
-    <nav class="hidden md:flex items-center gap-6">
-      <a href="{{ url_for('public_home') }}">Start</a>
-      <a href="{{ url_for('public_pricing') }}">Preise</a>
-      {% if session.get('user_id') %}
-      <a href="{{ url_for('dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('logout') }}" class="btn btn--ghost">Logout</a>
-      {% else %}
-      <a href="{{ url_for('register') }}" class="btn">Jetzt registrieren</a>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+  <div class="container-fluid">
+    <!-- Brand / Titel -->
+    <a
+      class="navbar-brand"
+      href="{{ url_for('dashboard') if session.get('user_id') else url_for('public_home') }}"
+    >
+      🚀 Super-Agent {% if session.get('is_admin') %}
+      <span class="badge bg-warning text-dark ms-2">Admin</span>
       {% endif %}
-    </nav>
+    </a>
+
+    <!-- Burger-Button für mobile -->
+    <button
+      class="navbar-toggler"
+      type="button"
+      data-bs-toggle="collapse"
+      data-bs-target="#mainNavbar"
+      aria-controls="mainNavbar"
+      aria-expanded="false"
+      aria-label="Toggle navigation"
+    >
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="mainNavbar">
+      <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+        {% if session.get('user_id') %}
+        <!-- Eingeloggt -->
+
+        <li class="nav-item">
+          <a
+            class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}"
+            href="{{ url_for('dashboard') }}"
+          >
+            Dashboard
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a
+            class="nav-link {% if request.endpoint in ['search', 'search_legacy'] %}active{% endif %}"
+            href="{{ url_for('search') }}"
+          >
+            🔍 Suche
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a
+            class="nav-link {% if '/alerts' in request.path %}active{% endif %}"
+            href="{{ url_for('alerts_manage') }}"
+          >
+            🔔 Alerts
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a
+            class="nav-link {% if request.endpoint == 'watchlist' %}active{% endif %}"
+            href="{{ url_for('watchlist') }}"
+          >
+            ⭐ Watchlist
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a
+            class="nav-link {% if request.endpoint == 'telegram_settings' %}active{% endif %}"
+            href="{{ url_for('telegram_settings') }}"
+          >
+            💬 Telegram
+          </a>
+        </li>
+
+        {% if session.get('is_admin') %}
+        <li class="nav-item">
+          <a
+            class="nav-link {% if request.endpoint == 'admin_stats' %}active{% endif %}"
+            href="{{ url_for('admin_stats') }}"
+          >
+            📊 Admin
+          </a>
+        </li>
+        {% endif %}
+
+        <li class="nav-item">
+          <a class="nav-link" href="{{ url_for('logout') }}"> Logout </a>
+        </li>
+
+        {% else %}
+        <!-- Nicht eingeloggt: Public-Navigation -->
+
+        <li class="nav-item">
+          <a
+            class="nav-link {% if request.endpoint == 'public_home' %}active{% endif %}"
+            href="{{ url_for('public_home') }}"
+          >
+            Start
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a
+            class="nav-link {% if request.endpoint == 'public_pricing' %}active{% endif %}"
+            href="{{ url_for('public_pricing') }}"
+          >
+            Preise
+          </a>
+        </li>
+
+        <li class="nav-item">
+          <a class="btn btn-sm btn-outline-light ms-lg-3" href="{{ url_for('login') }}">
+            Login / Registrieren
+          </a>
+        </li>
+        {% endif %}
+      </ul>
+    </div>
   </div>
-</header>
-<li><a href="{{ url_for('public_home') }}">Start</a></li>
-<li><a href="{{ url_for('public_pricing') }}">Preise</a></li>
-<li class="nav-item"><a class="nav-link" href="{{ url_for('search') }}">Suche</a></li>
-<li class="nav-item">
-  <a class="nav-link" href="{{ url_for('import_agents') }}">Import</a>
-</li>
-<li class="nav-item">
-  <a
-    class="nav-link {% if request.path.startswith('/search') and not '/search_ebay' in request.path %}active{% endif %}"
-    href="{{ url_for('search') }}"
-    >🔍 Suche</a
-  >
-</li>
-<li class="nav-item">
-  <a
-    class="nav-link {% if '/search_ebay' in request.path %}active{% endif %}"
-    href="{{ url_for('search_ebay') }}"
-    >🧪 eBay-Suche (Beta)</a
-  >
-</li>
+</nav>

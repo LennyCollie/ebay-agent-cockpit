@@ -1,0 +1,204 @@
+{% extends "base.html" %} {% block title %} Meine Such-Alerts {% endblock %} {% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Meine Such-Alerts</h1>
+    <a href="{{ url_for('search') }}" class="btn btn-primary"> ➕ Neuen Alert anlegen </a>
+  </div>
+
+  {# kleine Legende / Filter für Kanäle #} {% if alerts|length > 0 %}
+  <div class="alert alert-light border mb-3">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <div class="me-3">
+        <strong>Kanäle:</strong>
+        <span class="badge bg-secondary ms-1">📧 E-Mail</span>
+        <span class="badge bg-info text-dark ms-1">💬 Telegram</span>
+      </div>
+
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="fw-semibold me-1">Filter:</span>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary active"
+          data-channel-filter="all"
+        >
+          Alle
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-channel-filter="email">
+          nur 📧
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary"
+          data-channel-filter="telegram"
+        >
+          nur 💬
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-channel-filter="both">
+          📧 + 💬
+        </button>
+      </div>
+    </div>
+  </div>
+  {% endif %} {% if alerts|length == 0 %}
+  <div class="alert alert-info">
+    Du hast noch keine Alerts angelegt. Lege über die Suche einen neuen Alert an.
+  </div>
+  {% else %}
+
+  <div class="table-responsive">
+    <table class="table table-striped table-hover align-middle" data-alerts-table="1">
+      <thead class="table-light">
+        <tr>
+          <th>ID</th>
+          <th>Quelle</th>
+          <th>Suchbegriffe</th>
+          <th>Preis</th>
+          <th>Land</th>
+          <th>Kanäle</th>
+          <th>Aktiv</th>
+          <th>Letzter Lauf</th>
+          <th>Erstellt</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in alerts %}
+        <tr
+          data-email="{{ 1 if alert.notify_email else 0 }}"
+          data-telegram="{{ 1 if alert.notify_telegram else 0 }}"
+        >
+          <td>{{ alert.id }}</td>
+
+          <!-- Quelle / Source -->
+          <td>
+            {% if alert.source == 'kleinanzeigen' %}
+            <span class="badge bg-success">🟢 Kleinanzeigen</span>
+            {% else %}
+            <span class="badge bg-primary">🔵 eBay</span>
+            {% endif %}
+          </td>
+
+          <!-- Suchbegriffe -->
+          <td>{{ alert.search_terms or "–" }}</td>
+
+          <!-- Preisbereich -->
+          <td>
+            {% if alert.price_min or alert.price_max %} {% if alert.price_min %}ab {{
+            alert.price_min }} €{% endif %} {% if alert.price_min and alert.price_max %} – {% endif
+            %} {% if alert.price_max %}bis {{ alert.price_max }} €{% endif %} {% else %} – {% endif
+            %}
+          </td>
+
+          <!-- Land -->
+          <td>{{ alert.location_country or "DE" }}</td>
+
+          <!-- Kanäle -->
+          <td>
+            {% if alert.notify_email %}
+            <span class="badge bg-secondary">📧 E-Mail</span>
+            {% endif %} {% if alert.notify_telegram %}
+            <span class="badge bg-info text-dark">💬 Telegram</span>
+            {% endif %} {% if not alert.notify_email and not alert.notify_telegram %}
+            <span class="text-muted">Keine</span>
+            {% endif %}
+          </td>
+
+          <!-- Aktiv? -->
+          <td>
+            {% if alert.is_active %}
+            <span class="badge bg-success">Aktiv</span>
+            {% else %}
+            <span class="badge bg-danger">Inaktiv</span>
+            {% endif %}
+          </td>
+
+          <!-- Letzter Lauf (schön formatiert) -->
+          <td>
+            {% if alert.last_run_str %} {{ alert.last_run_str }} {% else %}
+            <span class="text-muted">noch nie</span>
+            {% endif %}
+          </td>
+
+          <!-- Erstellt am (schön formatiert) -->
+          <td>{% if alert.created_at_str %} {{ alert.created_at_str }} {% else %} – {% endif %}</td>
+
+          <!-- Aktionen -->
+          <td class="text-nowrap">
+            {% if is_admin %}
+            <a
+              href="{{ url_for('alert_results', alert_id=alert.id) }}"
+              class="btn btn-sm btn-outline-secondary me-1"
+            >
+              🕒 Ergebnisse
+            </a>
+            {% endif %}
+
+            <form
+              action="{{ url_for('alert_toggle', alert_id=alert.id) }}"
+              method="post"
+              class="d-inline"
+            >
+              <button
+                type="submit"
+                class="btn btn-sm {% if alert.is_active %}btn-warning{% else %}btn-success{% endif %}"
+              >
+                {% if alert.is_active %}Deaktivieren{% else %}Aktivieren{% endif %}
+              </button>
+            </form>
+
+            <form
+              action="{{ url_for('alert_delete', alert_id=alert.id) }}"
+              method="post"
+              class="d-inline ms-1"
+              onsubmit="return confirm('Alert wirklich löschen?');"
+            >
+              <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% endif %}
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const buttons = document.querySelectorAll("[data-channel-filter]");
+    const rows = document.querySelectorAll("table[data-alerts-table] tbody tr");
+
+    function applyFilter(mode) {
+      rows.forEach(function (row) {
+        const hasEmail = row.getAttribute("data-email") === "1";
+        const hasTelegram = row.getAttribute("data-telegram") === "1";
+
+        let show = true;
+        if (mode === "email") {
+          show = hasEmail && !hasTelegram;
+        } else if (mode === "telegram") {
+          show = hasTelegram && !hasEmail;
+        } else if (mode === "both") {
+          show = hasEmail && hasTelegram;
+        } else {
+          show = true; // "all"
+        }
+
+        row.style.display = show ? "" : "none";
+      });
+    }
+
+    buttons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const mode = btn.getAttribute("data-channel-filter");
+
+        buttons.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        applyFilter(mode);
+      });
+    });
+  });
+</script>
+{% endblock %}

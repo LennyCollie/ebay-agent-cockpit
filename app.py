@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
+from math import ceil
 
 from alert_checker import run_alert_check
 from database import get_db, dict_cursor, init_db, IS_POSTGRES, get_placeholder
@@ -102,13 +103,18 @@ login_manager.login_message_category = "warning"
 
 # Minimaler UserMixin für Flask-Login (kompatibel mit deiner DB-Struktur)
 class User(UserMixin):
-    def __init__(self, id, email, is_premium=False):
-        self.id = str(id)           # Flask-Login erwartet String als get_id()
+    def __init__(self, id, email, is_premium=False, is_admin=False, plan_type="free"):
+        self.id = id
         self.email = email
         self.is_premium = is_premium
+        self.is_admin = is_admin
+        self.plan_type = plan_type
 
-    def get_id(self):
-        return self.id
+ADMIN_EMAILS = {
+    e.strip().lower()
+    for e in os.getenv("ADMIN_EMAILS", "").split(",")
+    if e.strip()
+}
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -116,11 +122,28 @@ def load_user(user_id):
     try:
         conn = get_db()
         cur = dict_cursor(conn)
-        cur.execute("SELECT id, email, is_premium FROM users WHERE id = %s", (int(user_id),))
+        cur.execute(
+            """
+            SELECT id, email, is_premium, is_admin, plan_type
+            FROM users
+            WHERE id = %s
+            """,
+            (int(user_id),),
+        )
         row = cur.fetchone()
         conn.close()
         if row:
-            return User(row["id"], row["email"], bool(row["is_premium"]))
+            email = row["email"].lower()
+            # Admin entweder aus DB-Spalte ODER aus ENV ADMIN_EMAILS
+            is_admin_flag = bool(row.get("is_admin", 0)) or (email in ADMIN_EMAILS)
+
+            return User(
+                id=row["id"],
+                email=row["email"],
+                is_premium=bool(row.get("is_premium", 0)),
+                is_admin=is_admin_flag,
+                plan_type=row.get("plan_type", "free"),
+            )
     except Exception as e:
         print(f"[user_loader] Fehler: {e}")
     return None
@@ -1245,7 +1268,7 @@ def login():
     password = (request.form.get("password") or "").strip()
 
     print(f"[LOGIN DEBUG] Email: {email}")
-    print(f"[LOGIN DEBUG] Password: {'*' * len(password)}")  # Sicherer: Passwort nicht im Klartext loggen!
+    print(f"[LOGIN DEBUG] Password: {'*' * len(password)}")
 
     conn = get_db()
     cur = dict_cursor(conn)
@@ -1253,8 +1276,18 @@ def login():
 
     try:
         cur.execute(
-            f"SELECT id, password, is_premium FROM users WHERE email = {ph}",
-            (email,)
+            f"""
+            SELECT
+                id,
+                email,
+                password,
+                is_premium,
+                is_admin,
+                plan_type
+            FROM users
+            WHERE email = {ph}
+            """,
+            (email,),
         )
         row = cur.fetchone()
     except Exception as e:
@@ -1270,33 +1303,43 @@ def login():
         flash("E-Mail oder Passwort ist falsch.", "warning")
         return redirect(url_for("login"))
 
-    # --- Erfolgreich eingeloggt ---
     print("[LOGIN DEBUG] Login successful!")
 
-    # Flask-Login User-Objekt erstellen
+    # Admin-Flag bestimmen
+    email_db = row["email"].lower()
+    is_admin_flag = bool(row.get("is_admin", 0)) or (email_db in ADMIN_EMAILS)
+
+    # User-Objekt für Flask-Login
     user = User(
         id=row["id"],
-        email=email,
-        is_premium=bool(row["is_premium"])
+        email=row["email"],
+        is_premium=bool(row.get("is_premium", 0)),
+        is_admin=is_admin_flag,
+        plan_type=row.get("plan_type", "free"),
     )
 
-    # Session-Variablen beibehalten (für deine alten Templates)
-    session["user_id"] = int(row["id"])
-    session["user_email"] = email
-    session["is_premium"] = bool(row["is_premium"])
-    session.permanent = True
+    # Session-Variablen (für Navbar / Templates)
+    session["user_id"] = user.id
+    session["user_email"] = user.email
+    session["plan_type"] = user.plan_type
+    session["is_premium"] = bool(user.is_premium)
+    session["is_admin"] = bool(user.is_admin)
 
-    # WICHTIG: Flask-Login aktivieren!
-    login_user(user, remember=True)  # remember=True → Cookie bleibt 30 Tage
+    print(f"[LOGIN DEBUG] is_admin from DB/env: {is_admin_flag}")
+    print(f"[LOGIN DEBUG] session['is_admin']: {session['is_admin']}")
+
+    # Flask-Login
+    login_user(user, remember=True)
 
     flash("Login erfolgreich.", "success")
 
-    # Sicherer Redirect: vermeidet Open Redirects
     next_page = request.args.get("next")
     if not next_page or not next_page.startswith("/"):
         next_page = url_for("dashboard")
 
     return redirect(next_page)
+
+
 
 @app.route("/logout")
 def logout():
@@ -1352,6 +1395,77 @@ def get_watchlist_stats(user_email, conn):
         "plan": plan,
         "check_interval": limits["check_interval"],
     }
+
+def format_ts(ts: Optional[int]) -> Optional[str]:
+    """Unix-Timestamp (Sekunden) in 'DD.MM.YYYY HH:MM' umwandeln."""
+    if not ts:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ts)).strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        # Fallback, wenn irgendwas komisch ist
+        return str(ts)
+
+
+from typing import Optional
+
+def build_item_url(src: str, item_id: Optional[str]) -> Optional[str]:
+    """
+    Baut eine Klick-URL für gespeicherte Items.
+    Unterstützt:
+      - eBay (itemId z.B. 'v1|123456789012|0' oder '123456789012')
+      - Kleinanzeigen (z.B. 'ka_326762728', '326762728' oder fertige URL)
+    """
+    if not item_id:
+        return None
+
+    # Wenn schon eine komplette URL gespeichert ist, einfach zurückgeben
+    if item_id.startswith("http://") or item_id.startswith("https://"):
+        return item_id
+
+    src = (src or "").lower()
+
+    # --------------------------------------------------
+    # Kleinanzeigen
+    # --------------------------------------------------
+    if "klein" in src:
+        # Falls doch mal eine fertige URL drinsteht
+        if "kleinanzeigen.de" in item_id:
+            return item_id
+
+        ka_id = item_id
+
+        # unsere gespeicherten IDs sehen oft aus wie "ka_326762728"
+        if ka_id.startswith("ka_"):
+            ka_id = ka_id.split("_", 1)[1]
+
+        # nur Ziffern nehmen, falls noch Müll drin ist
+        ka_id_digits = "".join(ch for ch in ka_id if ch.isdigit())
+        if not ka_id_digits:
+            return None
+
+        # Standard-Detail-URL
+        return f"https://www.kleinanzeigen.de/s-anzeige/-/{ka_id_digits}"
+
+    # --------------------------------------------------
+    # eBay
+    # --------------------------------------------------
+    ebay_id = item_id
+
+    # Browse-API: v1|123456789012|0  → 123456789012
+    if ebay_id.startswith("v1|"):
+        parts = ebay_id.split("|")
+        if len(parts) >= 2:
+            ebay_id = parts[1]
+
+    # sicherheitshalber nur Ziffern übrig lassen
+    ebay_id_digits = "".join(ch for ch in ebay_id if ch.isdigit())
+    if not ebay_id_digits:
+        return None
+
+    return f"https://www.ebay.de/itm/{ebay_id_digits}"
+
+
 
 
 @app.route("/dashboard")
@@ -3225,6 +3339,351 @@ def admin_delete_alert(alert_id):
 
     return redirect("/admin/alerts")
 
+@app.route("/alerts/manage")
+def alerts_manage():
+    """Übersicht & Verwaltung aller Alerts des eingeloggten Users."""
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    if not user_email:
+        flash("Kein Benutzer im Session-Kontext gefunden.", "warning")
+        return redirect(url_for("login"))
+
+    is_admin = user_email.lower() in ADMIN_EMAILS
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Achtung: %s ist hier für PostgreSQL korrekt.
+        cur.execute(
+            """
+            SELECT
+                id,
+                user_email,
+                terms_json,
+                filters_json,
+                is_active,
+                last_run_ts,
+                source,
+                notify_email,
+                notify_telegram,
+                per_page,
+                created_at
+            FROM search_alerts
+            WHERE user_email = %s
+            ORDER BY created_at DESC, id DESC
+            """,
+            (user_email,),
+        )
+        rows = cur.fetchall()
+    except Exception as e:
+        conn.close()
+        current_app.logger.exception("Fehler beim Laden der Alerts")
+        flash(f"Fehler beim Laden der Alerts: {e}", "danger")
+        return redirect(url_for("dashboard"))
+
+    col_names = [c[0] for c in cur.description]
+
+    alerts = []
+    for row in rows:
+        # row -> dict
+        data = {col_names[i]: row[i] for i in range(len(col_names))}
+
+        # Terms & Filter sicher parsen
+        try:
+            terms = json.loads(data.get("terms_json") or "[]")
+        except Exception:
+            terms = []
+
+        try:
+            filters = json.loads(data.get("filters_json") or "{}")
+        except Exception:
+            filters = {}
+
+        # last_run_ts (UNIX-Timestamp) hübsch formatieren
+        raw_last_run = data.get("last_run_ts")
+        if raw_last_run:
+            try:
+                ts_int = int(raw_last_run)
+                dt = datetime.fromtimestamp(ts_int)
+                last_run_str = dt.strftime("%d.%m.%Y %H:%M")
+            except Exception:
+                last_run_str = str(raw_last_run)
+        else:
+            last_run_str = None
+
+        # created_at (TIMESTAMP aus Postgres) formatieren
+        raw_created = data.get("created_at")
+        if raw_created:
+            try:
+                if isinstance(raw_created, str):
+                    dt_created = datetime.fromisoformat(raw_created)
+                else:
+                    dt_created = raw_created
+                created_at_str = dt_created.strftime("%d.%m.%Y %H:%M")
+            except Exception:
+                created_at_str = str(raw_created)
+        else:
+            created_at_str = None
+
+        alerts.append(
+            {
+                "id": data["id"],
+                "user_email": data.get("user_email"),
+                "source": (data.get("source") or "ebay").lower(),
+                "is_active": bool(data.get("is_active")),
+                "notify_email": bool(data.get("notify_email")),
+                "notify_telegram": bool(data.get("notify_telegram")),
+                "search_terms": ", ".join(terms) if terms else "–",
+                "price_min": filters.get("price_min") or "",
+                "price_max": filters.get("price_max") or "",
+                "location_country": filters.get("location_country", "DE"),
+                "per_page": data.get("per_page") or 20,
+                "last_run_ts": raw_last_run,
+                "last_run_str": last_run_str,
+                "created_at": raw_created,
+                "created_at_str": created_at_str,
+            }
+        )
+
+    conn.close()
+
+    return safe_render(
+        "alerts_manage.html",
+        title="Meine Such-Alerts",
+        alerts=alerts,
+        is_admin=is_admin,
+    )
+
+
+@app.route("/alerts/<int:alert_id>/toggle", methods=["POST"])
+def alert_toggle(alert_id: int):
+    """Aktiv / Inaktiv umschalten."""
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    if not user_email:
+        flash("Kein Benutzer im Session-Kontext gefunden.", "warning")
+        return redirect(url_for("login"))
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        cur.execute(
+            """
+            UPDATE search_alerts
+            SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END
+            WHERE id = %s AND user_email = %s
+            """,
+            (alert_id, user_email),
+        )
+        if cur.rowcount == 0:
+            flash("Alert nicht gefunden oder keine Berechtigung.", "warning")
+        else:
+            flash("Alert-Status wurde aktualisiert.", "success")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        current_app.logger.exception("Fehler beim Umschalten des Alert-Status")
+        flash(f"Fehler beim Aktualisieren des Alerts: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("alerts_manage"))
+
+
+@app.route("/alerts/<int:alert_id>/delete", methods=["POST"])
+def alert_delete(alert_id: int):
+    """Alert komplett löschen (+ gesehene Items)."""
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    if not user_email:
+        flash("Kein Benutzer im Session-Kontext gefunden.", "warning")
+        return redirect(url_for("login"))
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Gesehene Items zu diesem Alert aufräumen
+        cur.execute(
+            "DELETE FROM alert_seen WHERE user_email = %s AND search_hash = %s",
+            (user_email, str(alert_id)),
+        )
+
+        # Alert selbst löschen
+        cur.execute(
+            "DELETE FROM search_alerts WHERE id = %s AND user_email = %s",
+            (alert_id, user_email),
+        )
+
+        if cur.rowcount == 0:
+            flash("Alert nicht gefunden oder keine Berechtigung.", "warning")
+        else:
+            flash("Alert wurde gelöscht.", "success")
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        current_app.logger.exception("Fehler beim Löschen eines Alerts")
+        flash(f"Fehler beim Löschen des Alerts: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("alerts_manage"))
+
+
+@app.route("/alerts/<int:alert_id>/results")
+def alert_results(alert_id: int):
+    """
+    Zeigt die zuletzt gesehenen Items für einen Alert.
+    Mit:
+      - Quelle (Badge)
+      - Direkt-Öffnen-Button
+      - Sortierung & Pagination
+    """
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    if not user_email:
+        flash("Kein Benutzer im Session-Kontext gefunden.", "warning")
+        return redirect(url_for("login"))
+
+    if user_email.lower() not in ADMIN_EMAILS:
+        flash("Diese Seite ist nur für Admins verfügbar.", "warning")
+        return redirect(url_for("alerts_manage"))
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Paging & Sortierung aus Query-Parametern
+    page = request.args.get("page", 1, type=int)
+    if page < 1:
+        page = 1
+
+    sort = request.args.get("sort", "last_sent_desc")
+    per_page = 50  # kannst du bei Bedarf anpassen
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Alert-Metadaten (gleichzeitig Ownership check)
+        cur.execute(
+            """
+            SELECT id, user_email, terms_json, source
+            FROM search_alerts
+            WHERE id = %s AND user_email = %s
+            """,
+            (alert_id, user_email),
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            flash("Alert nicht gefunden oder gehört nicht zu deinem Konto.", "warning")
+            return redirect(url_for("alerts_manage"))
+
+        _, _, terms_json, source = row
+        alert_source = (source or "ebay").lower()
+        source_label = "Kleinanzeigen" if alert_source == "kleinanzeigen" else "eBay"
+
+        try:
+            terms_list = json.loads(terms_json or "[]")
+        except Exception:
+            terms_list = []
+        terms_display = ", ".join(terms_list) if terms_list else "–"
+
+        # Gesamtanzahl für Pagination
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM alert_seen
+            WHERE user_email = %s AND search_hash = %s
+            """,
+            (user_email, str(alert_id)),
+        )
+        total_items = cur.fetchone()[0] or 0
+
+        # Sortierung sicher mappen
+        if sort == "first_seen_asc":
+            order_clause = "first_seen ASC"
+        elif sort == "first_seen_desc":
+            order_clause = "first_seen DESC"
+        elif sort == "last_sent_asc":
+            order_clause = "last_sent ASC"
+        else:
+            sort = "last_sent_desc"
+            order_clause = "last_sent DESC"
+
+        offset = (page - 1) * per_page
+
+        cur.execute(
+            f"""
+            SELECT item_id, src, first_seen, last_sent
+            FROM alert_seen
+            WHERE user_email = %s AND search_hash = %s
+            ORDER BY {order_clause}
+            LIMIT %s OFFSET %s
+            """,
+            (user_email, str(alert_id), per_page, offset),
+        )
+        rows = cur.fetchall()
+    except Exception as e:
+        conn.close()
+        current_app.logger.exception("Fehler beim Laden der Alert-Ergebnisse")
+        flash(f"Fehler beim Laden der Alert-Ergebnisse: {e}", "danger")
+        return redirect(url_for("alerts_manage"))
+
+    conn.close()
+
+    items = []
+    for idx, row in enumerate(rows, start=1 + offset):
+        item_id, src, first_seen_ts, last_sent_ts = row
+        src = (src or alert_source or "ebay").lower()
+        item_id_str = str(item_id or "")
+
+        items.append(
+            {
+                "rownum": idx,
+                "item_id": item_id_str,
+                "src": src,
+                "first_seen_str": format_ts(first_seen_ts),
+                "last_sent_str": format_ts(last_sent_ts),
+                "url": build_item_url(src, item_id_str),
+            }
+        )
+
+    total_pages = max(1, ceil(total_items / per_page)) if total_items else 1
+
+    return safe_render(
+        "alert_results.html",
+        title=f"Letzte Ergebnisse – Alert #{alert_id}",
+        alert_id=alert_id,
+        alert_source=alert_source,
+        alert_source_label=source_label,
+        terms_display=terms_display,
+        items=items,
+        page=page,
+        total_pages=total_pages,
+        total_items=total_items,
+        sort=sort,
+    )
+
+
+
+
+
 
 @app.route("/admin/bounces")
 def admin_bounces():
@@ -3654,6 +4113,32 @@ def admin_stats_recalc():
         204,
         {"HX-Redirect": f"/admin/stats{q}"},
     )  # funktioniert normal & mit HTMX
+
+    # ---------------------------------------------------------
+# Globale Template-Variablen (Admin-Flag etc.)
+# ---------------------------------------------------------
+from flask import session  # falls oben noch nicht importiert
+
+def is_admin_email(email: str) -> bool:
+    """Hilfsfunktion: Prüft, ob E-Mail in ADMIN_EMAILS eingetragen ist."""
+    admin_env = os.getenv("ADMIN_EMAILS", "")
+    admins = [
+        e.strip().lower()
+        for e in admin_env.split(",")
+        if e.strip()
+    ]
+    return email and email.lower() in admins
+
+
+@app.context_processor
+def inject_user_flags():
+    """Stellt is_admin in ALLEN Templates zur Verfügung."""
+    user_email = session.get("user_email")
+    return {
+        "current_user_email": user_email,
+        "is_admin": is_admin_email(user_email) if user_email else False,
+    }
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
