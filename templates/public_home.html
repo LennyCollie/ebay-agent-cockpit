@@ -48,151 +48,233 @@
   </div>
 </section>
 
-<!-- ============ BELIEBTE SUCHEN / KACHELN ============ -->
-<section class="container py-5" id="popular-searches">
-  <div class="text-center mb-4">
-    <h2 class="h2 fw-bold">Beliebte Suchen</h2>
-    <p class="text-muted">Ein Klick – sofort vorgefüllt starten.</p>
+<section class="py-5 bg-light border-top">
+  <div class="container">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+      <div>
+        <h2 class="h4 mb-1">Beliebte Agenten</h2>
+        <p class="text-muted mb-0">
+          Ein Klick – fertige Suche mit Preislimit. Auf der Ergebnisseite kannst du daraus sofort
+          einen 🔔 Alert machen.
+        </p>
+      </div>
+      {% if current_user.is_authenticated %}
+      <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold">
+        ✅ Eingeloggt – Alerts direkt verfügbar
+      </span>
+      {% else %}
+      <span class="badge bg-warning-subtle text-warning border border-warning-subtle fw-semibold">
+        👋 Tipp: Registriere dich, um aus diesen Suchen Alerts zu machen
+      </span>
+      {% endif %}
+    </div>
+
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+      {# 1: Bosch Akku-Bohrschrauber #}
+      <div class="col">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <span class="badge bg-primary">Werkzeug</span>
+              <span class="badge bg-light text-muted border">eBay</span>
+            </div>
+            <h3 class="h6 fw-semibold mb-1">Bosch GSR 18V-55</h3>
+            <p class="small text-muted mb-3">
+              Profi-Akkuschrauber, Preisdeckel bei ca. 120&nbsp;€ – ideal zum Agent-Monitoring.
+            </p>
+            <dl class="row small mb-3">
+              <dt class="col-5 text-muted">Preis max.</dt>
+              <dd class="col-7 mb-0">120&nbsp;€</dd>
+              <dt class="col-5 text-muted">Quelle</dt>
+              <dd class="col-7 mb-0">eBay (Sofort-Kauf bevorzugt)</dd>
+            </dl>
+            <div class="mt-auto d-flex gap-2">
+              <a
+                href="{{ url_for('search.search_page',
+                                  q1='Bosch GSR 18V-55',
+                                  price_max=120,
+                                  source='ebay') }}"
+                class="btn btn-sm btn-primary flex-grow-1"
+              >
+                🔍 Suche öffnen
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# 2: AirPods Pro 2 #}
+      <div class="col">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <span class="badge bg-info">Audio</span>
+              <span class="badge bg-light text-muted border">eBay</span>
+            </div>
+            <h3 class="h6 fw-semibold mb-1">AirPods Pro (2. Gen)</h3>
+            <p class="small text-muted mb-3">
+              Gefragte Kopfhörer – Agent hält Ausschau nach guten Preisen &amp; gutem Zustand.
+            </p>
+            <dl class="row small mb-3">
+              <dt class="col-5 text-muted">Preis max.</dt>
+              <dd class="col-7 mb-0">200&nbsp;€</dd>
+              <dt class="col-5 text-muted">Zustand</dt>
+              <dd class="col-7 mb-0">Neu oder wie neu</dd>
+            </dl>
+            <div class="mt-auto d-flex gap-2">
+              <a
+                href="{{ url_for('search.search_page',
+                                  q1='AirPods Pro 2',
+                                  price_max=200,
+                                  source='ebay',
+                                  condition='NEW') }}"
+                class="btn btn-sm btn-primary flex-grow-1"
+              >
+                🔍 Suche öffnen
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# 3: Nintendo Switch OLED #}
+      <div class="col">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <span class="badge bg-danger">Konsolen</span>
+              <span class="badge bg-light text-muted border">eBay &amp; Kleinanzeigen</span>
+            </div>
+            <h3 class="h6 fw-semibold mb-1">Nintendo Switch OLED</h3>
+            <p class="small text-muted mb-3">
+              Für Deals unter 260&nbsp;€ – kombiniert eBay &amp; Kleinanzeigen über Agenten.
+            </p>
+            <dl class="row small mb-3">
+              <dt class="col-5 text-muted">Preis max.</dt>
+              <dd class="col-7 mb-0">260&nbsp;€</dd>
+              <dt class="col-5 text-muted">Quelle</dt>
+              <dd class="col-7 mb-0">Beides (Agent)</dd>
+            </dl>
+            <div class="mt-auto d-flex gap-2">
+              <a
+                href="{{ url_for('search.search_page',
+                                  q1='Nintendo Switch OLED',
+                                  price_max=260,
+                                  source='both') }}"
+                class="btn btn-sm btn-primary flex-grow-1"
+              >
+                🔍 Suche öffnen
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# 4: Revox A700 (dein Klassiker 😉) #}
+      <div class="col">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <span class="badge bg-secondary">Vintage&nbsp;HiFi</span>
+              <span class="badge bg-light text-muted border">Kleinanzeigen</span>
+            </div>
+            <h3 class="h6 fw-semibold mb-1">Revox A700</h3>
+            <p class="small text-muted mb-3">
+              Bandmaschine für Sammler – hier lohnt sich ein Agent besonders.
+            </p>
+            <dl class="row small mb-3">
+              <dt class="col-5 text-muted">Preis max.</dt>
+              <dd class="col-7 mb-0">offen (VB)</dd>
+              <dt class="col-5 text-muted">Quelle</dt>
+              <dd class="col-7 mb-0">Kleinanzeigen</dd>
+            </dl>
+            <div class="mt-auto d-flex gap-2">
+              <a
+                href="{{ url_for('search.search_page',
+                                  q1='Revox A700',
+                                  source='kleinanzeigen') }}"
+                class="btn btn-sm btn-primary flex-grow-1"
+              >
+                🔍 Suche öffnen
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# 5: LEGO Technic – Lamborghini Sian #}
+      <div class="col">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <span class="badge bg-warning text-dark">LEGO</span>
+              <span class="badge bg-light text-muted border">eBay</span>
+            </div>
+            <h3 class="h6 fw-semibold mb-1">LEGO Technic 42115 Lamborghini Sián</h3>
+            <p class="small text-muted mb-3">
+              Beliebtes Set – Agent sucht nach Angeboten unter 280&nbsp;€.
+            </p>
+            <dl class="row small mb-3">
+              <dt class="col-5 text-muted">Preis max.</dt>
+              <dd class="col-7 mb-0">280&nbsp;€</dd>
+              <dt class="col-5 text-muted">Zustand</dt>
+              <dd class="col-7 mb-0">Neu bevorzugt</dd>
+            </dl>
+            <div class="mt-auto d-flex gap-2">
+              <a
+                href="{{ url_for('search.search_page',
+                                  q1='LEGO Technic 42115 Lamborghini',
+                                  price_max=280,
+                                  source='ebay',
+                                  condition='NEW') }}"
+                class="btn btn-sm btn-primary flex-grow-1"
+              >
+                🔍 Suche öffnen
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# 6: Sonos One Lautsprecher #}
+      <div class="col">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <span class="badge bg-dark">Smart Audio</span>
+              <span class="badge bg-light text-muted border">Kleinanzeigen</span>
+            </div>
+            <h3 class="h6 fw-semibold mb-1">Sonos One SL</h3>
+            <p class="small text-muted mb-3">
+              Multiroom-Lautsprecher, typische Schnäppchen unter 150&nbsp;€.
+            </p>
+            <dl class="row small mb-3">
+              <dt class="col-5 text-muted">Preis max.</dt>
+              <dd class="col-7 mb-0">150&nbsp;€</dd>
+              <dt class="col-5 text-muted">Quelle</dt>
+              <dd class="col-7 mb-0">Kleinanzeigen</dd>
+            </dl>
+            <div class="mt-auto d-flex gap-2">
+              <a
+                href="{{ url_for('search.search_page',
+                                  q1='Sonos One SL',
+                                  price_max=150,
+                                  source='kleinanzeigen') }}"
+                class="btn btn-sm btn-primary flex-grow-1"
+              >
+                🔍 Suche öffnen
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="small text-muted mt-3">
+      Du kannst jede dieser Suchen auf der Ergebnisseite feinjustieren (Preis, Zustand, Quelle) und
+      dann als eigenen Agenten speichern.
+    </p>
   </div>
-
-  <!-- row START -->
-  <div class="row g-3 row-cols-1 row-cols-sm-2 row-cols-lg-3">
-    <!-- Karte 1: LEGO Technic 42115 -->
-    <div class="col">
-      <a
-        href="/search?q1=lego+technic+42115&price_max=200&sort=newly&per_page=100&condition=USED"
-        class="card card-hover h-100 text-decoration-none border-primary border-2"
-      >
-        <div class="card-body">
-          <span class="badge text-bg-primary mb-2">Neu eingestellt</span>
-          <h3 class="h6 text-dark mb-1">LEGO Technic 42115 „Lamborghini Sián“</h3>
-          <p class="text-muted small mb-3">Gebraucht · max. 200 €</p>
-          <span class="fw-medium">Jetzt öffnen →</span>
-        </div>
-      </a>
-    </div>
-
-    <!-- Karte 2: GameCube Controller -->
-    <div class="col">
-      <a
-        href="/search?q1=nintendo+gamecube+controller+original&price_max=30&sort=newly&per_page=100&condition=USED"
-        class="card card-hover h-100 text-decoration-none border-success border-2"
-      >
-        <div class="card-body">
-          <span class="badge text-bg-success mb-2">Schnäppchen</span>
-          <h3 class="h6 text-dark mb-1">Nintendo GameCube Controller (Original)</h3>
-          <p class="text-muted small mb-3">Gebraucht · max. 30 €</p>
-          <span class="fw-medium">Jetzt öffnen →</span>
-        </div>
-      </a>
-    </div>
-
-    <!-- Karte 3: iPhone 12 Display -->
-    <div class="col">
-      <a
-        href="/search?q1=iphone+12+display+original&price_min=40&price_max=80&sort=newly&per_page=60&condition=CERTIFIED_REFURBISHED"
-        class="card card-hover h-100 text-decoration-none border-warning border-2"
-      >
-        <div class="card-body">
-          <span class="badge text-bg-warning mb-2">Refurbished</span>
-          <h3 class="h6 text-dark mb-1">iPhone 12 Display (Original/Refurbished)</h3>
-          <p class="text-muted small mb-3">40–80 € · Zert. Refurb.</p>
-          <span class="fw-medium">Jetzt öffnen →</span>
-        </div>
-      </a>
-    </div>
-
-    <!-- Karte 4: Dyson V11 Absolute -->
-    <div class="col">
-      <a
-        href="/search?q1=dyson+v11+absolute&price_max=250&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=dysonv11"
-        class="card card-hover h-100 text-decoration-none border-info border-2"
-      >
-        <div class="card-body">
-          <span class="badge text-bg-info mb-2">Haushalt</span>
-          <h3 class="h6 text-dark mb-1">Dyson V11 Absolute</h3>
-          <p class="text-muted small mb-3">Gebraucht · max. 250 €</p>
-          <span class="fw-medium">Jetzt öffnen →</span>
-        </div>
-      </a>
-    </div>
-
-    <!-- Karte 5: AirPods Pro 2 (refurb) -->
-    <div class="col">
-      <a
-        href="/search?q1=airpods+pro+2&price_min=120&price_max=190&sort=newly&per_page=60&condition=CERTIFIED_REFURBISHED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=airpodspro2"
-        class="card card-hover h-100 text-decoration-none border-warning border-2"
-      >
-        <div class="card-body">
-          <span class="badge text-bg-warning mb-2">Refurbished</span>
-          <h3 class="h6 text-dark mb-1">AirPods Pro 2</h3>
-          <p class="text-muted small mb-3">120–190 € · Zert. Refurb.</p>
-          <span class="fw-medium">Jetzt öffnen →</span>
-        </div>
-      </a>
-    </div>
-
-    <!-- Karte 6: Bosch GSR 18V-55 -->
-    <div class="col">
-      <a
-        href="/search?q1=bosch+professional+gsr+18v-55&price_max=120&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=gsr18v55"
-        class="card card-hover h-100 text-decoration-none border-secondary border-2"
-      >
-        <div class="card-body">
-          <span class="badge text-bg-secondary mb-2">Werkzeug</span>
-          <h3 class="h6 text-dark mb-1">Bosch GSR 18V-55</h3>
-          <p class="text-muted small mb-3">Gebraucht · max. 120 €</p>
-          <span class="fw-medium">Jetzt öffnen →</span>
-        </div>
-      </a>
-    </div>
-
-    <!-- Karte 7: Game Boy Advance SP -->
-    <div class="col">
-      <a
-        href="/search?q1=game+boy+advance+sp&price_max=90&sort=newly&per_page=100&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=gbasp"
-        class="card card-hover h-100 text-decoration-none border-dark border-2"
-      >
-        <div class="card-body">
-          <span class="badge text-bg-dark mb-2">Retro</span>
-          <h3 class="h6 text-dark mb-1">Game Boy Advance SP</h3>
-          <p class="text-muted small mb-3">Gebraucht · max. 90 €</p>
-          <span class="fw-medium">Jetzt öffnen →</span>
-        </div>
-      </a>
-    </div>
-
-    <!-- Karte 8: GoPro HERO 10 -->
-    <div class="col">
-      <a
-        href="/search?q1=gopro+hero+10&price_max=220&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch2&utm_content=gopro10"
-        class="card card-hover h-100 text-decoration-none border-danger border-2"
-      >
-        <div class="card-body">
-          <span class="badge text-bg-danger mb-2">Foto/Action</span>
-          <h3 class="h6 text-dark mb-1">GoPro HERO 10</h3>
-          <p class="text-muted small mb-3">Gebraucht · max. 220 €</p>
-          <span class="fw-medium">Jetzt öffnen →</span>
-        </div>
-      </a>
-    </div>
-
-    <!-- Karte 9: Sonos One SL -->
-    <div class="col">
-      <a
-        href="/search?q1=sonos+one+sl&price_max=150&sort=newly&per_page=60&condition=USED&utm_source=public&utm_medium=popular&utm_campaign=launch3&utm_content=sonosone"
-        class="card card-hover h-100 text-decoration-none border-primary border-2"
-      >
-        <div class="card-body">
-          <span class="badge text-bg-primary mb-2">Audio</span>
-          <h3 class="h6 text-dark mb-1">Sonos One SL</h3>
-          <p class="text-muted small mb-3">Gebraucht · max. 150 €</p>
-          <span class="fw-medium">Jetzt öffnen →</span>
-        </div>
-      </a>
-    </div>
-  </div>
-  <!-- row END -->
 </section>
 
 <!-- ===== WHY NOT JUST EBAY ALERTS? / FAQ BLOCK ===== -->
