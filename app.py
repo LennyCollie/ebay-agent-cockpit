@@ -54,6 +54,7 @@ from routes.telegram import bp as telegram_bp
 from routes.watchlist import bp as watchlist_bp
 from routes.alerts import bp as alerts_bp
 from agent import get_mail_settings, send_mail
+from routes.admin import bp as admin_bp
 
 
 
@@ -174,7 +175,7 @@ app.register_blueprint(vision_test_bp)
 app.register_blueprint(watchlist_bp)
 app.register_blueprint(alerts_bp)
 app.register_blueprint(search_bp)
-#app.register_blueprint(search_bp, url_prefix="/beta-search")#
+app.register_blueprint(admin_bp)
 
 
 
@@ -1599,16 +1600,14 @@ def dashboard():
 def root_redirect():
     return redirect(url_for("public_home"))
 
-
 @app.route("/public")
 def public_home():
-    return safe_render("public_home.html", title="Start – ebay-agent-cockpit")
-
+    return render_template("public_home.html", title="Start – ebay-agent-cockpit")
 
 @app.route("/pricing")
 def public_pricing():
     ev_free_limit_hit = bool(session.pop("ev_free_limit_hit", False))
-    return safe_render(
+    return render_template(
         "public_pricing.html",
         title="Preise – ebay-agent-cockpit",
         ev_free_limit_hit=ev_free_limit_hit,
@@ -1619,7 +1618,8 @@ def start_free():
     session["is_premium"] = False
     session["free_search_count"] = 0
     session["user_email"] = "guest"
-    return redirect(url_for("search"))
+    return redirect(url_for("search.search_page"))
+
 
 
 # -------------------------------------------------------------------

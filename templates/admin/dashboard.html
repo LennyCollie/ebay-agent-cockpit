@@ -1,0 +1,98 @@
+{% extends "base.html" %} {% block content %}
+<h1 class="h3 mb-3">Admin Dashboard</h1>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Benutzer</div>
+        <div class="display-6">{{ user_count }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Premium-User</div>
+        <div class="display-6">{{ premium_count }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Alerts gesamt</div>
+        <div class="display-6">{{ alert_count }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Aktive Alerts</div>
+        <div class="display-6">{{ active_alerts }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 class="h5 mb-2">Letzte Cron-Läufe</h2>
+<p class="text-muted small">
+  Hier siehst du, was der Alert-Cron zuletzt gemacht hat (eBay &amp; Kleinanzeigen).
+</p>
+
+{% if cron_runs %}
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>#</th>
+            <th>Start</th>
+            <th>Ende</th>
+            <th>Dauer</th>
+            <th>Status</th>
+            <th>Alerts</th>
+            <th>Neue Items</th>
+            <th>Notifications</th>
+            <th>Fehler</th>
+            <th>Split eBay / KA</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in cron_runs %}
+          <tr class="{% if not r.success %}table-danger-subtle{% endif %}">
+            <td>{{ r.id }}</td>
+            <td>{{ r.started_dt.strftime("%d.%m.%Y %H:%M:%S") }}</td>
+            <td>{{ r.finished_dt.strftime("%d.%m.%Y %H:%M:%S") }}</td>
+            <td>{{ r.duration_s }}s</td>
+            <td>
+              {% if r.success %}
+              <span class="badge rounded-pill bg-success">OK</span>
+              {% else %}
+              <span class="badge rounded-pill bg-danger">Fehler</span>
+              {% endif %}
+            </td>
+            <td>{{ r.alerts_checked }}</td>
+            <td>{{ r.new_items_found }}</td>
+            <td>{{ r.notifications_sent }}</td>
+            <td>{{ r.errors }}</td>
+            <td>
+              <span class="badge bg-primary me-1">eBay: {{ r.ebay_alerts }}</span>
+              <span class="badge bg-warning text-dark">KA: {{ r.kleinanzeigen_alerts }}</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <p class="mb-0 text-muted">Noch keine Einträge in <code>alert_runs</code> gefunden.</p>
+  </div>
+</div>
+{% endif %} {% endblock %}

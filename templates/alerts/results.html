@@ -1,0 +1,181 @@
+{% extends "base.html" %} {% block content %}
+<a href="{{ url_for('alerts.manage_alerts') }}" class="btn btn-link px-0 mb-3">
+  ← Zurück zu deinen Alerts
+</a>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body">
+        <h1 class="h4 mb-1">
+          Alert #{{ alert.id }} {% if alert.source == "kleinanzeigen" %}
+          <span class="badge rounded-pill bg-warning text-dark ms-2">🟢 Kleinanzeigen</span>
+          {% else %}
+          <span class="badge rounded-pill bg-primary ms-2">🔵 eBay</span>
+          {% endif %}
+        </h1>
+
+        <p class="mb-2 text-muted">
+          {% if alert.terms and alert.terms|length %} Suchbegriffe:
+          <strong>{{ alert.terms|join(", ") }}</strong>
+          {% else %}
+          <span class="text-muted">Keine Suchbegriffe gespeichert.</span>
+          {% endif %}
+        </p>
+
+        {% set f = alert.filters %} {% if f %}
+        <p class="small text-muted mb-2">
+          {% if f.price_min or f.price_max %} 💶 {% if f.price_min %}ab {{ f.price_min }} €{% endif
+          %} {% if f.price_min and f.price_max %} – {% endif %} {% if f.price_max %}bis {{
+          f.price_max }} €{% endif %} {% endif %} {% if f.conditions %} · Zustand: {{
+          f.conditions|join(", ") }} {% endif %} {% if f.listing_type and f.listing_type != "all" %}
+          · Typ: {{ f.listing_type }} {% endif %}
+        </p>
+        {% endif %}
+
+        <div class="d-flex flex-wrap gap-3 align-items-center mt-3">
+          <div>
+            <div class="small text-muted">Plan</div>
+            <span
+              class="badge rounded-pill {% if alert.plan_label in ['PRO','PREMIUM'] %} bg-success {% else %} bg-secondary {% endif %}"
+            >
+              {{ alert.plan_label }}
+            </span>
+            <div class="small text-muted">Intervall: ~ {{ alert.interval_min }} Min</div>
+          </div>
+
+          <div>
+            <div class="small text-muted">Letzter Lauf</div>
+            {% if alert.last_run_dt %} {{ alert.last_run_dt.strftime("%d.%m.%Y %H:%M") }} {% else %}
+            <span class="text-muted">Noch nie</span>
+            {% endif %} {% if alert.next_run_in_min is not none %}
+            <div class="small text-muted">
+              Nächster Check {% if alert.next_run_in_min == 0 %} &lt; 1 Min {% else %} in ~ {{
+              alert.next_run_in_min }} Min {% endif %}
+            </div>
+            {% endif %}
+          </div>
+
+          <div>
+            <div class="small text-muted">Benachrichtigung</div>
+            {% if alert.notify_email %}
+            <span class="badge rounded-pill bg-primary me-1">✉️ E-Mail</span>
+            {% endif %} {% if alert.notify_telegram %}
+            <span class="badge rounded-pill bg-info text-dark">💬 Telegram</span>
+            {% endif %} {% if not alert.notify_email and not alert.notify_telegram %}
+            <span class="text-muted small">Keine Kanäle aktiv</span>
+            {% endif %}
+          </div>
+
+          <div>
+            <div class="small text-muted">Status</div>
+            {% if alert.is_active %}
+            <span class="badge rounded-pill bg-success">🟢 Aktiv</span>
+            {% else %}
+            <span class="badge rounded-pill bg-secondary">⏸️ Pausiert</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if items %}
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Artikel</th>
+            <th>Preis</th>
+            <th>Plattform</th>
+            <th>Status</th>
+            <th class="text-end">Link</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr class="{% if not item.seen %}table-success-subtle{% endif %}">
+            <td>
+              <div class="d-flex align-items-center">
+                {% if item.display_img %}
+                <img
+                  src="{{ item.display_img }}"
+                  alt=""
+                  style="
+                    width: 48px;
+                    height: 48px;
+                    object-fit: cover;
+                    border-radius: 8px;
+                    margin-right: 8px;
+                  "
+                />
+                {% endif %}
+                <div>
+                  <a
+                    href="{{ item.display_url }}"
+                    target="_blank"
+                    rel="noopener"
+                    class="fw-semibold text-decoration-none"
+                  >
+                    {{ item.display_title }}
+                  </a>
+                  {% if item.location %}
+                  <div class="small text-muted">{{ item.location }}</div>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+            <td>
+              {% if item.display_price %} {{ item.display_price }} {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if item.display_src == "kleinanzeigen" %}
+              <span class="badge rounded-pill bg-warning text-dark">🟢 Kleinanzeigen</span>
+              {% else %}
+              <span class="badge rounded-pill bg-primary">🔵 eBay</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not item.seen %}
+              <span class="badge rounded-pill bg-success">🆕 Neu (nicht im letzten Alert)</span>
+              {% else %}
+              <span class="badge rounded-pill bg-secondary">Gesehen</span>
+              {% if item.last_sent_dt %}
+              <div class="small text-muted">
+                Zuletzt im Alert am {{ item.last_sent_dt.strftime("%d.%m.%Y %H:%M") }}
+              </div>
+              {% endif %} {% endif %}
+            </td>
+            <td class="text-end">
+              <a
+                href="{{ item.display_url }}"
+                target="_blank"
+                rel="noopener"
+                class="btn btn-sm btn-outline-primary"
+              >
+                Öffnen
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body text-center py-5">
+    <p class="lead mb-2">Aktuell gibt es keine passenden Angebote.</p>
+    <p class="text-muted mb-0">
+      Sobald neue Artikel auftauchen, erhältst du wieder Alerts – und sie erscheinen hier in der
+      Übersicht.
+    </p>
+  </div>
+</div>
+{% endif %} {% endblock %}

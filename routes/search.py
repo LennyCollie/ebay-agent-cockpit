@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from typing import Dict, List, Optional
+from flask_login import current_user
+from alert_checker import ALERT_INTERVAL_FREE, ALERT_INTERVAL_PREMIUM
+
 
 from flask import (
     Blueprint,
@@ -229,13 +232,50 @@ def _parse_args() -> Dict[str, Optional[str]]:
         "filter_str": filter_str,
     }
 
+def _get_plan_info():
+    if not current_user.is_authenticated:
+        return None
+
+    plan_type = (getattr(current_user, "plan_type", "") or "").strip().lower()
+    is_premium_flag = bool(getattr(current_user, "is_premium", False))
+
+    if plan_type in ("pro", "premium") or is_premium_flag:
+        interval_min = ALERT_INTERVAL_PREMIUM
+    else:
+        interval_min = ALERT_INTERVAL_FREE
+
+    if plan_type in ("pro", "premium"):
+        label = plan_type.upper()
+    elif is_premium_flag:
+        label = "PREMIUM"
+    else:
+        label = "FREE"
+
+    return {
+        "label": label,
+        "interval_min": interval_min,
+        "plan_type": plan_type or "free",
+        "is_premium": is_premium_flag,
+    }
+
+
 
 @bp_search.route("/search", methods=["GET", "POST"])
 def search_page():
     args = _parse_args()
+    plan_info = _get_plan_info()
 
     if request.method == "GET" and not args["q"]:
-        return render_template("search.html")
+        return render_template("search.html", plan_info=plan_info)
+
+        return render_template(
+        "search_results.html",
+        title="Suchergebnisse",
+        terms=[args["q"]],
+        results=items,
+        plan_info=plan_info,
+    )
+
 
     if not args["q"]:
         flash("Bitte mindestens einen Suchbegriff angeben.", "warning")
@@ -276,6 +316,7 @@ def search_ebay():
 
 @bp_search.route("/search/kleinanzeigen", methods=["GET", "POST"])
 def search_kleinanzeigen_page():
+    plan_info = _get_plan_info()
     """
     Dedizierte Route für Kleinanzeigen-Suche
     """

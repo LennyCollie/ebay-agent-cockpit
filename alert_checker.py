@@ -65,8 +65,7 @@ def check_all_alerts(db_connection) -> Dict[str, int]:
 
     cur = dict_cursor(db_connection)
 
-    # WICHTIG: Neue Spalten müssen vorhanden sein:
-    #   source, notify_telegram, notify_email
+    # Neue Spalten: source, notify_telegram, notify_email
     cur.execute(
         """
         SELECT
@@ -147,12 +146,12 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
 
     last_run = int(alert.get("last_run_ts") or 0)
 
-    # Quelle: ebay / kleinanzeigen / (evtl. both -> hier wie ebay behandeln)
+    # Quelle: ebay / kleinanzeigen
     source = (alert.get("source") or "ebay").strip().lower()
     if source not in ("ebay", "kleinanzeigen"):
         source = "ebay"
 
-        # Benachrichtigungs-Kanäle aus der DB (0/1 -> bool)
+    # Benachrichtigungs-Kanäle aus der DB (0/1 -> bool)
     notify_telegram = bool(alert.get("notify_telegram", 1))
     notify_email = bool(alert.get("notify_email", 0))
 
@@ -241,7 +240,6 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
     if notify_telegram and not (telegram_chat_id and telegram_enabled and telegram_verified):
         print("   ℹ️  Telegram nicht aktiviert/verifiziert – Telegram wird für diesen Alert deaktiviert")
         notify_telegram = False
-
 
     # Wenn weder Telegram noch Mail aktiv sind, trotzdem suchen (damit Items ggf. als gesehen markiert werden),
     # aber nichts verschicken.
@@ -617,17 +615,78 @@ def update_alert_timestamp(alert_id: int, timestamp: int, cursor) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Cron-Lauf in alert_runs protokollieren
+# ---------------------------------------------------------------------------
+def _log_alert_run(start_ts: int, end_ts: int, success: bool, stats: Dict | None) -> None:
+    """
+    Schreibt einen Eintrag in die Tabelle alert_runs.
+    Läuft bewusst 'best effort' – Fehler beim Loggen sollen den Cron nicht killen.
+    """
+    stats = stats or {}
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            INSERT INTO alert_runs (
+                started_at,
+                finished_at,
+                success,
+                alerts_checked,
+                new_items_found,
+                notifications_sent,
+                errors,
+                ebay_alerts,
+                kleinanzeigen_alerts
+            )
+            VALUES (
+                {PH}, {PH}, {PH},
+                {PH}, {PH}, {PH},
+                {PH}, {PH}, {PH}
+            )
+            """,
+            (
+                int(start_ts),
+                int(end_ts),
+                1 if success else 0,
+                int(stats.get("alerts_checked", 0)),
+                int(stats.get("new_items_found", 0)),
+                int(stats.get("notifications_sent", 0)),
+                int(stats.get("errors", 0)),
+                int(stats.get("ebay_alerts", 0)),
+                int(stats.get("kleinanzeigen_alerts", 0)),
+            ),
+        )
+        conn.commit()
+        print("   📝 Cron-Lauf in alert_runs protokolliert.")
+    except Exception as e:
+        print(f"   ⚠️  Konnte alert_runs nicht loggen: {e}")
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
 # Entry-Point für Cron / HTTP-Trigger
 # ---------------------------------------------------------------------------
 def run_alert_check():
     """
     Entry-Point für Cron-Job.
-    Prüft ALLE Alerts (eBay + Kleinanzeigen).
+    Prüft ALLE Alerts (eBay + Kleinanzeigen) und loggt den Lauf in alert_runs.
     """
+    start_ts = int(time.time())
+
     try:
         conn = get_db()
         stats = check_all_alerts(conn)
         conn.close()
+
+        end_ts = int(time.time())
+        _log_alert_run(start_ts, end_ts, True, stats)
 
         return {
             "success": True,
@@ -636,9 +695,12 @@ def run_alert_check():
         }
 
     except Exception as e:
+        end_ts = int(time.time())
+        # Beim Fehler haben wir evtl. keine Stats – dann alles 0, aber success=0
+        _log_alert_run(start_ts, end_ts, False, None)
+
         print(f"\n❌ KRITISCHER FEHLER im Alert-Check: {e}")
         import traceback
-
         traceback.print_exc()
 
         return {

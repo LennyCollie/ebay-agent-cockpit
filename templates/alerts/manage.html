@@ -1,0 +1,173 @@
+{# templates/alerts/manage.html #} {% extends "base.html" %} {% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <div>
+    <h1 class="h3 mb-1">Deine Such-Alerts</h1>
+    <p class="text-muted mb-0">eBay &amp; Kleinanzeigen, inklusive Plan, Intervall und Status.</p>
+  </div>
+  <a href="{{ url_for('search.search_page') }}" class="btn btn-primary"> + Neuen Alert anlegen </a>
+</div>
+
+{% if alerts %}
+<div class="card alerts-card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Suchbegriffe &amp; Filter</th>
+            <th>Quelle</th>
+            <th>Plan &amp; Intervall</th>
+            <th>Letzter Lauf / Nächster Check</th>
+            <th>Benachrichtigung</th>
+            <th>Status</th>
+            <th class="text-end">Aktionen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in alerts %}
+          <tr class="alert-row {% if not a.is_active %}alert-row-paused{% endif %}">
+            {# --- Suchbegriffe + Kurz-Filter #}
+            <td>
+              {% if a.terms %}
+              <strong>{{ a.terms|join(", ") }}</strong><br />
+              {% else %}
+              <span class="text-muted">–</span><br />
+              {% endif %} {% set f = a.filters %}
+              <small class="text-muted">
+                {% if f.price_min or f.price_max %} 💶 {% if f.price_min %}ab {{ f.price_min }} €{%
+                endif %} {% if f.price_min and f.price_max %} – {% endif %} {% if f.price_max %}bis
+                {{ f.price_max }} €{% endif %} {% endif %} {% if f.conditions %} · Zustand: {{
+                f.conditions|join(", ") }} {% endif %} {% if f.listing_type and f.listing_type !=
+                "all" %} · Typ: {{ f.listing_type }} {% endif %}
+              </small>
+            </td>
+
+            {# --- Quelle (eBay / Kleinanzeigen) #}
+            <td>
+              {% if a.source == "kleinanzeigen" %}
+              <span class="badge rounded-pill bg-warning text-dark"> 🟢 Kleinanzeigen </span>
+              {% else %}
+              <span class="badge rounded-pill bg-primary"> 🔵 eBay </span>
+              {% endif %}
+            </td>
+
+            {# --- Plan / Intervall #}
+            <td>
+              {% if a.plan_type in ["pro", "premium"] %} {% set plan_label = a.plan_type.upper() %}
+              {% set plan_class = "bg-success" %} {% elif a.is_premium %} {% set plan_label =
+              "PREMIUM" %} {% set plan_class = "bg-success" %} {% else %} {% set plan_label = "FREE"
+              %} {% set plan_class = "bg-secondary" %} {% endif %}
+              <span class="badge rounded-pill {{ plan_class }}">{{ plan_label }}</span>
+              <div class="small text-muted">Intervall: ~ {{ a.interval_min }} Min</div>
+            </td>
+
+            {# --- Letzter Lauf / nächster Check #}
+            <td>
+              {% if a.last_run_dt %} {{ a.last_run_dt.strftime("%d.%m.%Y %H:%M") }}<br />
+              {% else %}
+              <span class="text-muted">Noch nie</span><br />
+              {% endif %} {% if a.next_run_in_min is not none %}
+              <small class="text-muted">
+                Nächster Check {% if a.next_run_in_min == 0 %} &lt; 1 Min {% else %} in ~ {{
+                a.next_run_in_min }} Min {% endif %}
+              </small>
+              {% endif %}
+            </td>
+
+            {# --- Kanäle (Mail / Telegram) #}
+            <td>
+              {% if a.notify_email %}
+              <span class="badge rounded-pill bg-primary mb-1"> ✉️ E-Mail </span><br />
+              {% endif %} {% if a.notify_telegram %}
+              <span class="badge rounded-pill bg-info text-dark"> 💬 Telegram </span>
+              {% endif %} {% if not a.notify_email and not a.notify_telegram %}
+              <span class="text-muted small">Keine</span>
+              {% endif %}
+            </td>
+
+            {# --- Status (Aktiv / Pausiert) #}
+            <td>
+              {% if a.is_active %}
+              <span class="badge rounded-pill bg-success">🟢 Aktiv</span>
+              {% else %}
+              <span class="badge rounded-pill bg-secondary">⏸️ Pausiert</span>
+              {% endif %}
+            </td>
+
+            {# --- Aktionen (Toggle / Delete) #}
+            <td class="text-end">
+              <a
+                href="{{ url_for('alerts.alert_results', alert_id=a.id) }}"
+                class="btn btn-sm btn-outline-primary me-1"
+              >
+                Details
+              </a>
+              <form
+                action="{{ url_for('alerts.toggle_alert', alert_id=a.id) }}"
+                method="post"
+                class="d-inline"
+              >
+                <button
+                  class="btn btn-sm {% if a.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %}"
+                >
+                  {% if a.is_active %}Pausieren{% else %}Aktivieren{% endif %}
+                </button>
+              </form>
+
+              <form
+                action="{{ url_for('alerts.delete_alert', alert_id=a.id) }}"
+                method="post"
+                class="d-inline"
+                onsubmit="return confirm('Alert wirklich löschen?');"
+              >
+                <button class="btn btn-sm btn-outline-danger ms-1">Löschen</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body text-center py-5">
+    <p class="lead mb-3">Du hast noch keine Alerts angelegt.</p>
+    <p class="text-muted mb-4">
+      Lege oben in der Suche 1–3 Begriffe an, setze Filter und speichere sie als Alert.
+    </p>
+    <a href="{{ url_for('search.search_page') }}" class="btn btn-primary">
+      Jetzt ersten Alert anlegen
+    </a>
+  </div>
+</div>
+{% endif %}
+
+<style>
+  /* leichte Optik-Verbesserungen nur für diese Seite */
+
+  .alerts-card {
+    border-radius: 0.75rem;
+    overflow: hidden;
+  }
+
+  .alert-row-paused {
+    opacity: 0.6;
+  }
+
+  .alert-row-paused td {
+    background-color: #f8f9fa;
+  }
+
+  @media (max-width: 768px) {
+    .alerts-card table {
+      font-size: 0.9rem;
+    }
+    .alerts-card th,
+    .alerts-card td {
+      white-space: nowrap;
+    }
+  }
+</style>
+{% endblock %}
