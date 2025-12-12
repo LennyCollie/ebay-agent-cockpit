@@ -1176,6 +1176,8 @@ def _build_query(existing: dict, **extra) -> str:
     return urlencode(pairs)
 
 
+
+
 @app.context_processor
 def inject_globals():
     return {
@@ -1603,6 +1605,15 @@ def root_redirect():
 @app.route("/public")
 def public_home():
     return render_template("public_home.html", title="Start – ebay-agent-cockpit")
+
+@app.route("/howto")
+def howto():
+    return safe_render(
+        "howto.html",
+        title="Anleitung – Super-Agent",
+        meta_desc="So nutzt du den Super-Agent in 30 Sekunden: Suche, Filter, Alerts & Telegram."
+    )
+
 
 @app.route("/pricing")
 def public_pricing():
