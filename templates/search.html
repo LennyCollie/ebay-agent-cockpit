@@ -11,7 +11,7 @@
     </p>
   </div>
 
-  {# --- Plan-Hinweis ------------------------------------------------------ #}
+  {# --- Plan-Hinweis -------------------------------------------------------- #}
   {% if current_user.is_authenticated and plan_info %}
     <div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
       <div>
@@ -55,8 +55,50 @@
     </a>
   </div>
 
+  {# --- Meta-Suche auf andere Portale (Quoka, Shpock, …) ------------------ #}
+  {% set q1 = request.args.get('q1', '') %}
+  {% set q2 = request.args.get('q2', '') %}
+  {% set q3 = request.args.get('q3', '') %}
+  {% set q_main = (q1 ~ ' ' ~ q2 ~ ' ' ~ q3).strip() %}
+
+<div class="alert alert-light border small d-flex flex-column flex-md-row
+            justify-content-between align-items-md-center mb-3">
+  <div class="mb-2 mb-md-0">
+    <strong>Auch auf anderen Portalen schauen?</strong><br>
+    <span class="text-muted">
+      Diese Buttons öffnen eine Google-Suche mit deinem Begriff nur auf dem jeweiligen Portal.
+      (Wenn du noch keinen Begriff eingegeben hast, siehst du einfach alle Treffer des Portals.)
+    </span>
+  </div>
+
+  <div class="btn-group btn-group-sm flex-wrap">
+    <a class="btn btn-outline-secondary"
+       href="https://www.google.com/search?q=site:quoka.de+{{ q_main|replace(' ', '+') }}"
+       target="_blank" rel="noopener">
+      Quoka
+    </a>
+    <a class="btn btn-outline-secondary"
+       href="https://www.google.com/search?q=site:shpock.com+{{ q_main|replace(' ', '+') }}"
+       target="_blank" rel="noopener">
+      Shpock
+    </a>
+    <a class="btn btn-outline-secondary"
+       href="https://www.google.com/search?q=site:kleinanzeigen.de+{{ q_main|replace(' ', '+') }}"
+       target="_blank" rel="noopener">
+      Kleinanzeigen.de (Google)
+    </a>
+    <a class="btn btn-outline-secondary"
+       href="https://www.google.com/search?q=site:facebook.com+Marketplace+{{ q_main|replace(' ', '+') }}"
+       target="_blank" rel="noopener">
+      Facebook Marketplace
+    </a>
+  </div>
+</div>
+
+
   <div class="card shadow-sm border-0">
-    <!-- ... dein bestehender Card-Block geht hier weiter ... -->
+    {# ... ab hier kommt dein bestehender Card-Body mit Formular, Filtern usw. ... #}
+
 
   <div class="card shadow-sm border-0">
     <div class="card-header bg-gradient"
