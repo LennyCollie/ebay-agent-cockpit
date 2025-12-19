@@ -437,7 +437,7 @@ def apply_smart_filters(
     result = filter_obj.filter_items(items, search_terms)
 
     logger.info(
-        f"[FILTER] {result['stats']['total']} Items → "
+        f"[FILTER] {result['stats']['total']} Items -> "
         f"{result['stats']['passed']} durchgelassen, "
         f"{result['stats']['removed_accessory']} Zubehör, "
         f"{result['stats']['removed_suspicious']} verdächtig, "
@@ -468,11 +468,11 @@ def test_filters():
 
     result = apply_smart_filters(test_items, ["iPhone 15 Pro"])
 
-    print("\n✅ Durchgelassene Items:")
+    print("\n[OK] Durchgelassene Items:")
     for item in result:
         print(f"  - {item['title']}")
 
-    print(f"\n📊 Stats:")
+    print(f"\n[*] Stats:")
     filter_obj = get_filter()
     full_result = filter_obj.filter_items(test_items, ["iPhone 15 Pro"])
     print(f"  Total: {full_result['stats']['total']}")
@@ -481,7 +481,7 @@ def test_filters():
     print(f"  Verdächtig: {full_result['stats']['removed_suspicious']}")
     print(f"  Irrelevant: {full_result['stats']['removed_irrelevant']}")
 
-    print("\n❌ Gefilterte Items:")
+    print("\n[!] Gefilterte Items:")
     for removed in full_result["removed_items"]:
         print(f"  - {removed['item']['title']}")
         print(f"    Grund: {removed['reason']}")

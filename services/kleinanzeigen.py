@@ -9,6 +9,8 @@ import hashlib
 from datetime import datetime
 from typing import Dict, List, Optional
 import logging
+from utils.text import normalize
+
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ def search_kleinanzeigen(
         url = _build_search_url(query, price_min, price_max, location)
 
         print(f"\n{'='*60}")
-        print(f"🔍 KLEINANZEIGEN HTML SCRAPING")
+        print(f"[*] KLEINANZEIGEN HTML SCRAPING")
         print(f"{'='*60}")
         print(f"URL: {url}")
         print(f"Query: {query}")
@@ -67,20 +69,16 @@ def search_kleinanzeigen(
         response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
 
-        print(f"✅ Status: {response.status_code}")
+        print(f"[OK] Status: {response.status_code}")
 
-        # Parse HTML
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Finde Artikel-Container
-        # Kleinanzeigen nutzt verschiedene Selektoren
         articles = soup.find_all('article', class_='aditem')
 
-        # Fallback: Andere Selektoren probieren
         if not articles:
             articles = soup.select('div.ad-listitem')
 
-        print(f"📦 Gefundene Artikel: {len(articles)}\n")
+        print(f"[+] Gefundene Artikel: {len(articles)}\n")
 
         results = []
 
@@ -88,12 +86,11 @@ def search_kleinanzeigen(
             try:
                 item = _parse_html_article(article, query)
                 if item:
-                    # Debug: Erste 3 Items anzeigen
                     if i <= 3:
-                        print(f"✓ Item {i}:")
-                        print(f"  Title: {item['title'][:60]}")
-                        print(f"  Price: {item.get('price', 'N/A')}")
-                        print(f"  URL: {item['url'][:80]}...")
+                        print(f"[+] Item {i}:")
+                        print(f"    Title: {item['title'][:60]}")
+                        print(f"    Price: {item.get('price', 'N/A')}")
+                        print(f"    URL: {item['url'][:80]}...")
 
                     # Preis-Filter anwenden
                     if price_min and item.get('price') and item['price'] < price_min:
@@ -107,7 +104,7 @@ def search_kleinanzeigen(
                 logger.debug(f"Fehler bei Item {i}: {e}")
                 continue
 
-        print(f"\n✅ Gefunden: {len(results)} Kleinanzeigen\n")
+        print(f"\n[OK] Gefunden: {len(results)} Kleinanzeigen\n")
         return results
 
     except Exception as e:
@@ -279,10 +276,10 @@ def test_search():
     print("=" * 60)
 
     if not check_dependencies():
-        print("❌ Dependencies fehlen!")
+        print("[!] Dependencies fehlen!")
         return
 
-    print("✅ Dependencies OK\n")
+    print("[OK] Dependencies OK\n")
 
     results = search_kleinanzeigen(
         query="iPhone 12",
@@ -291,7 +288,7 @@ def test_search():
         limit=10
     )
 
-    print(f"\n📦 Gefunden: {len(results)} Artikel\n")
+    print(f"\n[+] Gefunden: {len(results)} Artikel\n")
 
     for i, item in enumerate(results[:5], 1):
         print(f"{i}. {item['title'][:60]}")

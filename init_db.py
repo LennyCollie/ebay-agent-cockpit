@@ -344,8 +344,8 @@ def init_database(reset: bool = False):
     alert_count = cur.execute("SELECT COUNT(*) FROM search_alerts").fetchone()[0]
 
     print("\n" + "=" * 50)
-    print("✅ Datenbank erfolgreich initialisiert!")
-    print("📊 Statistiken")
+    print("[OK] Datenbank erfolgreich initialisiert!")
+    print("[*] Statistiken")
     print(f"   • Benutzer:      {user_count}")
     print(f"   • Suchagenten:   {alert_count}")
     print(

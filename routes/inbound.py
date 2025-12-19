@@ -30,7 +30,7 @@ def _log(level: str, msg: str, *args: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Optional: Store-Adapter (Stub → kann durch services.inbound_store überschrieben werden)
+# Optional: Store-Adapter (Stub -> kann durch services.inbound_store überschrieben werden)
 # ---------------------------------------------------------------------------
 
 

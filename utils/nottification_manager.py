@@ -140,7 +140,7 @@ class NotificationManager:
         db.commit()
 
         if not check["allowed"]:
-            # Nicht erlaubt → markiere als skipped
+            # Nicht erlaubt -> markiere als skipped
             log.status = "skipped"
             log.error_message = check["reason"]
             db.commit()

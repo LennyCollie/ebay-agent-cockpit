@@ -525,7 +525,7 @@ def alerts_subscribe():
         else:
             source_name = source_label.get(sources[0], "eBay")
 
-        flash(f"✅ {source_name}-Alarm gespeichert! Du wirst bei neuen Treffern benachrichtigt.", "success")
+        flash(f"[OK] {source_name}-Alarm gespeichert! Du wirst bei neuen Treffern benachrichtigt.", "success")
 
     except Exception as e:
         current_app.logger.error(f"[alerts_subscribe] Fehler: {e}", exc_info=True)

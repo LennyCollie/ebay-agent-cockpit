@@ -126,7 +126,7 @@ app.register_blueprint(vision_test_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(watchlist_bp)
 
-print("[Telegram] ✅ Routes registriert")
+print("[Telegram] [OK] Routes registriert")
 
 # -------------------------------------------------------------------
 # Imports für Mail & Agent
@@ -261,7 +261,7 @@ def send_telegram_notification(chat_id: str, message: str) -> bool:
     Returns: True wenn erfolgreich
     """
     if not TELEGRAM_BOT_TOKEN:
-        print("[Telegram] ❌ Bot Token fehlt!")
+        print("[Telegram] [!] Bot Token fehlt!")
         return False
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -276,10 +276,10 @@ def send_telegram_notification(chat_id: str, message: str) -> bool:
     try:
         response = requests.post(url, json=payload, timeout=10)
         response.raise_for_status()
-        print(f"[Telegram] ✅ Nachricht gesendet an {chat_id}")
+        print(f"[Telegram] [OK] Nachricht gesendet an {chat_id}")
         return True
     except Exception as e:
-        print(f"[Telegram] ❌ Fehler: {e}")
+        print(f"[Telegram] [!] Fehler: {e}")
         return False
 
 # Optional: Affiliate-Parameter (an itemWebUrl anhängen)
@@ -799,7 +799,7 @@ def _backend_search_ebay(
     print(f"[DEBUG] EBAY_CLIENT_SECRET={'vorhanden' if EBAY_CLIENT_SECRET else 'FEHLT!'}")
 
     if not LIVE_SEARCH_BOOL or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
-        print("[WARNUNG] Live-Suche nicht möglich → Fallback zu Demo-Modus")
+        print("[WARNUNG] Live-Suche nicht möglich -> Fallback zu Demo-Modus")
         # Annahme: Diese Funktion existiert
         from app import _backend_search_demo
         return _backend_search_demo(terms, filters, page, per_page)
@@ -1436,7 +1436,7 @@ def register():
                 text("INSERT INTO users (email, password, is_premium) VALUES (:email, :password, 0)"),
                 {"email": email, "password": password_hash}
             )
-        flash("✅ Registrierung erfolgreich. Bitte einloggen.", "success")
+        flash("[OK] Registrierung erfolgreich. Bitte einloggen.", "success")
         return redirect(url_for("login"))
 
     except IntegrityError:
@@ -1872,7 +1872,7 @@ def search():
             "condition": request.form.getlist("condition"),
             # Erweiterte Filter – FIX: Nur senden, wenn vorhanden (kein "0"!)
             "location_country": (request.form.get("location_country") or "DE").strip(),
-            "free_shipping": request.form.get("free_shipping"),  # None oder "1" → urlencode ignoriert None
+            "free_shipping": request.form.get("free_shipping"),  # None oder "1" -> urlencode ignoriert None
             "returns_accepted": request.form.get("returns_accepted"),
             "top_rated_only": request.form.get("top_rated_only"),
             "listing_type": request.form.get("listing_type", "").strip(),  # NEU: Auktion/Sofortkauf
@@ -1932,9 +1932,9 @@ def search():
         "listing_type": request.args.get("listing_type", "").strip(),  # NEU
     }
 
-    # ✅ DEBUG: Jetzt NACH der filters-Definition!
+    # [OK] DEBUG: Jetzt NACH der filters-Definition!
     print("\n" + "="*70)
-    print("🔍 SEARCH ROUTE - GET REQUEST")
+    print("[*] SEARCH ROUTE - GET REQUEST")
     print("="*70)
     print(f"Terms: {terms}")
     print(f"\nFilters:")
@@ -1966,7 +1966,7 @@ def search():
     items, total_estimated = _backend_search_ebay(terms, filters, page, per_page)
 
     # DEBUG: Backend-Resultat
-    print(f"✅ Backend returned: {len(items)} items, total_estimated={total_estimated}\n")
+    print(f"[OK] Backend returned: {len(items)} items, total_estimated={total_estimated}\n")
 
     # Pagination berechnen
     total_pages = (
@@ -1989,7 +1989,7 @@ def search():
         "per_page": per_page,
         # Erweiterte Filter in base_qs – FIX: Nur "1" wenn True
         "location_country": filters["location_country"],
-        "free_shipping": "1" if filters["free_shipping"] else None,  # None → ignoriert in urlencode
+        "free_shipping": "1" if filters["free_shipping"] else None,  # None -> ignoriert in urlencode
         "returns_accepted": "1" if filters["returns_accepted"] else None,
         "top_rated_only": "1" if filters["top_rated_only"] else None,
         "listing_type": filters.get("listing_type", ""),  # NEU
@@ -2025,16 +2025,16 @@ def cron_check_alerts():
 
     # Token prüfen
     if not token or token != AGENT_TRIGGER_TOKEN:
-        print("[Cron] ❌ Ungültiger Token")
+        print("[Cron] [!] Ungültiger Token")
         return jsonify({"success": False, "error": "Unauthorized"}), 403
 
-    print(f"[Cron] ✅ Alert-Check gestartet")
+    print(f"[Cron] [OK] Alert-Check gestartet")
 
     try:
         result = run_alert_check()
         return jsonify(result), 200 if result["success"] else 500
     except Exception as e:
-        print(f"[Cron] ❌ Fehler: {e}")
+        print(f"[Cron] [!] Fehler: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
@@ -2100,12 +2100,12 @@ def email_test():
 
     settings = get_mail_settings()
     subject = "✉️ Test-E-Mail vom eBay-Agent"
-    body_html = "<p>✅ Test-Mail erfolgreich gesendet!</p><p>Grüße vom eBay-Agent.</p>"
+    body_html = "<p>[OK] Test-Mail erfolgreich gesendet!</p><p>Grüße vom eBay-Agent.</p>"
 
     try:
         ok = send_mail(settings, [recipient], subject, body_html)
         if ok:
-            flash(f"Test-Mail an {recipient} gesendet ✅", "success")
+            flash(f"Test-Mail an {recipient} gesendet [OK]", "success")
         else:
             flash("Fehler beim Versand (siehe Server-Log).", "warning")
     except Exception as e:
@@ -2453,7 +2453,7 @@ app.config.update(
     STRIPE_PRICE_TEAM=STRIPE_PRICE_TEAM,
 )
 
-# 4) Mapping Price-ID → Plan (basic|pro|team)
+# 4) Mapping Price-ID -> Plan (basic|pro|team)
 PRICE_TO_PLAN = {
     STRIPE_PRICE_BASIC: "basic",
     STRIPE_PRICE_PRO: "pro",
@@ -2987,7 +2987,7 @@ def internal_my_alerts():
             new_val = 0 if is_active else 1
             html.append(
                 f"<tr><td>{rid}</td>"
-                f"<td>{'✅ aktiv' if is_active else '⛔ inaktiv'}</td>"
+                f"<td>{'[OK] aktiv' if is_active else '⛔ inaktiv'}</td>"
                 f"<td>"
                 f"<form method='post' action='/internal/alerts/toggle' style='margin:0;'>"
                 f"<input type='hidden' name='id' value='{rid}'/>"
@@ -3108,7 +3108,7 @@ def pilot_waitlist_form():
         <label>Zeitfenster (z. B. Mo–Fr 8–12):</label><br><input name="fenster" style="width:100%"><br><br>
         <button type="submit">Auf Warteliste</button>
       </form>
-      <p style="margin-top:1rem"><a href="/pilot/widget">→ Praxis-Widget öffnen</a></p>
+      <p style="margin-top:1rem"><a href="/pilot/widget">-> Praxis-Widget öffnen</a></p>
     </div>
     """
     return render_template_string(html)
@@ -3126,7 +3126,7 @@ def pilot_waitlist_save():
             "created": datetime.utcnow().isoformat(),
         }
     )
-    return "<p>✅ Eingetragen! <a href='/pilot/waitlist'>Zurück</a> • <a href='/pilot/widget'>Praxis-Widget</a></p>"
+    return "<p>[OK] Eingetragen! <a href='/pilot/waitlist'>Zurück</a> • <a href='/pilot/widget'>Praxis-Widget</a></p>"
 
 
 # --- Praxis-Widget (Slot freigeben) ---
@@ -3148,7 +3148,7 @@ def pilot_widget_form():
           <input name="link" placeholder="https://www.116117.de/..." style="width:100%"><br><br>
         <button type="submit">Slot freigeben & Benachrichtigen</button>
       </form>
-      <p style="margin-top:1rem"><a href="/pilot/waitlist">→ Warteliste</a></p>
+      <p style="margin-top:1rem"><a href="/pilot/waitlist">-> Warteliste</a></p>
     </div>
     """.format(
         qs=("?key=" + PRACTICE_DEMO_SECRET) if PRACTICE_DEMO_SECRET else ""
@@ -3200,7 +3200,7 @@ def pilot_widget_free():
 
     qs = f"?key={PRACTICE_DEMO_SECRET}" if PRACTICE_DEMO_SECRET else ""
     return (
-        f"<p>✅ Slot freigegeben ({fach}) bis {until}. "
+        f"<p>[OK] Slot freigegeben ({fach}) bis {until}. "
         f"Benachrichtigungen verschickt: {sent}. "
         f"<a href='/pilot/widget{qs}'>Zurück</a></p>"
     )
@@ -3657,7 +3657,7 @@ def telegram_verify():
         from telegram_bot import send_welcome_notification
         send_welcome_notification(str(chat_id), username or "User")
 
-        print(f"[Telegram] ✅ User {user_email} verknüpft mit Chat-ID {chat_id}")
+        print(f"[Telegram] [OK] User {user_email} verknüpft mit Chat-ID {chat_id}")
 
         return jsonify({
             "success": True,
@@ -3667,7 +3667,7 @@ def telegram_verify():
     except Exception as e:
         conn.rollback()
         conn.close()
-        print(f"[Telegram] ❌ Fehler: {e}")
+        print(f"[Telegram] [!] Fehler: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -3740,7 +3740,7 @@ def telegram_test():
     message = """
 🧪 <b>Test-Benachrichtigung</b>
 
-Dein Telegram ist korrekt konfiguriert! ✅
+Dein Telegram ist korrekt konfiguriert! [OK]
 
 Du erhältst ab sofort Echtzeit-Benachrichtigungen,
 wenn neue Artikel gefunden werden.
@@ -3784,7 +3784,7 @@ def telegram_disconnect():
     return jsonify({"success": True, "message": "Telegram getrennt"})
 
 
-print("[Telegram] ✅ Routes registriert")
+print("[Telegram] [OK] Routes registriert")
 
 
 # --- Admin Blueprint: simple stats view --------------------------------------

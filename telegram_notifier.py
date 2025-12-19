@@ -79,11 +79,11 @@ class EbayAgentService:
     def validate_config(self) -> bool:
         """Validiert die Konfiguration"""
         if not DATABASE_URL or 'DEIN' in DATABASE_URL.upper():
-            logger.error("❌ DATABASE_URL nicht konfiguriert!")
+            logger.error("[!] DATABASE_URL nicht konfiguriert!")
             return False
 
         if not TELEGRAM_BOT_TOKEN or 'DEIN' in TELEGRAM_BOT_TOKEN.upper():
-            logger.error("❌ TELEGRAM_BOT_TOKEN nicht konfiguriert!")
+            logger.error("[!] TELEGRAM_BOT_TOKEN nicht konfiguriert!")
             logger.info("ℹ️  Erstelle einen Bot mit @BotFather in Telegram")
             return False
 
@@ -91,7 +91,7 @@ class EbayAgentService:
 
     def run_scraper_loop(self):
         """Thread-Funktion für den Scraper"""
-        logger.info("🔍 Scraper-Thread gestartet")
+        logger.info("[*] Scraper-Thread gestartet")
 
         self.scraper = KleinanzeigenScraper(DATABASE_URL)
 
@@ -99,7 +99,7 @@ class EbayAgentService:
             try:
                 self.scraper.run_scrape_cycle()
             except Exception as e:
-                logger.error(f"❌ Fehler im Scraper: {e}", exc_info=True)
+                logger.error(f"[!] Fehler im Scraper: {e}", exc_info=True)
 
             # Warte das Interval, aber prüfe alle Sekunde ob wir stoppen sollen
             for _ in range(SCRAPER_INTERVAL):
@@ -107,7 +107,7 @@ class EbayAgentService:
                     break
                 time.sleep(1)
 
-        logger.info("🔍 Scraper-Thread beendet")
+        logger.info("[*] Scraper-Thread beendet")
 
     def run_notifier_loop(self):
         """Thread-Funktion für den Notifier"""
@@ -120,14 +120,14 @@ class EbayAgentService:
         if bot_info:
             logger.info(f"🤖 Bot verbunden: @{bot_info.get('username')}")
         else:
-            logger.error("❌ Kann Bot-Info nicht abrufen - Token ungültig?")
+            logger.error("[!] Kann Bot-Info nicht abrufen - Token ungültig?")
             return
 
         while self.running:
             try:
                 self.notifier.send_pending_notifications()
             except Exception as e:
-                logger.error(f"❌ Fehler im Notifier: {e}", exc_info=True)
+                logger.error(f"[!] Fehler im Notifier: {e}", exc_info=True)
 
             # Warte das Interval, aber prüfe alle Sekunde ob wir stoppen sollen
             for _ in range(NOTIFIER_INTERVAL):
@@ -145,10 +145,10 @@ class EbayAgentService:
 
         # Konfiguration validieren
         if not self.validate_config():
-            logger.error("❌ Konfiguration ungültig - Service wird nicht gestartet")
+            logger.error("[!] Konfiguration ungültig - Service wird nicht gestartet")
             return False
 
-        logger.info(f"📊 Konfiguration:")
+        logger.info(f"[*] Konfiguration:")
         logger.info(f"   - Scraper-Interval: {SCRAPER_INTERVAL}s ({SCRAPER_INTERVAL/60:.1f} Minuten)")
         logger.info(f"   - Notifier-Interval: {NOTIFIER_INTERVAL}s ({NOTIFIER_INTERVAL/60:.1f} Minuten)")
         logger.info(f"   - Datenbank: {DATABASE_URL.split('@')[1].split('/')[0]}")
@@ -171,7 +171,7 @@ class EbayAgentService:
         self.scraper_thread.start()
         self.notifier_thread.start()
 
-        logger.info("✅ Service gestartet!")
+        logger.info("[OK] Service gestartet!")
         logger.info("   Drücke Ctrl+C zum Beenden")
         logger.info("=" * 60 + "\n")
 
@@ -191,16 +191,16 @@ class EbayAgentService:
         if self.notifier_thread:
             self.notifier_thread.join(timeout=10)
 
-        logger.info("✅ Service beendet")
+        logger.info("[OK] Service beendet")
 
     def status(self):
         """Zeigt den Status des Service an"""
         print("\n" + "=" * 60)
-        print("📊 SERVICE STATUS")
+        print("[*] SERVICE STATUS")
         print("=" * 60)
-        print(f"Running: {'✅ Ja' if self.running else '❌ Nein'}")
-        print(f"Scraper-Thread: {'✅ Aktiv' if self.scraper_thread and self.scraper_thread.is_alive() else '❌ Inaktiv'}")
-        print(f"Notifier-Thread: {'✅ Aktiv' if self.notifier_thread and self.notifier_thread.is_alive() else '❌ Inaktiv'}")
+        print(f"Running: {'[OK] Ja' if self.running else '[!] Nein'}")
+        print(f"Scraper-Thread: {'[OK] Aktiv' if self.scraper_thread and self.scraper_thread.is_alive() else '[!] Inaktiv'}")
+        print(f"Notifier-Thread: {'[OK] Aktiv' if self.notifier_thread and self.notifier_thread.is_alive() else '[!] Inaktiv'}")
         print(f"Zeit: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
         print("=" * 60 + "\n")
 

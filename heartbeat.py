@@ -16,23 +16,23 @@ print(f"[HEARTBEAT] Sending to: {', '.join(TO)}")
 host = socket.gethostname()
 ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 
-subject = f"✅ Heartbeat OK - {host}"
+subject = f"[OK] Heartbeat OK - {host}"
 stats = get_bounce_stats()
 body = (
     f"Service: {os.getenv('RENDER_SERVICE_NAME','ebay-agent-heartbeat')}\n"
     f"Host:    {host}\n"
     f"Time:    {ts}\n"
     f"Bounces: {stats.get('total_bounced', 0)}\n"
-    f"Status:  ✓ All systems operational\n"
+    f"Status:  [+] All systems operational\n"
 )
 
 success_count = 0
 for addr in TO:
     print(f"[HEARTBEAT] Sending to {addr}...")
     if send_mail(addr, subject, body):
-        print(f"[HEARTBEAT] ✓ Sent to {addr}")
+        print(f"[HEARTBEAT] [+] Sent to {addr}")
         success_count += 1
     else:
-        print(f"[HEARTBEAT] ✗ Failed for {addr}")
+        print(f"[HEARTBEAT] [!] Failed for {addr}")
 
 print(f"[HEARTBEAT] Complete - {success_count}/{len(TO)} emails sent via Postmark API")

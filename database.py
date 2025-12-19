@@ -75,19 +75,19 @@ def drop_all_tables():
             cur.execute("DROP TABLE IF EXISTS search_alerts CASCADE")
             cur.execute("DROP TABLE IF EXISTS watchlist CASCADE")
             cur.execute("DROP TABLE IF EXISTS notification_log CASCADE")
-            print("[drop_all_tables] ✓ PostgreSQL Tabellen gelöscht")
+            print("[drop_all_tables] [+] PostgreSQL Tabellen gelöscht")
         else:
             cur.execute("DROP TABLE IF EXISTS users")
             cur.execute("DROP TABLE IF EXISTS alert_seen")
             cur.execute("DROP TABLE IF EXISTS search_alerts")
             cur.execute("DROP TABLE IF EXISTS watchlist")
             cur.execute("DROP TABLE IF EXISTS notification_log")
-            print("[drop_all_tables] ✓ SQLite Tabellen gelöscht")
+            print("[drop_all_tables] [+] SQLite Tabellen gelöscht")
 
         conn.commit()
-        print("[drop_all_tables] ✅ Erfolgreich abgeschlossen\n")
+        print("[drop_all_tables] [OK] Erfolgreich abgeschlossen\n")
     except Exception as e:
-        print(f"[drop_all_tables] ❌ Fehler: {e}")
+        print(f"[drop_all_tables] [!] Fehler: {e}")
     finally:
         conn.close()
 
@@ -121,7 +121,7 @@ def init_db() -> None:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("[init_db] ✓ users (PostgreSQL)")
+        print("[init_db] [+] users (PostgreSQL)")
 
         # Alert Seen (für De-Duping)
         cur.execute("""
@@ -135,7 +135,7 @@ def init_db() -> None:
                 PRIMARY KEY (user_email, search_hash, src, item_id)
             )
         """)
-        print("[init_db] ✓ alert_seen")
+        print("[init_db] [+] alert_seen")
 
         # Search Alerts (gespeicherte Suchen)
         cur.execute("""
@@ -150,7 +150,7 @@ def init_db() -> None:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("[init_db] ✓ search_alerts")
+        print("[init_db] [+] search_alerts")
 
         # Index für aktive Alerts
         cur.execute("""
@@ -173,7 +173,7 @@ def init_db() -> None:
                 UNIQUE(user_email, item_id)
             )
         """)
-        print("[init_db] ✓ watchlist")
+        print("[init_db] [+] watchlist")
 
         # Notification Log (optional)
         cur.execute("""
@@ -185,7 +185,7 @@ def init_db() -> None:
                 sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("[init_db] ✓ notification_log")
+        print("[init_db] [+] notification_log")
 
     else:
         # ==================== SQLITE SCHEMA ====================
@@ -205,7 +205,7 @@ def init_db() -> None:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("[init_db] ✓ users (SQLite)")
+        print("[init_db] [+] users (SQLite)")
 
         # Alert Seen
         cur.execute("""
@@ -219,7 +219,7 @@ def init_db() -> None:
                 PRIMARY KEY (user_email, search_hash, src, item_id)
             )
         """)
-        print("[init_db] ✓ alert_seen")
+        print("[init_db] [+] alert_seen")
 
         # Search Alerts
         cur.execute("""
@@ -234,7 +234,7 @@ def init_db() -> None:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("[init_db] ✓ search_alerts")
+        print("[init_db] [+] search_alerts")
 
         # Index für aktive Alerts
         cur.execute("""
@@ -256,7 +256,7 @@ def init_db() -> None:
                 UNIQUE(user_email, item_id)
             )
         """)
-        print("[init_db] ✓ watchlist")
+        print("[init_db] [+] watchlist")
 
         # Notification Log
         cur.execute("""
@@ -268,30 +268,30 @@ def init_db() -> None:
                 sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("[init_db] ✓ notification_log")
+        print("[init_db] [+] notification_log")
 
     conn.commit()
     conn.close()
-    print("[init_db] ✅ Datenbank erfolgreich initialisiert!\n")
+    print("[init_db] [OK] Datenbank erfolgreich initialisiert!\n")
 
 
 # ===================================================================
 # MIGRATION CONTROL
 # ===================================================================
 
-# ⚠️ WICHTIG: Nach dem ersten Start auf False setzen!
+# [!] WICHTIG: Nach dem ersten Start auf False setzen!
 RUN_MIGRATION = False
 
 if RUN_MIGRATION:
-    print("\n" + "⚠️ "*30)
-    print("⚠️  MIGRATION MODE AKTIV!")
-    print("⚠️  Alle Tabellen werden gelöscht und neu erstellt!")
-    print("⚠️  ")
-    print("⚠️  NACH DEM START:")
-    print("⚠️  1. App stoppen (Ctrl+C)")
-    print("⚠️  2. In database.py: RUN_MIGRATION = False setzen")
-    print("⚠️  3. App neu starten")
-    print("⚠️ "*30 + "\n")
+    print("\n" + "[!] "*30)
+    print("[!]  MIGRATION MODE AKTIV!")
+    print("[!]  Alle Tabellen werden gelöscht und neu erstellt!")
+    print("[!]  ")
+    print("[!]  NACH DEM START:")
+    print("[!]  1. App stoppen (Ctrl+C)")
+    print("[!]  2. In database.py: RUN_MIGRATION = False setzen")
+    print("[!]  3. App neu starten")
+    print("[!] "*30 + "\n")
     drop_all_tables()
 
 # Bei Import automatisch initialisieren

@@ -15,8 +15,6 @@ EBAY_ENV = os.getenv("EBAY_ENV", "production").lower()
 CLIENT_ID = os.getenv("EBAY_CLIENT_ID")
 CLIENT_SECRET = os.getenv("EBAY_CLIENT_SECRET")
 
-# Für Browse genügt ein Application Token (kein Refresh-Token nötig)
-# Scopes können bei Bedarf via ENV erweitert werden
 SCOPES = os.getenv(
     "EBAY_SCOPES",
     "https://api.ebay.com/oauth/api_scope https://api.ebay.com/oauth/api_scope/buy.browse",
@@ -25,15 +23,28 @@ SCOPES = os.getenv(
 MARKETPLACE_ID = os.getenv("EBAY_MARKETPLACE_ID", "EBAY_DE")
 ACCEPT_LANGUAGE = os.getenv("EBAY_ACCEPT_LANGUAGE", "de-DE")
 
+# ⭐ NEU: Country-Code -> eBay Marketplace Mapping
+COUNTRY_TO_MARKETPLACE = {
+    'DE': 'EBAY_DE',
+    'AT': 'EBAY_AT',
+    'CH': 'EBAY_CH',
+    'US': 'EBAY_US',
+    'GB': 'EBAY_GB',
+    'FR': 'EBAY_FR',
+    'IT': 'EBAY_IT',
+    'ES': 'EBAY_ES',
+    'NL': 'EBAY_NL',
+    'BE': 'EBAY_BE',
+    'EU': 'EBAY_DE',  # Fallback
+}
+
 AFFILIATE_ENABLE = os.getenv("AFFILIATE_ENABLE", "false").lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
-AFFILIATE_PARAMS = os.getenv(
-    "AFFILIATE_PARAMS", ""
-)  # z.B. campid=XXXX;customid=YOURTAG
+AFFILIATE_PARAMS = os.getenv("AFFILIATE_PARAMS", "")
 
 BASE = (
     "https://api.ebay.com"
@@ -103,7 +114,6 @@ def _attach_affiliate(url: str) -> str:
 
         p = urlparse(url)
         params = dict(parse_qsl(p.query, keep_blank_values=True))
-        # AFFILIATE_PARAMS: "campid=XXXX;customid=YOURTAG"
         for kv in (AFFILIATE_PARAMS or "").split(";"):
             if "=" in kv:
                 k, v = kv.split("=", 1)
@@ -114,10 +124,19 @@ def _attach_affiliate(url: str) -> str:
         return url
 
 
-def _headers() -> Dict[str, str]:
+# ⭐ GEÄNDERT: marketplace_id Parameter hinzugefügt
+def _headers(marketplace_id: Optional[str] = None) -> Dict[str, str]:
+    """
+    Erstellt Header mit optionaler Marketplace-ID Override
+
+    Args:
+        marketplace_id: Optional eBay Marketplace ID (z.B. 'EBAY_CH')
+                       Falls None, wird MARKETPLACE_ID aus ENV verwendet
+    """
+    mid = marketplace_id or MARKETPLACE_ID
     return {
         "Authorization": f"Bearer {_get_access_token()}",
-        "X-EBAY-C-MARKETPLACE-ID": MARKETPLACE_ID,
+        "X-EBAY-C-MARKETPLACE-ID": mid,  # ⭐ Jetzt dynamisch!
         "Accept-Language": ACCEPT_LANGUAGE,
         "Content-Type": "application/json",
     }
@@ -141,6 +160,7 @@ def _map_sort(sort_key: str) -> str:
     return "bestMatch"
 
 
+# ⭐ GEÄNDERT: country_code Parameter hinzugefügt
 def ebay_search(
     query: str,
     *,
@@ -148,9 +168,24 @@ def ebay_search(
     offset: int = 0,
     sort: str = "bestMatch",
     category_ids: Optional[str] = None,
-    filter_str: Optional[str] = None,  # <— NEU
+    filter_str: Optional[str] = None,
+    country_code: Optional[str] = None,  # ⭐ NEU
 ) -> Dict[str, Any]:
-    ...
+    """
+    Sucht auf eBay über die Browse API
+
+    Args:
+        query: Suchbegriff
+        limit: Max. Anzahl Ergebnisse (1-200)
+        offset: Offset für Pagination
+        sort: Sortierung (bestMatch, price, -price, newlyListed)
+        category_ids: Komma-separierte eBay Kategorie-IDs
+        filter_str: eBay Filter-String (z.B. "price:[10..100],conditions:{NEW}")
+        country_code: Land-Code (DE, CH, AT, US...) für Marketplace-Auswahl
+
+    Returns:
+        eBay API Response als Dict
+    """
     params: Dict[str, Any] = {
         "q": query,
         "limit": max(1, min(limit, 200)),
@@ -159,11 +194,19 @@ def ebay_search(
     }
     if category_ids:
         params["category_ids"] = category_ids
-    if filter_str:  # <— NEU
+    if filter_str:
         params["filter"] = filter_str
+
     url = f"{BASE}/buy/browse/v1/item_summary/search"
 
-    hdrs = _headers()
+    # ⭐ Marketplace ID aus Country-Code ableiten
+    marketplace_id = None
+    if country_code:
+        marketplace_id = COUNTRY_TO_MARKETPLACE.get(country_code.upper())
+        if marketplace_id:
+            log.debug(f"Using marketplace {marketplace_id} for country {country_code}")
+
+    hdrs = _headers(marketplace_id=marketplace_id)  # ⭐ HIER übergeben
 
     # 3 Versuche: 401 -> Token erneuern, 429 -> Backoff
     for attempt in range(3):
@@ -177,7 +220,7 @@ def ebay_search(
         if r.status_code == 401 and attempt == 0:
             log.info("eBay 401: Token wird erneuert…")
             _token_cache.clear()
-            hdrs = _headers()
+            hdrs = _headers(marketplace_id=marketplace_id)  # ⭐ Auch hier!
             continue
 
         if r.status_code == 429:
@@ -187,7 +230,6 @@ def ebay_search(
             continue
 
         if r.status_code in (403, 404):
-            # 403: Policy/Scope; 404: ungültige Query/Filter
             log.error("eBay %s: %s", r.status_code, r.text)
             r.raise_for_status()
 
@@ -204,5 +246,4 @@ def ebay_search(
                 it["itemWebUrl"] = _attach_affiliate(it["itemWebUrl"])
         return data
 
-    # Sollte praktisch nie erreicht werden:
     raise RuntimeError("eBay-Suche fehlgeschlagen (max. Retries erreicht)")

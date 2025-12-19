@@ -17,7 +17,7 @@ pending_verifications = {}
 def settings():
     print(f"[DEBUG] current_user: {current_user}, authenticated: {current_user.is_authenticated}")
 
-    # current_user ist bereits das vollständige User-Objekt aus Flask-Login → kein Query nötig!
+    # current_user ist bereits das vollständige User-Objekt aus Flask-Login -> kein Query nötig!
     user = current_user
 
     # Prüfen, ob der Bot konfiguriert ist

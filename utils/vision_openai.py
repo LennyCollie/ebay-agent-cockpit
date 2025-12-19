@@ -44,7 +44,7 @@ def _call_openai_on_image(url: str) -> Dict[str, Any]:
     client = OpenAI(api_key=api_key)
     model = os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini")
 
-    # knapper, deterministischer Prompt → JSON erzwingen
+    # knapper, deterministischer Prompt -> JSON erzwingen
     prompt = (
         "You are a damage detector for phone listings. "
         "Look ONLY for cracked/broken screen, deep scratches, shattered glass. "
@@ -85,7 +85,7 @@ def _call_openai_on_image(url: str) -> Dict[str, Any]:
 def analyze_image_hybrid(urls: List[str]) -> Dict[str, Any]:
     """
     1) Google schnell scannen
-    2) Nur wenn 'suspicious' oder 'damaged' → OpenAI pro Bild zur Verfeinerung
+    2) Nur wenn 'suspicious' oder 'damaged' -> OpenAI pro Bild zur Verfeinerung
     3) Kombi: max(google_score, openai_scores)
     """
     from utils.vision_google import scan_google  # lazy import, vermeidet Zyklus
@@ -97,7 +97,7 @@ def analyze_image_hybrid(urls: List[str]) -> Dict[str, Any]:
     g_verdict = str(google_res.get("verdict", "ok"))
     details = google_res.get("details", [])
 
-    # wenn Google klar "ok" → OpenAI sparen
+    # wenn Google klar "ok" -> OpenAI sparen
     if g_verdict == "ok":
         google_res["openai_used"] = False
         google_res.setdefault("notes", []).append("openai skipped: google verdict ok")

@@ -159,7 +159,7 @@ def send_mail(to_email, subject, text_body, html_body=None):
         }
 
         if error_code in bounce_error_codes or response.status_code == 422:
-            # Wir kennen nicht, welcher Empfänger schuld war → alle versuchen wir zu markieren.
+            # Wir kennen nicht, welcher Empfänger schuld war -> alle versuchen wir zu markieren.
             for r in recipients_ok:
                 add_bounced_email(r)
 

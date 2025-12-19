@@ -106,16 +106,23 @@
             </td>
 
             <td>
-              {% if item.src == 'kleinanzeigen' %}
-                <span class="badge bg-success">🟢 Kleinanzeigen</span>
-              {% elif item.src == 'ebay' %}
+              {% set src = (item.src or '')|lower %}
+              {% if src == 'ebay' %}
                 <span class="badge bg-primary">🔵 eBay</span>
+              {% elif src == 'kleinanzeigen' %}
+                <span class="badge bg-success">🟢 Kleinanzeigen</span>
+              {% elif src == 'quoka' %}
+                <span class="badge bg-warning text-dark">🟠 Quoka</span>
+              {% elif src == 'shpock' %}
+                <span class="badge bg-info text-dark">🛍️ Shpock</span>
+              {% elif src == 'marktde' %}
+                <span class="badge bg-danger">🏪 Markt.de</span>
               {% else %}
                 <span class="badge bg-secondary">
-                  {{ item.src or "Unbekannt" }}
-                </span>
+                  {{ src or "Unbekannt" }}
+                 </span>
               {% endif %}
-            </td>
+              </td>
 
             <td>{{ item.first_seen_str or "–" }}</td>
             <td>{{ item.last_sent_str or "–" }}</td>

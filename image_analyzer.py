@@ -96,9 +96,9 @@ class VisionAnalyzer:
                     # Versuche Default Credentials (für Cloud-Umgebungen)
                     self.client = vision.ImageAnnotatorClient()
 
-                logger.info("✅ Google Vision API initialisiert")
+                logger.info("[OK] Google Vision API initialisiert")
             except Exception as e:
-                logger.error(f"❌ Vision API Init Fehler: {e}")
+                logger.error(f"[!] Vision API Init Fehler: {e}")
                 self.enabled = False
 
     def is_available(self) -> bool:
@@ -200,7 +200,7 @@ class VisionAnalyzer:
             }
 
         except Exception as e:
-            logger.error(f"❌ Vision API Fehler für {image_url}: {e}")
+            logger.error(f"[!] Vision API Fehler für {image_url}: {e}")
             return {
                 "has_damage": False,
                 "confidence": 0.0,
@@ -268,7 +268,7 @@ class VisionAnalyzer:
                 damages_found += 1
 
         # Overall Decision
-        # Wenn mehr als 50% der Bilder Schäden zeigen → has_damage = True
+        # Wenn mehr als 50% der Bilder Schäden zeigen -> has_damage = True
         has_damage = damages_found > (len(results) / 2)
 
         # Average Confidence
@@ -337,7 +337,7 @@ def test_vision_api():
         result = analyzer.analyze_image(test_url)
         print(f"Ergebnis: {result}")
     else:
-        print("\n❌ Vision API nicht verfügbar")
+        print("\n[!] Vision API nicht verfügbar")
         print("Prüfe:")
         print("1. GOOGLE_APPLICATION_CREDENTIALS gesetzt?")
         print("2. google-cloud-vision installiert?")

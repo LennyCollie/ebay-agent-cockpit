@@ -206,7 +206,7 @@ class KleinanzeigenScraper:
                 conn.commit()
 
                 if result:
-                    logger.info(f"✓ Neues Item gespeichert: {item_data['title'][:50]}")
+                    logger.info(f"[+] Neues Item gespeichert: {item_data['title'][:50]}")
                     return True
                 return False
 
@@ -298,21 +298,21 @@ class KleinanzeigenScraper:
         logger.info(f"📋 Aktive Suchanfragen: {len(searches)}")
 
         if not searches:
-            logger.warning("⚠️  Keine aktiven Kleinanzeigen-Suchen gefunden!")
+            logger.warning("[!]  Keine aktiven Kleinanzeigen-Suchen gefunden!")
             return 0
 
         total_new_items = 0
 
         for idx, search in enumerate(searches, 1):
             query = search['query']
-            logger.info(f"\n[{idx}/{len(searches)}] 🔍 Suche: '{query}'")
+            logger.info(f"\n[{idx}/{len(searches)}] [*] Suche: '{query}'")
 
             try:
                 entries = self.fetch_rss_feed(search)
-                logger.info(f"   📦 Feed-Einträge gefunden: {len(entries)}")
+                logger.info(f"   [+] Feed-Einträge gefunden: {len(entries)}")
 
                 if not entries:
-                    logger.warning(f"   ⚠️  Keine Einträge im RSS-Feed")
+                    logger.warning(f"   [!]  Keine Einträge im RSS-Feed")
                     continue
 
                 new_items = 0
@@ -330,11 +330,11 @@ class KleinanzeigenScraper:
                 time.sleep(3)
 
             except Exception as e:
-                logger.error(f"   ❌ Fehler bei Suche '{query}': {e}")
+                logger.error(f"   [!] Fehler bei Suche '{query}': {e}")
                 continue
 
         logger.info("\n" + "=" * 60)
-        logger.info(f"✅ DURCHLAUF ABGESCHLOSSEN - Neue Items gesamt: {total_new_items}")
+        logger.info(f"[OK] DURCHLAUF ABGESCHLOSSEN - Neue Items gesamt: {total_new_items}")
         logger.info("=" * 60 + "\n")
 
         return total_new_items
@@ -347,12 +347,12 @@ class KleinanzeigenScraper:
 
         while True:
             cycle_count += 1
-            logger.info(f"\n🔄 Durchlauf #{cycle_count} - {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
+            logger.info(f"\n[*] Durchlauf #{cycle_count} - {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
 
             try:
                 self.run_scrape_cycle()
             except Exception as e:
-                logger.error(f"❌ Kritischer Fehler im Scraping-Durchlauf: {e}")
+                logger.error(f"[!] Kritischer Fehler im Scraping-Durchlauf: {e}")
 
             next_run = datetime.now().timestamp() + interval_seconds
             next_run_time = datetime.fromtimestamp(next_run).strftime('%H:%M:%S')

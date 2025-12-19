@@ -61,250 +61,270 @@
   {% set q3 = request.args.get('q3', '') %}
   {% set q_main = (q1 ~ ' ' ~ q2 ~ ' ' ~ q3).strip() %}
 
-<div class="alert alert-light border small d-flex flex-column flex-md-row
-            justify-content-between align-items-md-center mb-3">
-  <div class="mb-2 mb-md-0">
-    <strong>Auch auf anderen Portalen schauen?</strong><br>
-    <span class="text-muted">
-      Diese Buttons öffnen eine Google-Suche mit deinem Begriff nur auf dem jeweiligen Portal.
-      (Wenn du noch keinen Begriff eingegeben hast, siehst du einfach alle Treffer des Portals.)
-    </span>
-  </div>
-
-  <div class="btn-group btn-group-sm flex-wrap">
-    <a class="btn btn-outline-secondary"
-       href="https://www.google.com/search?q=site:quoka.de+{{ q_main|replace(' ', '+') }}"
-       target="_blank" rel="noopener">
-      Quoka
-    </a>
-    <a class="btn btn-outline-secondary"
-       href="https://www.google.com/search?q=site:shpock.com+{{ q_main|replace(' ', '+') }}"
-       target="_blank" rel="noopener">
-      Shpock
-    </a>
-    <a class="btn btn-outline-secondary"
-       href="https://www.google.com/search?q=site:kleinanzeigen.de+{{ q_main|replace(' ', '+') }}"
-       target="_blank" rel="noopener">
-      Kleinanzeigen.de (Google)
-    </a>
-    <a class="btn btn-outline-secondary"
-       href="https://www.google.com/search?q=site:facebook.com+Marketplace+{{ q_main|replace(' ', '+') }}"
-       target="_blank" rel="noopener">
-      Facebook Marketplace
-    </a>
-  </div>
-</div>
-
-
-  <div class="card shadow-sm border-0">
-    {# ... ab hier kommt dein bestehender Card-Body mit Formular, Filtern usw. ... #}
-
-
-  <div class="card shadow-sm border-0">
-    <div class="card-header bg-gradient"
-         style="background: linear-gradient(135deg, #0d6efd, #6610f2); color: #fff;">
-      <div class="d-flex justify-content-between align-items-center">
-        <div>
-          <strong>Vorlagen:</strong>
-          <button type="button" class="btn btn-sm btn-light ms-2 me-1"
-                  onclick="fillPreset('iphone 12', '100', '900')">Allround-Suche</button>
-          <button type="button" class="btn btn-sm btn-outline-light me-1"
-                  onclick="fillPreset('Schnäppchen', '0', '100')">Schnäppchen</button>
-          <button type="button" class="btn btn-sm btn-outline-light"
-                  onclick="fillPreset('wie neu', '', '')">Wie neu</button>
-        </div>
-        <button type="button" class="btn btn-sm btn-outline-light" onclick="resetSearchForm()">
-          Zurücksetzen
-        </button>
-      </div>
+  <div class="alert alert-light border small d-flex flex-column flex-md-row
+              justify-content-between align-items-md-center mb-3">
+    <div class="mb-2 mb-md-0">
+      <strong>Auch auf anderen Portalen schauen?</strong><br>
+      <span class="text-muted">
+        Diese Buttons öffnen eine Google-Suche mit deinem Begriff nur auf dem jeweiligen Portal.
+        (Wenn du noch keinen Begriff eingegeben hast, siehst du einfach alle Treffer des Portals.)
+      </span>
     </div>
 
-    <div class="card-body">
+    <div class="btn-group btn-group-sm flex-wrap">
+      <a class="btn btn-outline-secondary"
+         href="https://www.google.com/search?q=site:quoka.de+{{ q_main|replace(' ', '+') }}"
+         target="_blank" rel="noopener">
+        Quoka
+      </a>
+      <a class="btn btn-outline-secondary"
+         href="https://www.google.com/search?q=site:shpock.com+{{ q_main|replace(' ', '+') }}"
+         target="_blank" rel="noopener">
+        Shpock
+      </a>
+      <a class="btn btn-outline-secondary"
+         href="https://www.google.com/search?q=site:kleinanzeigen.de+{{ q_main|replace(' ', '+') }}"
+         target="_blank" rel="noopener">
+        Kleinanzeigen.de (Google)
+      </a>
+      <a class="btn btn-outline-secondary"
+         href="https://www.google.com/search?q=site:facebook.com+Marketplace+{{ q_main|replace(' ', '+') }}"
+         target="_blank" rel="noopener">
+        Facebook Marketplace
+      </a>
+    </div>
+  </div>
 
-      {# FORMULAR START #}
-      <form method="GET" action="{{ url_for('search.search_page') }}" id="search-form">
+  <div class="card shadow-sm border-0">
 
-        {# --- Begriffe --------------------------------------------------- #}
-        <div class="row g-3 mb-3">
-          <div class="col-md-4">
-            <label class="form-label">Begriff 1</label>
-            <input type="text" name="q1" class="form-control"
-                   placeholder="z.B. iPhone 12"
-                   value="{{ request.args.get('q1','') }}">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-gradient"
+           style="background: linear-gradient(135deg, #0d6efd, #6610f2); color: #fff;">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <strong>Vorlagen:</strong>
+            <button type="button" class="btn btn-sm btn-light ms-2 me-1"
+                    onclick="fillPreset('iphone 12', '100', '900')">Allround-Suche</button>
+            <button type="button" class="btn btn-sm btn-outline-light me-1"
+                    onclick="fillPreset('Schnäppchen', '0', '100')">Schnäppchen</button>
+            <button type="button" class="btn btn-sm btn-outline-light"
+                    onclick="fillPreset('wie neu', '', '')">Wie neu</button>
           </div>
-          <div class="col-md-4">
-            <label class="form-label">Begriff 2</label>
-            <input type="text" name="q2" class="form-control"
-                   placeholder="optional"
-                   value="{{ request.args.get('q2','') }}">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Begriff 3</label>
-            <input type="text" name="q3" class="form-control"
-                   placeholder="optional"
-                   value="{{ request.args.get('q3','') }}">
-          </div>
+          <button type="button" class="btn btn-sm btn-outline-light" onclick="resetSearchForm()">
+            Zurücksetzen
+          </button>
         </div>
+      </div>
 
-        {# --- Preis / Sortierung / Anzahl -------------------------------- #}
-        <div class="row g-3 mb-3">
-          <div class="col-md-3">
-            <label class="form-label">Preis min</label>
-            <div class="input-group">
-              <input type="number" min="0" step="1" name="price_min" class="form-control"
-                     value="{{ request.args.get('price_min','') }}">
-              <span class="input-group-text">€</span>
+      <div class="card-body">
+
+        {# FORMULAR START #}
+        <form method="GET" action="{{ url_for('search.search_page') }}" id="search-form">
+
+          {# --- Begriffe --------------------------------------------------- #}
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label">Begriff 1</label>
+              <input type="text" name="q1" class="form-control"
+                     placeholder="z.B. iPhone 12"
+                     value="{{ request.args.get('q1','') }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Begriff 2</label>
+              <input type="text" name="q2" class="form-control"
+                     placeholder="optional"
+                     value="{{ request.args.get('q2','') }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Begriff 3</label>
+              <input type="text" name="q3" class="form-control"
+                     placeholder="optional"
+                     value="{{ request.args.get('q3','') }}">
             </div>
           </div>
-          <div class="col-md-3">
-            <label class="form-label">Preis max</label>
-            <div class="input-group">
-              <input type="number" min="0" step="1" name="price_max" class="form-control"
-                     value="{{ request.args.get('price_max','') }}">
-              <span class="input-group-text">€</span>
+
+          {# --- Preis / Sortierung / Anzahl -------------------------------- #}
+          <div class="row g-3 mb-3">
+            <div class="col-md-3">
+              <label class="form-label">Preis min</label>
+              <div class="input-group">
+                <input type="number" min="0" step="1" name="price_min" class="form-control"
+                       value="{{ request.args.get('price_min','') }}">
+                <span class="input-group-text">€</span>
+              </div>
             </div>
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Sortierung</label>
-            <select name="sort" class="form-select">
+            <div class="col-md-3">
+              <label class="form-label">Preis max</label>
+              <div class="input-group">
+                <input type="number" min="0" step="1" name="price_max" class="form-control"
+                       value="{{ request.args.get('price_max','') }}">
+                <span class="input-group-text">€</span>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Sortierung</label>
               {% set current_sort = request.args.get('sort','best') %}
-              <option value="best"       {{ 'selected' if current_sort == 'best' else '' }}>Beste Treffer</option>
-              <option value="price_asc"  {{ 'selected' if current_sort == 'price_asc' else '' }}>Preis aufsteigend</option>
-              <option value="price_desc" {{ 'selected' if current_sort == 'price_desc' else '' }}>Preis absteigend</option>
-              <option value="newly"      {{ 'selected' if current_sort == 'newly' else '' }}>Neu eingestellt</option>
-            </select>
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Ergebnisse pro Seite</label>
-            <select name="per_page" class="form-select">
-              {% set per_page = request.args.get('per_page','20') %}
-              {% for n in [10, 16, 20, 32, 48] %}
-                <option value="{{ n }}" {{ 'selected' if per_page == n|string else '' }}>{{ n }}</option>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
-
-        <hr>
-
-        {# --- Filterblöcke ----------------------------------------------- #}
-        <div class="row g-3 mb-3">
-          <div class="col-md-4">
-            <label class="form-label d-block">Zustand</label>
-            {% set conds = request.args.getlist('condition') %}
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="cond_new"
-                     name="condition" value="NEW" {% if 'NEW' in conds %}checked{% endif %}>
-              <label class="form-check-label" for="cond_new">Neu</label>
+              <select name="sort" class="form-select">
+                <option value="best"       {{ 'selected' if current_sort == 'best' else '' }}>Beste Treffer</option>
+                <option value="price_asc"  {{ 'selected' if current_sort == 'price_asc' else '' }}>Preis aufsteigend</option>
+                <option value="price_desc" {{ 'selected' if current_sort == 'price_desc' else '' }}>Preis absteigend</option>
+                <option value="newly"      {{ 'selected' if current_sort == 'newly' else '' }}>Neu eingestellt</option>
+              </select>
             </div>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="cond_used"
-                     name="condition" value="USED" {% if 'USED' in conds %}checked{% endif %}>
-              <label class="form-check-label" for="cond_used">Gebraucht</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="cond_refurb"
-                     name="condition" value="CERTIFIED_REFURBISHED" {% if 'CERTIFIED_REFURBISHED' in conds %}checked{% endif %}>
-              <label class="form-check-label" for="cond_refurb">Refurbished (zert.)</label>
-            </div>
-            <small class="text-muted">Mehrfachauswahl möglich.</small>
-          </div>
-
-          <div class="col-md-4">
-            <label class="form-label d-block">Versand &amp; Verkäufer</label>
-            {% set fs = request.args.get('free_shipping','') %}
-            {% set ra = request.args.get('returns_accepted','') %}
-            {% set tr = request.args.get('top_rated_only','') %}
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="fs_only"
-                     name="free_shipping" value="1" {% if fs %}checked{% endif %}>
-              <label class="form-check-label" for="fs_only">Nur kostenloser Versand</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="ra_only"
-                     name="returns_accepted" value="1" {% if ra %}checked{% endif %}>
-              <label class="form-check-label" for="ra_only">Nur mit Rückgaberecht</label>
-            </div>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="tr_only"
-                     name="top_rated_only" value="1" {% if tr %}checked{% endif %}>
-              <label class="form-check-label" for="tr_only">Nur Top-bewertete Verkäufer</label>
+            <div class="col-md-3">
+              <label class="form-label">Ergebnisse pro Seite</label>
+              <select name="per_page" class="form-select">
+                {% set per_page = request.args.get('per_page','20') %}
+                {% for n in [10, 16, 20, 32, 48] %}
+                  <option value="{{ n }}" {{ 'selected' if per_page == n|string else '' }}>{{ n }}</option>
+                {% endfor %}
+              </select>
             </div>
           </div>
 
-          <div class="col-md-4">
-            <label class="form-label">Land</label>
-            {% set lc = request.args.get('location_country','DE') %}
-            <select name="location_country" class="form-select mb-2">
-              <option value="DE" {{ 'selected' if lc == 'DE' else '' }}>🇩🇪 Deutschland</option>
-              <option value="AT" {{ 'selected' if lc == 'AT' else '' }}>🇦🇹 Österreich</option>
-              <option value="CH" {{ 'selected' if lc == 'CH' else '' }}>🇨🇭 Schweiz</option>
-              <option value="EU" {{ 'selected' if lc == 'EU' else '' }}>🇪🇺 EU-weit</option>
-              <option value="GB" {{ 'selected' if lc == 'GB' else '' }}>🇬🇧 Großbritannien</option>
-              <option value="US" {{ 'selected' if lc == 'US' else '' }}>🇺🇸 USA</option>
-            </select>
+          <hr>
 
-            <label class="form-label mt-2 d-block">Angebotsart</label>
-            {% set lt = request.args.get('listing_type','all') %}
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="listing_type"
-                     id="lt_all" value="all" {% if lt == 'all' %}checked{% endif %}>
-              <label class="form-check-label" for="lt_all">Alle</label>
+          {# --- Filterblöcke ----------------------------------------------- #}
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label d-block">Zustand</label>
+              {% set conds = request.args.getlist('condition') %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cond_new"
+                       name="condition" value="NEW" {% if 'NEW' in conds %}checked{% endif %}>
+                <label class="form-check-label" for="cond_new">Neu</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cond_used"
+                       name="condition" value="USED" {% if 'USED' in conds %}checked{% endif %}>
+                <label class="form-check-label" for="cond_used">Gebraucht</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="cond_refurb"
+                       name="condition" value="CERTIFIED_REFURBISHED" {% if 'CERTIFIED_REFURBISHED' in conds %}checked{% endif %}>
+                <label class="form-check-label" for="cond_refurb">Refurbished (zert.)</label>
+              </div>
+              <small class="text-muted">Mehrfachauswahl möglich.</small>
             </div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="listing_type"
-                     id="lt_fix" value="buy_it_now" {% if lt == 'buy_it_now' %}checked{% endif %}>
-              <label class="form-check-label" for="lt_fix">Sofort-Kaufen</label>
+
+            <div class="col-md-4">
+              <label class="form-label d-block">Versand &amp; Verkäufer</label>
+              {% set fs = request.args.get('free_shipping','') %}
+              {% set ra = request.args.get('returns_accepted','') %}
+              {% set tr = request.args.get('top_rated_only','') %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="fs_only"
+                       name="free_shipping" value="1" {% if fs %}checked{% endif %}>
+                <label class="form-check-label" for="fs_only">Nur kostenloser Versand</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="ra_only"
+                       name="returns_accepted" value="1" {% if ra %}checked{% endif %}>
+                <label class="form-check-label" for="ra_only">Nur mit Rückgaberecht</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="tr_only"
+                       name="top_rated_only" value="1" {% if tr %}checked{% endif %}>
+                <label class="form-check-label" for="tr_only">Nur Top-bewertete Verkäufer</label>
+              </div>
             </div>
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="listing_type"
-                     id="lt_auc" value="auction" {% if lt == 'auction' %}checked{% endif %}>
-              <label class="form-check-label" for="lt_auc">Auktion</label>
+
+            <div class="col-md-4">
+              <label class="form-label">Land</label>
+              {% set lc = request.args.get('location_country','DE') %}
+              <select name="location_country" class="form-select mb-2">
+                <option value="DE" {{ 'selected' if lc == 'DE' else '' }}>🇩🇪 Deutschland</option>
+                <option value="AT" {{ 'selected' if lc == 'AT' else '' }}>🇦🇹 Österreich</option>
+                <option value="CH" {{ 'selected' if lc == 'CH' else '' }}>🇨🇭 Schweiz</option>
+                <option value="EU" {{ 'selected' if lc == 'EU' else '' }}>🇪🇺 EU-weit</option>
+                <option value="GB" {{ 'selected' if lc == 'GB' else '' }}>🇬🇧 Großbritannien</option>
+                <option value="US" {{ 'selected' if lc == 'US' else '' }}>🇺🇸 USA</option>
+              </select>
+
+              <label class="form-label mt-2 d-block">Angebotsart</label>
+              {% set lt = request.args.get('listing_type','all') %}
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="listing_type"
+                       id="lt_all" value="all" {% if lt == 'all' %}checked{% endif %}>
+                <label class="form-check-label" for="lt_all">Alle</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="listing_type"
+                       id="lt_fix" value="buy_it_now" {% if lt == 'buy_it_now' %}checked{% endif %}>
+                <label class="form-check-label" for="lt_fix">Sofort-Kaufen</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="listing_type"
+                       id="lt_auc" value="auction" {% if lt == 'auction' %}checked{% endif %}>
+                <label class="form-check-label" for="lt_auc">Auktion</label>
+              </div>
             </div>
           </div>
-        </div>
 
-        <hr>
+          <hr>
 
-        {# --- Quelle + Buttons ------------------------------------------- #}
-        <div class="row mb-3 align-items-end">
-          <div class="col-md-6">
-            <label class="form-label d-block">Quelle</label>
-            {% set src = request.args.get('source','ebay') %}
-            <div class="btn-group" role="group" aria-label="Quelle wählen">
-              <input type="radio" class="btn-check" name="source" id="src_ebay"
-                     value="ebay" autocomplete="off" {% if src == 'ebay' %}checked{% endif %}>
-              <label class="btn btn-outline-primary" for="src_ebay">Nur eBay</label>
+          {# --- Portale + Buttons ---------------------------------------- #}
+          <div class="row mb-3 align-items-end">
+            <div class="col-md-6">
+              <label class="form-label d-block">Portale</label>
+              {% set src = request.args.get('source', source|default('both')) %}
+              <div class="btn-group flex-wrap" role="group" aria-label="Portale wählen">
+                <input type="radio" class="btn-check" name="source" id="src_ebay"
+                       value="ebay" autocomplete="off"
+                       {% if src == 'ebay' %}checked{% endif %}>
+                <label class="btn btn-outline-primary btn-sm" for="src_ebay">eBay</label>
 
-              <input type="radio" class="btn-check" name="source" id="src_ka"
-                     value="kleinanzeigen" autocomplete="off" {% if src == 'kleinanzeigen' %}checked{% endif %}>
-              <label class="btn btn-outline-primary" for="src_ka">Nur Kleinanzeigen</label>
+                <input type="radio" class="btn-check" name="source" id="src_ka"
+                       value="kleinanzeigen" autocomplete="off"
+                       {% if src == 'kleinanzeigen' %}checked{% endif %}>
+                <label class="btn btn-outline-success btn-sm" for="src_ka">Kleinanzeigen</label>
 
-              <input type="radio" class="btn-check" name="source" id="src_both"
-                     value="both" autocomplete="off" {% if src == 'both' %}checked{% endif %}>
-              <label class="btn btn-outline-primary" for="src_both">Beides (Agent)</label>
+                <input type="radio" class="btn-check" name="source" id="src_quoka"
+                       value="quoka" autocomplete="off"
+                       {% if src == 'quoka' %}checked{% endif %}>
+                <label class="btn btn-outline-warning btn-sm text-dark" for="src_quoka">Quoka</label>
+
+                <input type="radio" class="btn-check" name="source" id="src_shpock"
+                       value="shpock" autocomplete="off"
+                       {% if src == 'shpock' %}checked{% endif %}>
+                <label class="btn btn-outline-info btn-sm text-dark" for="src_shpock">Shpock</label>
+
+                <input type="radio" class="btn-check" name="source" id="src_marktde"
+                       value="marktde" autocomplete="off"
+                       {% if src == 'marktde' %}checked{% endif %}>
+                <label class="btn btn-outline-danger btn-sm" for="src_marktde">Markt.de</label>
+
+                <input type="radio" class="btn-check" name="source" id="src_all"
+                       value="both" autocomplete="off"
+                       {% if src == 'both' %}checked{% endif %}>
+                <label class="btn btn-outline-secondary btn-sm" for="src_all">Alle Portale</label>
+              </div>
+
+              <small class="text-muted d-block mt-1">
+                „Alle Portale“ nutzt eBay + Kleinanzeigen + Quoka + Shpock + Markt.de gleichzeitig.
+              </small>
+            </div>
+
+            <div class="col-md-6 d-flex justify-content-md-end justify-content-center mt-3 mt-md-0 gap-2">
+              <!-- Normale Suche (GET auf /search) -->
+              <button type="submit" class="btn btn-lg btn-search-main">
+                Ergebnisse anzeigen
+              </button>
+
+              <!-- Alert anlegen (POST auf /alerts/subscribe) -->
+              <button
+                type="submit"
+                class="btn btn-outline-secondary btn-lg"
+                formmethod="post"
+                formaction="{{ url_for('alerts.alerts_subscribe') }}"
+              >
+                🔔 Als Alert speichern
+              </button>
             </div>
           </div>
 
-          <div class="col-md-6 d-flex justify-content-md-end justify-content-center mt-3 mt-md-0 gap-2">
-            <!-- Normale Suche (GET auf /search) -->
-            <button type="submit" class="btn btn-lg btn-search-main">
-              Ergebnisse anzeigen
-            </button>
-
-            <!-- Alert anlegen (POST auf /alerts/subscribe) -->
-            <button
-              type="submit"
-              class="btn btn-outline-secondary btn-lg"
-              formmethod="post"
-              formaction="{{ url_for('alerts.alerts_subscribe') }}"
-            >
-              🔔 Als Alert speichern
-            </button>
-          </div>
-        </div>
-
-      </form>
+        </form>
+      </div>
     </div>
   </div>
 </div>
@@ -343,7 +363,7 @@
     const f = document.getElementById('search-form');
     if (!f) return;
     f.reset();
-    window.location.href = '/search';
+    window.location.href = '{{ url_for("search.search_page") }}';
   }
 </script>
 {% endblock %}

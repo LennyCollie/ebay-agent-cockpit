@@ -212,12 +212,12 @@ def send_mail_postmark(api_key: str, from_addr: str, to_addrs: Iterable[str],
             r.raise_for_status()
             response_data = r.json()
             message_id = response_data.get('MessageID', 'unknown')
-            print(f"[postmark] ✓ Sent to {to_addr} (ID: {message_id})")
+            print(f"[postmark] [+] Sent to {to_addr} (ID: {message_id})")
             success_count += 1
         except requests.exceptions.HTTPError as e:
-            print(f"[postmark] ✗ HTTP ERROR {e.response.status_code}: {e.response.text}")
+            print(f"[postmark] [!] HTTP ERROR {e.response.status_code}: {e.response.text}")
         except Exception as e:
-            print(f"[postmark] ✗ ERROR: {e}")
+            print(f"[postmark] [!] ERROR: {e}")
 
     # Erfolg wenn mindestens eine Mail raus ging
     return success_count > 0

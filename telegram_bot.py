@@ -24,7 +24,7 @@ class TelegramBot:
         self.api_url = f"https://api.telegram.org/bot{self.token}"
 
         if not self.token:
-            logger.warning("⚠️ TELEGRAM_BOT_TOKEN nicht gesetzt!")
+            logger.warning("[!] TELEGRAM_BOT_TOKEN nicht gesetzt!")
 
     def is_configured(self) -> bool:
         """Prüft ob Bot konfiguriert ist"""
@@ -86,14 +86,14 @@ class TelegramBot:
             )
 
             if response.status_code == 200:
-                logger.info(f"✅ Telegram Nachricht gesendet an {chat_id}")
+                logger.info(f"[OK] Telegram Nachricht gesendet an {chat_id}")
                 return True
             else:
-                logger.error(f"❌ Telegram API Error: {response.status_code} {response.text}")
+                logger.error(f"[!] Telegram API Error: {response.status_code} {response.text}")
                 return False
 
         except Exception as e:
-            logger.error(f"❌ Fehler beim Senden: {e}")
+            logger.error(f"[!] Fehler beim Senden: {e}")
             return False
 
     def send_photo(
@@ -123,14 +123,14 @@ class TelegramBot:
             )
 
             if response.status_code == 200:
-                logger.info(f"✅ Telegram Foto gesendet an {chat_id}")
+                logger.info(f"[OK] Telegram Foto gesendet an {chat_id}")
                 return True
             else:
-                logger.error(f"❌ Telegram API Error sendPhoto: {response.status_code} {response.text}")
+                logger.error(f"[!] Telegram API Error sendPhoto: {response.status_code} {response.text}")
                 return False
 
         except Exception as e:
-            logger.error(f"❌ Fehler beim Senden des Bildes: {e}")
+            logger.error(f"[!] Fehler beim Senden des Bildes: {e}")
             return False
 
     def get_chat_info(self, chat_id: str) -> Optional[Dict[str, Any]]:
@@ -149,7 +149,7 @@ class TelegramBot:
             return None
 
         except Exception as e:
-            logger.error(f"❌ Fehler beim Abrufen der Chat-Info: {e}")
+            logger.error(f"[!] Fehler beim Abrufen der Chat-Info: {e}")
             return None
 
 
@@ -164,7 +164,7 @@ def format_ebay_alert(item: Dict[str, Any], agent_name: str = "eBay Alert") -> s
     condition = item.get("condition", "")
     location = item.get("location", "")
 
-    emoji = "🔥" if "angebot" in title.lower() or "sale" in title.lower() else "📦"
+    emoji = "🔥" if "angebot" in title.lower() or "sale" in title.lower() else "[+]"
 
     message = f"""
 {emoji} <b>Neues Angebot gefunden!</b>
@@ -225,9 +225,9 @@ def format_daily_summary(
     agent_count: int, new_items: int, saved_money: float = 0
 ) -> str:
     return f"""
-📊 <b>Deine tägliche Zusammenfassung</b>
+[*] <b>Deine tägliche Zusammenfassung</b>
 
-<b>🔍 Aktive Agenten:</b> {agent_count}
+<b>[*] Aktive Agenten:</b> {agent_count}
 <b>🆕 Neue Artikel heute:</b> {new_items}
 <b>💰 Gespartes Geld:</b> ~{saved_money:.2f} €
 
@@ -308,6 +308,6 @@ if __name__ == "__main__":
     bot = TelegramBot()
 
     if bot.is_configured():
-        print("✅ Telegram Bot ist konfiguriert!")
+        print("[OK] Telegram Bot ist konfiguriert!")
     else:
-        print("❌ TELEGRAM_BOT_TOKEN fehlt in .env!")
+        print("[!] TELEGRAM_BOT_TOKEN fehlt in .env!")

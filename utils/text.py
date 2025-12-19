@@ -42,3 +42,20 @@ def price_eur(value: Optional[float]) -> str:
         return f"{float(value):.2f} €"
     except Exception:
         return safe_str(value)
+
+# -------------------------------------------------------------------
+# Simple Normalizer (für Kleinanzeigen-Scraper)
+# -------------------------------------------------------------------
+def normalize(s: str) -> str:
+    """
+    Einfache Normalisierung für Texte:
+    - None -> ""
+    - Trim leading/trailing spaces
+    - Mehrere Leerzeichen werden auf eines reduziert
+    """
+    if s is None:
+        return ""
+    s = str(s).strip()
+    # mehrfaches Leerzeichen zusammenfassen
+    return " ".join(s.split())
+

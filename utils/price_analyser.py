@@ -59,7 +59,7 @@ def record_search_prices(search_term: str, items: List[Dict], condition: str = N
     db.commit()
     db.close()
 
-    print(f"[PRICE] Recorded: {search_term} → Ø {avg_price:.2f}€ ({len(prices)} items)")
+    print(f"[PRICE] Recorded: {search_term} -> Ø {avg_price:.2f}€ ({len(prices)} items)")
 
 
 def get_price_trend(search_term: str, days: int = 30) -> Dict:

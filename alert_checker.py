@@ -97,7 +97,7 @@ def check_all_alerts(db_connection) -> Dict[str, int]:
                 aid = alert_row["id"] if isinstance(alert_row, dict) else alert_row[0]
             except Exception:
                 aid = "?"
-            print(f"❌ Fehler bei Alert {aid}: {e}")
+            print(f"[!] Fehler bei Alert {aid}: {e}")
             stats["errors"] += 1
             import traceback
 
@@ -110,9 +110,9 @@ def check_all_alerts(db_connection) -> Dict[str, int]:
         pass
 
     print(f"\n{'=' * 70}")
-    print(f"✅ ALERT-CHECK ABGESCHLOSSEN")
+    print(f"[OK] ALERT-CHECK ABGESCHLOSSEN")
     print(f"{'=' * 70}")
-    print(f"📊 Statistik:")
+    print(f"[*] Statistik:")
     print(f"   - Alerts geprüft: {stats['alerts_checked']}")
     print(f"   - eBay Alerts: {stats['ebay_alerts']}")
     print(f"   - Kleinanzeigen Alerts: {stats['kleinanzeigen_alerts']}")
@@ -177,7 +177,7 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
     user_row = cursor.fetchone()
 
     if not user_row:
-        print("   ⚠️  User nicht in DB gefunden")
+        print("   [!]  User nicht in DB gefunden")
         update_alert_timestamp(alert_id, now, cursor)
         return
 
@@ -212,7 +212,7 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
     check_interval_seconds = alert_interval_min * 60
 
     # Debug-Ausgabe
-    print(f"🔍 Alert {alert_id} ({agent_name})")
+    print(f"[*] Alert {alert_id} ({agent_name})")
     print(f"   User: {user_email}")
     print(f"   Suchbegriffe: {terms}")
     print(f"   Quelle: {source.upper()}")
@@ -259,10 +259,10 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
             items = search_ebay_for_alert(terms, filters)
             stats["ebay_alerts"] += 1
 
-        print(f"   📦 Gefunden: {len(items)} Items")
+        print(f"   [+] Gefunden: {len(items)} Items")
 
     except Exception as e:
-        print(f"   ❌ Suche fehlgeschlagen: {e}")
+        print(f"   [!] Suche fehlgeschlagen: {e}")
         stats["errors"] += 1
         update_alert_timestamp(alert_id, now, cursor)
         return
@@ -273,7 +273,7 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
     new_items = find_new_items(items, alert_id, user_email, source, cursor, connection)
 
     if not new_items:
-        print("   ✓ Keine neuen Items")
+        print("   [+] Keine neuen Items")
         update_alert_timestamp(alert_id, now, cursor)
         print()
         return
@@ -307,7 +307,7 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
         if email_ok:
             stats["notifications_sent"] += 1
         else:
-            print("   ⚠️  E-Mail-Versand für diesen Alert fehlgeschlagen")
+            print("   [!]  E-Mail-Versand für diesen Alert fehlgeschlagen")
 
     update_alert_timestamp(alert_id, now, cursor)
     print()
@@ -322,7 +322,7 @@ def send_email_alert(user_email: str, alert: Dict, new_items: List[Dict], source
     basierend auf agent.get_mail_settings / agent.send_mail.
     """
     if not user_email or "@" not in user_email:
-        print("   ⚠️  Ungültige E-Mail-Adresse, überspringe E-Mail-Versand.")
+        print("   [!]  Ungültige E-Mail-Adresse, überspringe E-Mail-Versand.")
         return False
 
     try:
@@ -363,12 +363,12 @@ def send_email_alert(user_email: str, alert: Dict, new_items: List[Dict], source
         settings = get_mail_settings()
         ok = send_mail(settings, [user_email], subject, body_html)
         if ok:
-            print(f"   ✅ E-Mail an {user_email} gesendet")
+            print(f"   [OK] E-Mail an {user_email} gesendet")
         else:
-            print(f"   ⚠️ send_mail(...) meldet Fehler für {user_email}")
+            print(f"   [!] send_mail(...) meldet Fehler für {user_email}")
         return ok
     except Exception as e:
-        print(f"   ❌ Exception beim E-Mail-Versand: {e}")
+        print(f"   [!] Exception beim E-Mail-Versand: {e}")
         import traceback
 
         traceback.print_exc()
@@ -387,7 +387,7 @@ def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict
     try:
         from services.kleinanzeigen import search_kleinanzeigen
     except Exception as e:
-        print(f"      ❌ Kleinanzeigen-Modul nicht importierbar: {e}")
+        print(f"      [!] Kleinanzeigen-Modul nicht importierbar: {e}")
         return []
 
     # Suchbegriff & Preisgrenzen vorbereiten
@@ -418,7 +418,7 @@ def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict
             limit=20,
         )
     except Exception as e:
-        print(f"      ❌ Kleinanzeigen-Suche Fehler: {e}")
+        print(f"      [!] Kleinanzeigen-Suche Fehler: {e}")
         import traceback
 
         traceback.print_exc()
@@ -459,7 +459,7 @@ def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict
             }
         )
 
-    print(f"      ✅ Kleinanzeigen-Wrapper: {len(items)} Items zurückgegeben")
+    print(f"      [OK] Kleinanzeigen-Wrapper: {len(items)} Items zurückgegeben")
     return items
 
 
@@ -477,7 +477,7 @@ def search_ebay_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
         items, total = _backend_search_ebay(terms, filters, page=1, per_page=10)
         return items
     except Exception as e:
-        print(f"      ❌ eBay-Suche Fehler: {e}")
+        print(f"      [!] eBay-Suche Fehler: {e}")
         import traceback
 
         traceback.print_exc()
@@ -585,14 +585,14 @@ def send_telegram_alert(
         )
 
         if success:
-            print("      ✅ Telegram-Nachricht gesendet")
+            print("      [OK] Telegram-Nachricht gesendet")
         else:
-            print("      ⚠️  Telegram-Nachricht fehlgeschlagen")
+            print("      [!]  Telegram-Nachricht fehlgeschlagen")
 
         return success
 
     except Exception as e:
-        print(f"      ❌ Fehler beim Senden: {e}")
+        print(f"      [!] Fehler beim Senden: {e}")
         import traceback
 
         traceback.print_exc()
@@ -661,7 +661,7 @@ def _log_alert_run(start_ts: int, end_ts: int, success: bool, stats: Dict | None
         conn.commit()
         print("   📝 Cron-Lauf in alert_runs protokolliert.")
     except Exception as e:
-        print(f"   ⚠️  Konnte alert_runs nicht loggen: {e}")
+        print(f"   [!]  Konnte alert_runs nicht loggen: {e}")
     finally:
         if conn is not None:
             try:
@@ -699,7 +699,7 @@ def run_alert_check():
         # Beim Fehler haben wir evtl. keine Stats – dann alles 0, aber success=0
         _log_alert_run(start_ts, end_ts, False, None)
 
-        print(f"\n❌ KRITISCHER FEHLER im Alert-Check: {e}")
+        print(f"\n[!] KRITISCHER FEHLER im Alert-Check: {e}")
         import traceback
         traceback.print_exc()
 
@@ -718,11 +718,11 @@ if __name__ == "__main__":
     print(f"⏰ Check-Interval: {ALERT_CHECK_INTERVAL} Minuten")
 
     if os.getenv("TELEGRAM_BOT_TOKEN"):
-        print("✅ Telegram Bot ist konfiguriert")
+        print("[OK] Telegram Bot ist konfiguriert")
     else:
-        print("⚠️ TELEGRAM_BOT_TOKEN nicht gesetzt")
+        print("[!] TELEGRAM_BOT_TOKEN nicht gesetzt")
 
     result = run_alert_check()
 
-    print("\n📊 Ergebnis:")
+    print("\n[*] Ergebnis:")
     print(json.dumps(result, indent=2, ensure_ascii=False))

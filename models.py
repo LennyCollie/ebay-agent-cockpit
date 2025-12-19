@@ -277,12 +277,12 @@ class ItemPriceTracking(Base):
 def init_db():
     """Initialisiert die Datenbank"""
     Base.metadata.create_all(bind=engine)
-    print("✅ Datenbank-Tabellen erstellt!")
+    print("[OK] Datenbank-Tabellen erstellt!")
 
 
 try:
     Base.metadata.create_all(bind=engine)
-    print("✅ models.py: Tabellen initialisiert")
+    print("[OK] models.py: Tabellen initialisiert")
 except Exception as e:
     print(f"[models] Fehler beim Erstellen der Tabellen: {e}")
 
