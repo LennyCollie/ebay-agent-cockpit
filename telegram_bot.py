@@ -1,19 +1,19 @@
-# telegram_bot.py
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from dotenv import load_dotenv
-
 
 load_dotenv()
 
 import requests
+from database import get_db, get_placeholder
 
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+PH = get_placeholder()
 
 
 class TelegramBot:
@@ -153,9 +153,6 @@ class TelegramBot:
             return None
 
 
-# Template Functions für verschiedene Nachrichtentypen
-
-
 def format_ebay_alert(item: Dict[str, Any], agent_name: str = "eBay Alert") -> str:
     title = item.get("title", "Unbekannt")
     price = item.get("price", "N/A")
@@ -187,17 +184,19 @@ def format_ebay_alert(item: Dict[str, Any], agent_name: str = "eBay Alert") -> s
     return message
 
 
-def create_item_buttons(item_url: str) -> Dict:
+def create_item_buttons(item_url: str, alert_id: Optional[int] = None) -> Dict:
     """Erstellt Inline-Buttons für ein Item"""
-    return {
-        "inline_keyboard": [
-            [{"text": "🛒 Zu eBay", "url": item_url}],
-            [
-                {"text": "🔕 Stumm für 1h", "callback_data": "mute_1h"},
-                {"text": "⏸️ Agent pausieren", "callback_data": "pause_agent"},
-            ],
-        ]
-    }
+    buttons = [
+        [{"text": "🛒 Zu eBay", "url": item_url}],
+    ]
+    
+    if alert_id:
+        buttons.append([
+            {"text": "⏸️ Pausieren", "callback_data": f"pause_alert_{alert_id}"},
+            {"text": "🗑️ Löschen", "callback_data": f"delete_alert_{alert_id}"},
+        ])
+    
+    return {"inline_keyboard": buttons}
 
 
 def format_welcome_message(user_name: str = "User") -> str:
@@ -209,39 +208,343 @@ Dein Telegram wurde erfolgreich verknüpft! 🎉
 
 Ab sofort erhältst du <b>Echtzeit-Benachrichtigungen</b>, sobald neue Artikel gefunden werden, die zu deinen Such-Agenten passen.
 
+<b>📱 Verfügbare Befehle:</b>
+/list – Zeige alle meine Alerts
+/pause [ID] – Alert pausieren
+/resume [ID] – Alert weitermachen
+/delete [ID] – Alert löschen
+/help – Hilfe anzeigen
+
 <b>Vorteile:</b>
 ⚡ Sofortige Push-Notifications
 📱 Direkt auf dein Handy
 🔗 Klick direkt zum eBay-Angebot
 🔕 Flexible Einstellungen
 
-Du kannst Telegram-Alerts jederzeit in deinen Einstellungen aktivieren/deaktivieren.
-
 Viel Erfolg beim Schnäppchen-Jagen! 🎯
 """
 
 
-def format_daily_summary(
-    agent_count: int, new_items: int, saved_money: float = 0
-) -> str:
-    return f"""
-[*] <b>Deine tägliche Zusammenfassung</b>
+def format_alert_list(alerts: List[Dict[str, Any]]) -> str:
+    """Formatiert die Liste aller Alerts"""
+    if not alerts:
+        return "📭 <b>Keine Alerts gefunden</b>\n\nErstelle einen neuen Alert auf der Website! 🌐"
+    
+    message = "<b>📋 Deine aktiven Alerts:</b>\n\n"
+    
+    for alert in alerts:
+        alert_id = alert.get("id", "?")
+        terms = alert.get("terms", [])
+        source = alert.get("source", "ebay").upper()
+        is_active = alert.get("is_active", False)
+        status = "✅ AKTIV" if is_active else "⏸️ PAUSIERT"
+        
+        terms_str = ", ".join(terms[:3]) if terms else "keine"
+        message += f"<b>#{alert_id}</b> [{status}]\n"
+        message += f"  🔍 {terms_str}\n"
+        message += f"  📦 {source}\n"
+        message += f"  ➡️ /pause {alert_id}  /resume {alert_id}  /delete {alert_id}\n\n"
+    
+    return message
 
-<b>[*] Aktive Agenten:</b> {agent_count}
-<b>🆕 Neue Artikel heute:</b> {new_items}
-<b>💰 Gespartes Geld:</b> ~{saved_money:.2f} €
 
-Weiter so! 🚀
+def format_help_message() -> str:
+    """Hilfenachricht mit allen Commands"""
+    return """
+<b>🤖 Super-Agent Bot Befehle:</b>
+
+<b>/list</b> – Zeige alle meine Alerts
+<b>/pause [ID]</b> – Alert pausieren
+  Beispiel: /pause 5
+
+<b>/resume [ID]</b> – Alert weitermachen
+  Beispiel: /resume 5
+
+<b>/delete [ID]</b> – Alert löschen
+  Beispiel: /delete 5
+
+<b>/help</b> – Diese Hilfe
+
+<b>💡 Tipp:</b> Deine Alert-ID findest du mit /list
+
+<b>🌐 Mehr Features auf:</b> /settings
 """
 
 
-# Convenience Functions
+def handle_telegram_update(update: Dict[str, Any]) -> bool:
+    """
+    Verarbeitet Telegram Updates (Befehle & Button-Clicks)
+    """
+    bot = TelegramBot()
+    
+    try:
+        if "message" in update:
+            return handle_message(update["message"], bot)
+        elif "callback_query" in update:
+            return handle_callback_query(update["callback_query"], bot)
+    except Exception as e:
+        logger.error(f"[telegram] handle_telegram_update error: {e}")
+    
+    return False
+
+
+def handle_message(message: Dict[str, Any], bot: TelegramBot) -> bool:
+    """Verarbeitet Nachrichten/Commands"""
+    chat_id = message.get("chat", {}).get("id")
+    text = message.get("text", "").strip()
+    
+    if not chat_id or not text:
+        return False
+    
+    logger.info(f"[telegram] Message from {chat_id}: {text}")
+    
+    if text.startswith("/list"):
+        return cmd_list_alerts(chat_id, bot)
+    
+    elif text.startswith("/pause"):
+        alert_id = extract_alert_id(text)
+        if alert_id:
+            return cmd_pause_alert(chat_id, alert_id, bot)
+        else:
+            bot.send_message(chat_id, "⚠️ Format: /pause [ID]\nBeispiel: /pause 5")
+            return True
+    
+    elif text.startswith("/resume"):
+        alert_id = extract_alert_id(text)
+        if alert_id:
+            return cmd_resume_alert(chat_id, alert_id, bot)
+        else:
+            bot.send_message(chat_id, "⚠️ Format: /resume [ID]\nBeispiel: /resume 5")
+            return True
+    
+    elif text.startswith("/delete"):
+        alert_id = extract_alert_id(text)
+        if alert_id:
+            return cmd_delete_alert(chat_id, alert_id, bot)
+        else:
+            bot.send_message(chat_id, "⚠️ Format: /delete [ID]\nBeispiel: /delete 5")
+            return True
+    
+    elif text.startswith("/help"):
+        return bot.send_message(chat_id, format_help_message())
+    
+    elif text.startswith("/start"):
+        return bot.send_message(chat_id, format_welcome_message())
+    
+    else:
+        return bot.send_message(
+            chat_id,
+            "❓ Unbekannter Befehl. Nutze /help für verfügbare Befehle."
+        )
+
+
+def handle_callback_query(callback: Dict[str, Any], bot: TelegramBot) -> bool:
+    """Verarbeitet Button-Clicks"""
+    chat_id = callback.get("message", {}).get("chat", {}).get("id")
+    data = callback.get("data", "")
+    
+    if not chat_id or not data:
+        return False
+    
+    logger.info(f"[telegram] Callback from {chat_id}: {data}")
+    
+    if data.startswith("pause_alert_"):
+        alert_id = int(data.replace("pause_alert_", ""))
+        return cmd_pause_alert(chat_id, alert_id, bot)
+    
+    elif data.startswith("resume_alert_"):
+        alert_id = int(data.replace("resume_alert_", ""))
+        return cmd_resume_alert(chat_id, alert_id, bot)
+    
+    elif data.startswith("delete_alert_"):
+        alert_id = int(data.replace("delete_alert_", ""))
+        return cmd_delete_alert(chat_id, alert_id, bot)
+    
+    return False
+
+
+def extract_alert_id(text: str) -> Optional[int]:
+    """Extrahiert Alert-ID aus Command-Text"""
+    parts = text.split()
+    if len(parts) >= 2:
+        try:
+            return int(parts[1])
+        except ValueError:
+            pass
+    return None
+
+
+def get_user_email_from_chat_id(chat_id: str) -> Optional[str]:
+    """Findet Email für eine Chat-ID in der Datenbank"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT email FROM users WHERE telegram_chat_id = {PH}",
+            (chat_id,)
+        )
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return row[0]
+    except Exception as e:
+        logger.error(f"get_user_email_from_chat_id error: {e}")
+    return None
+
+
+def cmd_list_alerts(chat_id: str, bot: TelegramBot) -> bool:
+    """Listet alle Alerts des Users auf"""
+    user_email = get_user_email_from_chat_id(chat_id)
+    if not user_email:
+        return bot.send_message(
+            chat_id,
+            "❌ Telegram-Account nicht mit Super-Agent verbunden.\n"
+            "Bitte verbinde ihn in den Einstellungen! ⚙️"
+        )
+    
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute(
+            f"""
+            SELECT id, terms_json, filters_json, source, is_active
+            FROM search_alerts
+            WHERE user_email = {PH}
+            ORDER BY id DESC
+            """,
+            (user_email,)
+        )
+        rows = cur.fetchall()
+        conn.close()
+        
+        if not rows:
+            message = format_alert_list([])
+        else:
+            import json
+            alerts = []
+            for row in rows:
+                alert_id, terms_json, _, source, is_active = row
+                terms = json.loads(terms_json or "[]")
+                alerts.append({
+                    "id": alert_id,
+                    "terms": terms,
+                    "source": source or "ebay",
+                    "is_active": bool(is_active)
+                })
+            message = format_alert_list(alerts)
+        
+        return bot.send_message(chat_id, message)
+    
+    except Exception as e:
+        logger.error(f"cmd_list_alerts error: {e}")
+        return bot.send_message(chat_id, f"❌ Fehler: {str(e)}")
+
+
+def cmd_pause_alert(chat_id: str, alert_id: int, bot: TelegramBot) -> bool:
+    """Pausiert einen Alert"""
+    user_email = get_user_email_from_chat_id(chat_id)
+    if not user_email:
+        return bot.send_message(chat_id, "❌ Telegram-Account nicht verbunden!")
+    
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute(
+            f"SELECT is_active FROM search_alerts WHERE id = {PH} AND user_email = {PH}",
+            (alert_id, user_email)
+        )
+        row = cur.fetchone()
+        
+        if not row:
+            return bot.send_message(chat_id, f"❌ Alert #{alert_id} nicht gefunden!")
+        
+        cur.execute(
+            f"UPDATE search_alerts SET is_active = 0 WHERE id = {PH}",
+            (alert_id,)
+        )
+        conn.commit()
+        conn.close()
+        
+        return bot.send_message(chat_id, f"⏸️ Alert #{alert_id} ist jetzt pausiert.")
+    
+    except Exception as e:
+        logger.error(f"cmd_pause_alert error: {e}")
+        return bot.send_message(chat_id, f"❌ Fehler: {str(e)}")
+
+
+def cmd_resume_alert(chat_id: str, alert_id: int, bot: TelegramBot) -> bool:
+    """Setzt einen Alert fort"""
+    user_email = get_user_email_from_chat_id(chat_id)
+    if not user_email:
+        return bot.send_message(chat_id, "❌ Telegram-Account nicht verbunden!")
+    
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute(
+            f"SELECT is_active FROM search_alerts WHERE id = {PH} AND user_email = {PH}",
+            (alert_id, user_email)
+        )
+        row = cur.fetchone()
+        
+        if not row:
+            return bot.send_message(chat_id, f"❌ Alert #{alert_id} nicht gefunden!")
+        
+        cur.execute(
+            f"UPDATE search_alerts SET is_active = 1 WHERE id = {PH}",
+            (alert_id,)
+        )
+        conn.commit()
+        conn.close()
+        
+        return bot.send_message(chat_id, f"✅ Alert #{alert_id} läuft wieder!")
+    
+    except Exception as e:
+        logger.error(f"cmd_resume_alert error: {e}")
+        return bot.send_message(chat_id, f"❌ Fehler: {str(e)}")
+
+
+def cmd_delete_alert(chat_id: str, alert_id: int, bot: TelegramBot) -> bool:
+    """Löscht einen Alert"""
+    user_email = get_user_email_from_chat_id(chat_id)
+    if not user_email:
+        return bot.send_message(chat_id, "❌ Telegram-Account nicht verbunden!")
+    
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute(
+            f"SELECT id FROM search_alerts WHERE id = {PH} AND user_email = {PH}",
+            (alert_id, user_email)
+        )
+        row = cur.fetchone()
+        
+        if not row:
+            return bot.send_message(chat_id, f"❌ Alert #{alert_id} nicht gefunden!")
+        
+        cur.execute(
+            f"UPDATE search_alerts SET is_active = 0 WHERE id = {PH}",
+            (alert_id,)
+        )
+        conn.commit()
+        conn.close()
+        
+        return bot.send_message(chat_id, f"🗑️ Alert #{alert_id} wurde gelöscht.")
+    
+    except Exception as e:
+        logger.error(f"cmd_delete_alert error: {e}")
+        return bot.send_message(chat_id, f"❌ Fehler: {str(e)}")
 
 
 def send_new_item_alert(
     chat_id: str,
     item: Dict[str, Any],
     agent_name: str = "eBay Alert",
+    alert_id: Optional[int] = None,
     with_image: bool = True,
 ) -> bool:
     """
@@ -254,9 +557,8 @@ def send_new_item_alert(
         return False
 
     message = format_ebay_alert(item, agent_name)
-    buttons = create_item_buttons(item.get("url", ""))
+    buttons = create_item_buttons(item.get("url", ""), alert_id)
 
-    # Mit Bild, wenn vorhanden
     if with_image and item.get("image_url"):
         return bot.send_photo(
             chat_id=chat_id,
@@ -282,26 +584,6 @@ def verify_telegram_connection(chat_id: str) -> Optional[Dict]:
     """
     bot = TelegramBot()
     return bot.get_chat_info(chat_id)
-
-
-# Webhook Handler (falls du später Webhooks nutzen willst)
-def handle_telegram_update(update: Dict[str, Any]):
-    """
-    Verarbeitet Telegram Updates (z.B. Button-Klicks)
-    """
-    # Beispiel: Callback Query (Button Click)
-    if "callback_query" in update:
-        callback = update["callback_query"]
-        data = callback.get("data")
-        chat_id = callback["message"]["chat"]["id"]
-
-        if data == "mute_1h":
-            bot = TelegramBot()
-            bot.send_message(chat_id, "🔕 Agent für 1 Stunde stummgeschaltet.")
-
-        elif data == "pause_agent":
-            bot = TelegramBot()
-            bot.send_message(chat_id, "⏸️ Agent pausiert.")
 
 
 if __name__ == "__main__":
