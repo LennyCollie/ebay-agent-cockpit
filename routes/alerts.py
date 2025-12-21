@@ -491,6 +491,9 @@ def alerts_subscribe():
         "sort": sort,
     }
 
+    notify_email = 1 if src.get("notify_email") else 0
+    notify_telegram = 1 if src.get("notify_telegram") else 0
+
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -499,9 +502,9 @@ def alerts_subscribe():
             cur.execute(
                 f"""
                 INSERT INTO search_alerts
-                    (user_email, terms_json, filters_json, source, last_run_ts, is_active)
+                    (user_email, terms_json, filters_json, source, last_run_ts, is_active, notify_email, notify_telegram)
                 VALUES
-                    ({PH}, {PH}, {PH}, {PH}, {PH}, 1)
+                    ({PH}, {PH}, {PH}, {PH}, {PH}, 1, {PH}, {PH})
                 """,
                 (
                     current_user.email,
@@ -509,6 +512,8 @@ def alerts_subscribe():
                     json.dumps(filters),
                     source,
                     0,
+                    notify_email,
+                    notify_telegram,
                 ),
             )
 

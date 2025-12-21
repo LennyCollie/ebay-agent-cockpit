@@ -39,8 +39,8 @@
 
         <li class="nav-item">
           <a
-            class="nav-link {% if request.endpoint in ['search', 'search_legacy'] %}active{% endif %}"
-            href="{{ url_for('search') }}"
+            class="nav-link {% if request.endpoint in ['search.search_page', 'search.search_legacy'] %}active{% endif %}"
+            href="{{ url_for('search.search_page') }}"
           >
             🔍 Suche
           </a>

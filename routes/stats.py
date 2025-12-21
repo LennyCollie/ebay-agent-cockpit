@@ -1,35 +1,43 @@
 # routes/stats.py
-from flask import Blueprint, render_template, request, jsonify
-from utils.price_analyzer import get_price_trend, get_popular_searches
+from flask import Blueprint, request, jsonify
 
 bp = Blueprint("stats", __name__, url_prefix="/stats")
 
 
-@bp.route("/price-trend")
-def price_trend():
-    """Zeigt Preis-Trend für Suchbegriff"""
-    search_term = request.args.get("q", "").strip()
-    days = int(request.args.get("days", 30))
-
-    trend = None
-    popular = get_popular_searches(limit=10)
-
-    if search_term:
-        trend = get_price_trend(search_term, days=days)
-
-    return render_template(
-        "price_history.html",
-        trend=trend,
-        popular_searches=popular
-    )
-
-
-@bp.route("/api/item-history/<int:watched_item_id>")
-def api_item_history(watched_item_id):
-    """API: Preis-Historie für beobachtetes Item"""
-    from utils.price_analyzer import get_item_price_history
+@bp.route("/api/price-history/<item_hash>")
+def api_price_history_by_hash(item_hash):
+    """API: Preis-Verlauf für Item via Hash (für Suchresultate)"""
+    from services.price_tracker import get_price_history, get_item_stats
 
     days = int(request.args.get("days", 30))
-    history = get_item_price_history(watched_item_id, days=days)
+    
+    history = get_price_history(item_hash, days=days)
+    stats = get_item_stats(item_hash)
+    
+    return jsonify({
+        "history": history,
+        "stats": stats
+    })
 
-    return jsonify(history)
+
+@bp.route("/api/price-forecast/<item_hash>")
+def api_price_forecast(item_hash):
+    """API: ML-basierte Preis-Prognose mit Confidence Intervals"""
+    from services.price_forecast import get_price_forecast
+    
+    forecast_days = int(request.args.get("days", 7))
+    forecast_days = min(max(forecast_days, 3), 30)
+    
+    result = get_price_forecast(item_hash, forecast_days=forecast_days)
+    
+    return jsonify(result)
+
+
+@bp.route("/api/recommendation/<item_hash>")
+def api_recommendation(item_hash):
+    """API: Detaillierte Kaufempfehlung mit Badge & Aktion"""
+    from services.price_forecast import get_detailed_recommendation
+    
+    result = get_detailed_recommendation(item_hash)
+    
+    return jsonify(result)
