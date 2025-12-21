@@ -1,11 +1,19 @@
 {
-  "name": "Super-Agent",
-  "short_name": "SuperAgent",
+  "name": "Super-Agent - eBay & Kleinanzeigen Alerts",
+  "short_name": "Super-Agent",
+  "description": "Echtzeit-Alerts für neue eBay- und Kleinanzeigen-Angebote mit Preisvorhersagen",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0b5ed7",
+  "scope": "/",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
   "theme_color": "#0b5ed7",
   "icons": [
-    { "src": "/static/icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+    {
+      "src": "/static/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
   ]
 }

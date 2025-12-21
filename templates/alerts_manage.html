@@ -2,7 +2,9 @@
 <div class="container mt-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="h3 mb-0">Meine Such-Alerts</h1>
-    <a href="{{ url_for('search.search_page') }}" class="btn btn-primary"> ➕ Neuen Alert anlegen </a>
+    <a href="{{ url_for('search.search_page') }}" class="btn btn-primary">
+      ➕ Neuen Alert anlegen
+    </a>
   </div>
 
   {# kleine Legende / Filter für Kanäle #} {% if alerts|length > 0 %}
@@ -134,25 +136,20 @@
             {% endif %}
 
             <form
-              action="{{ url_for('alert_toggle', alert_id=alert.id) }}"
+              action="{{ url_for('alert_pause', alert_id=a.id) }}"
               method="post"
               class="d-inline"
             >
-              <button
-                type="submit"
-                class="btn btn-sm {% if alert.is_active %}btn-warning{% else %}btn-success{% endif %}"
-              >
-                {% if alert.is_active %}Deaktivieren{% else %}Aktivieren{% endif %}
-              </button>
+              <button class="btn btn-sm btn-outline-secondary ms-1">⏸️ Pausieren</button>
             </form>
 
             <form
-              action="{{ url_for('alert_delete', alert_id=alert.id) }}"
+              action="{{ url_for('alerts.delete_alert', alert_id=a.id) }}"
               method="post"
-              class="d-inline ms-1"
-              onsubmit="return confirm('Alert wirklich löschen?');"
+              class="d-inline"
+              onsubmit="return confirm('Alert wirklich komplett löschen? Dies kann nicht rückgängig gemacht werden.');"
             >
-              <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+              <button class="btn btn-sm btn-outline-danger ms-1">🗑️ Löschen</button>
             </form>
           </td>
         </tr>

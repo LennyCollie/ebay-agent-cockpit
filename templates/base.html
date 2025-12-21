@@ -99,6 +99,22 @@
         "logo": "{{ url_for('static', filename='og/logo.png', _external=True) }}"
       }
     </script>
+
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Super-Agent" />
+    <meta name="theme-color" content="#0b5ed7" />
+    <link
+      rel="mask-icon"
+      href="{{ url_for('static', filename='icons/favicon.ico') }}"
+      color="#0b5ed7"
+    />
+
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/static/js/service-worker.js");
+      }
+    </script>
   </head>
 
   <body>

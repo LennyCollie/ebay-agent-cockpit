@@ -291,6 +291,7 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
                 item,
                 agent_name,
                 source,
+                alert_id,
             )
             if success:
                 stats["notifications_sent"] += 1
@@ -552,10 +553,12 @@ def send_telegram_alert(
     item: Dict,
     agent_name: str,
     source: str = "ebay",
+    alert_id: int = None,
 ) -> bool:
     """
     Sendet Telegram-Benachrichtigung.
     Zeigt Badge für Source (eBay = 🔵, Kleinanzeigen = 🟢).
+    Inline-Buttons ermöglichen Pause/Delete direkt im Chat.
     """
     try:
         badge = "🟢" if source == "kleinanzeigen" else "🔵"
@@ -581,6 +584,7 @@ def send_telegram_alert(
             chat_id=chat_id,
             item=formatted_item,
             agent_name=agent_name,
+            alert_id=alert_id,
             with_image=bool(formatted_item["image_url"]),
         )
 

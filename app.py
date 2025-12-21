@@ -2307,6 +2307,24 @@ def checkout_cancel():
     flash("Vorgang abgebrochen.", "info")
     return redirect(url_for("public_pricing"))
 
+# -------------------------------------------------------------------
+# Telegram Webhook für Bot-Commands
+# -------------------------------------------------------------------
+@app.post("/telegram/webhook")
+def telegram_webhook():
+    """Verarbeitet Telegram Bot Updates (Commands, Button-Clicks)"""
+    from telegram_bot import handle_telegram_update
+    try:
+        update = request.get_json()
+        if not update:
+            return jsonify({"ok": True}), 200
+        handle_telegram_update(update)
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        current_app.logger.error(f"[telegram_webhook] Error: {e}", exc_info=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 
 # -------------------------------------------------------------------
 # Debug / Health
@@ -3182,7 +3200,8 @@ def alerts_manage():
                 per_page,
                 created_at
             FROM search_alerts
-            WHERE user_email = %s
+            WHERE user_email = %s AND is_active = 1
+
             ORDER BY created_at DESC, id DESC
             """,
             (user_email,),
@@ -3305,6 +3324,35 @@ def alert_toggle(alert_id: int):
         conn.close()
 
     return redirect(url_for("alerts_manage"))
+
+@app.post("/alert/<int:alert_id>/pause")
+def alert_pause(alert_id: int):
+    """Pausiert Alert (is_active = 0)"""
+    if not session.get("user_email"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        cur.execute(
+            "UPDATE search_alerts SET is_active = 0 WHERE id = %s AND user_email = %s",
+            (alert_id, user_email),
+        )
+        conn.commit()
+        flash("Alert pausiert.", "success")
+    except Exception as e:
+        conn.rollback()
+        flash(f"Fehler: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("alerts_manage"))
+
+
+
 
 
 @app.route("/alerts/<int:alert_id>/delete", methods=["POST"])
