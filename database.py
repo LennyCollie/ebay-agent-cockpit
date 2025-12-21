@@ -187,6 +187,30 @@ def init_db() -> None:
         """)
         print("[init_db] [+] notification_log")
 
+        # Item Price History (für ML Prognosen)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS item_price_history (
+                id SERIAL PRIMARY KEY,
+                item_hash TEXT NOT NULL UNIQUE,
+                item_title TEXT,
+                price_current NUMERIC(10,2),
+                price_min NUMERIC(10,2),
+                price_max NUMERIC(10,2),
+                portal TEXT,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_item_price_hash 
+            ON item_price_history(item_hash)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_item_price_seen 
+            ON item_price_history(last_seen)
+        """)
+        print("[init_db] [+] item_price_history (PostgreSQL)")
+
     else:
         # ==================== SQLITE SCHEMA ====================
 
@@ -269,6 +293,30 @@ def init_db() -> None:
             )
         """)
         print("[init_db] [+] notification_log")
+
+        # Item Price History (für ML Prognosen)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS item_price_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_hash TEXT NOT NULL UNIQUE,
+                item_title TEXT,
+                price_current REAL,
+                price_min REAL,
+                price_max REAL,
+                portal TEXT,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_item_price_hash 
+            ON item_price_history(item_hash)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_item_price_seen 
+            ON item_price_history(last_seen)
+        """)
+        print("[init_db] [+] item_price_history (SQLite)")
 
     conn.commit()
     conn.close()

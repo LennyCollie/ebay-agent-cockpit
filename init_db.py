@@ -336,6 +336,48 @@ def init_database(reset: bool = False):
         )
 
     # ==========================
+    # 11) PRICE_ALERTS (Smart Notifications)
+    # ==========================
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS price_alerts (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id             INTEGER NOT NULL,
+            item_title          TEXT NOT NULL,
+            target_price        REAL,
+            threshold_percent   REAL,
+            search_term         TEXT,
+            is_active           INTEGER DEFAULT 1,
+            created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_price_alerts_user ON price_alerts(user_id, is_active)"
+    )
+
+    # ==========================
+    # 12) PRICE_ALERT_TRIGGERS (Alert-History)
+    # ==========================
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS price_alert_triggers (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            alert_id            INTEGER NOT NULL,
+            triggered_price     REAL NOT NULL,
+            triggered_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            item_found_price    REAL,
+            savings_amount      REAL,
+            FOREIGN KEY (alert_id) REFERENCES price_alerts(id) ON DELETE CASCADE
+        )
+    """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_triggers_alert ON price_alert_triggers(alert_id, triggered_at)"
+    )
+
+    # ==========================
     # Abschluss
     # ==========================
     conn.commit()

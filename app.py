@@ -53,6 +53,7 @@ from routes.search import bp_search as search_bp
 from routes.telegram import bp as telegram_bp
 from routes.watchlist import bp as watchlist_bp
 from routes.alerts import bp as alerts_bp
+from routes.stats import bp as stats_bp
 from agent import get_mail_settings, send_mail
 from routes.admin import bp as admin_bp
 
@@ -168,13 +169,16 @@ print("="*50 + "\n")
 # -------------------------------------------------------------------
 from routes.inbound import bp as inbound_bp
 from routes.vision_test import bp as vision_test_bp
+from routes.notifications import bp as notifications_bp
 
 app.register_blueprint(inbound_bp)
 app.register_blueprint(telegram_bp)
 app.register_blueprint(vision_test_bp)
 app.register_blueprint(watchlist_bp)
 app.register_blueprint(alerts_bp)
+app.register_blueprint(stats_bp)
 app.register_blueprint(search_bp)
+app.register_blueprint(notifications_bp)
 app.register_blueprint(admin_bp)
 
 
@@ -1732,7 +1736,7 @@ def email_test():
     # einfache Validierung
     if not recipient or "@" not in recipient:
         flash("Keine gültige E-Mail-Adresse gefunden (query/form/session/ENV).", "danger")
-        return redirect(url_for("search"))
+        return redirect(url_for("search.search_page"))
 
     # optional: PILOT whitelist (nur zulässige Test-Adressen erlauben)
     pilot_raw = os.getenv("PILOT_EMAILS", "")
@@ -1740,7 +1744,7 @@ def email_test():
         pilot_set = {e.strip().lower() for p in pilot_raw.split(",") for e in p.split(";") if e.strip()}
         if pilot_set and recipient.lower() not in pilot_set:
             flash("Diese E-Mail ist nicht für Testversand freigeschaltet.", "warning")
-            return redirect(url_for("search"))
+            return redirect(url_for("search.search_page"))
 
     settings = get_mail_settings()
     subject = "✉️ Test-E-Mail vom eBay-Agent"
@@ -1756,7 +1760,7 @@ def email_test():
         # Ausnahme anzeigen, aber nicht sensiblen Inhalt ins UI schreiben
         flash(f"Fehler beim Versand: {str(e)}", "danger")
 
-    return redirect(url_for("search"))
+    return redirect(url_for("search.search_page"))
 
 
 
@@ -1785,7 +1789,7 @@ def alerts_subscribe():
     ]
     if not terms:
         flash("Keine Suchbegriffe übergeben.", "warning")
-        return redirect(url_for("search"))
+        return redirect(url_for("search.search_page"))
 
     # --- Filter speichern ---
     filters = {
@@ -1846,7 +1850,7 @@ def alerts_send_now():
     user_email = session.get("user_email") or request.form.get("email") or ""
     if not user_email or user_email.lower() == "guest" or "@" not in user_email:
         flash("Gültige E-Mail erforderlich (einloggen oder E-Mail angeben).", "warning")
-        return redirect(url_for("search"))
+        return redirect(url_for("search.search_page"))
 
     terms = [
         t
@@ -1859,7 +1863,7 @@ def alerts_send_now():
     ]
     if not terms:
         flash("Keine Suchbegriffe übergeben.", "warning")
-        return redirect(url_for("search"))
+        return redirect(url_for("search.search_page"))
 
     filters = {
         "price_min": (request.form.get("price_min") or "").strip(),
@@ -1970,7 +1974,7 @@ def create_agent():
     if not terms:
         conn.close()
         flash("Keine Suchbegriffe angegeben.", "warning")
-        return redirect(url_for("search"))
+        return redirect(url_for("search.search_page"))
 
     filters = {
         "price_min": request.form.get("price_min", "").strip(),

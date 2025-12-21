@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Alert Dashboard - Super Agent{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="row">
+    <div class="col-md-8">
+      <h2>💰 Deine Preis-Alerts</h2>
+
+      {% if alerts %}
+        {% for alert in alerts %}
+        <div class="card mb-3">
+          <div class="card-header bg-primary text-white">
+            <strong>{{ alert.item_title }}</strong>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-6">
+                <p><small class="text-muted">Zielpreis</small><br>
+                   <strong>{{ "%.2f"|format(alert.target_price or 0) }} €</strong></p>
+                {% if alert.threshold_percent %}
+                <p><small class="text-muted">Schwelle</small><br>
+                   <strong>{{ alert.threshold_percent }}%</strong></p>
+                {% endif %}
+              </div>
+              <div class="col-md-6">
+                <p><small class="text-muted">Erstellt</small><br>
+                   <strong>{{ alert.created_at[:10] }}</strong></p>
+                <p><small class="text-muted">Suchbegriff</small><br>
+                   <small>{{ alert.search_term or "-" }}</small></p>
+              </div>
+            </div>
+
+            <hr>
+
+            <div class="row mb-2">
+              <div class="col-md-3 text-center">
+                <h5>{{ alert.stats.trigger_count }}</h5>
+                <small class="text-muted">Auslösungen</small>
+              </div>
+              <div class="col-md-3 text-center">
+                <h5>{{ "%.2f"|format(alert.stats.total_savings) }} €</h5>
+                <small class="text-muted">Ges. Ersparnis</small>
+              </div>
+              <div class="col-md-3 text-center">
+                <h5>{{ "%.2f"|format(alert.stats.avg_savings) }} €</h5>
+                <small class="text-muted">Ø Ersparnis</small>
+              </div>
+              <div class="col-md-3 text-center">
+                <h5>{{ alert.stats.last_trigger[:10] if alert.stats.last_trigger else "-" }}</h5>
+                <small class="text-muted">Letzter Trigger</small>
+              </div>
+            </div>
+
+            <button class="btn btn-sm btn-outline-primary" onclick="loadTriggers({{ alert.id }})">
+              📊 Verlauf
+            </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteAlert({{ alert.id }})">
+              🗑️ Löschen
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="alert alert-info">Noch keine Alerts erstellt.</p>
+      {% endif %}
+    </div>
+
+    <div class="col-md-4">
+      <div class="card bg-light">
+        <div class="card-body">
+          <h5>📈 Zusammenfassung</h5>
+          <p>
+            <strong>{{ alerts|length }}</strong> aktive Alerts<br>
+            <strong>{{ (alerts|map(attribute='stats.trigger_count')|sum) }}</strong> Auslösungen gesamt<br>
+            <strong>{{ "%.2f"|format(alerts|map(attribute='stats.total_savings')|sum) }} €</strong> Ersparnis
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal für Trigger-Verlauf -->
+<div class="modal fade" id="triggersModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="triggersTitle">Trigger-Verlauf</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="triggersBody">
+        <div class="spinner-border" role="status"><span class="visually-hidden">Lädt...</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadTriggers(alertId) {
+  const modal = new bootstrap.Modal(document.getElementById('triggersModal'));
+  try {
+    const resp = await fetch(`/notifications/api/alerts/${alertId}/triggers`);
+    const triggers = await resp.json();
+
+    let html = '<table class="table table-sm"><tbody>';
+    if (triggers.length === 0) {
+      html += '<tr><td class="text-muted">Noch keine Auslösungen</td></tr>';
+    } else {
+      triggers.forEach(t => {
+        html += `<tr>
+          <td>${t.triggered_at.split('T')[0]}</td>
+          <td>${t.triggered_price.toFixed(2)} €</td>
+          <td>${t.savings_amount ? t.savings_amount.toFixed(2) + ' € ✓' : '-'}</td>
+        </tr>`;
+      });
+    }
+    html += '</tbody></table>';
+    document.getElementById('triggersBody').innerHTML = html;
+    modal.show();
+  } catch (e) {
+    alert('Fehler beim Laden');
+  }
+}
+
+async function deleteAlert(alertId) {
+  if (!confirm('Alert wirklich löschen?')) return;
+  await fetch(`/notifications/api/alerts/${alertId}`, {method: 'DELETE'});
+  location.reload();
+}
+</script>
+{% endblock %}

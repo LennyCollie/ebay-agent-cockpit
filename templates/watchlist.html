@@ -28,7 +28,7 @@
 <div class="container py-5">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="h3 mb-0">📌 Meine Watchlist</h1>
-    <a href="{{ url_for('search') }}" class="btn btn-primary"> Neuen Alert erstellen </a>
+    <a href="{{ url_for('search.search_page') }}" class="btn btn-primary"> Neuen Alert erstellen </a>
   </div>
 
   {% if not items %}
@@ -42,7 +42,7 @@
     </ul>
     <hr />
     <p class="mb-0">
-      <a href="{{ url_for('search') }}" class="btn btn-sm btn-primary">Jetzt Suche starten</a>
+      <a href="{{ url_for('search.search_page') }}" class="btn btn-sm btn-primary">Jetzt Suche starten</a>
     </p>
   </div>
   {% else %}

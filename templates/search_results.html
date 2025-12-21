@@ -86,6 +86,17 @@
         <button type="submit" class="btn btn-outline-primary">
           🔔 Alarm speichern
         </button>
+
+        <button type="button" class="btn btn-outline-secondary" id="exportCsvBtn">
+          📊 Als CSV exportieren
+        </button>
+          {% if current_user.is_authenticated %}
+        <button type="button" class="btn btn-outline-success" id="createSmartAlertBtn" data-bs-toggle="modal" data-bs-target="#smartAlertModal">
+          💰 Preis-Alert
+        </button>
+        {% endif %}
+
+
       </div>
 
     </form>
@@ -320,7 +331,7 @@
                   <div class="mb-2 fw-semibold">{{ item.price or '–' }}</div>
 
                   <div class="mt-auto">
-                    <div class="d-flex gap-1">
+                    <div class="d-flex gap-1 mb-2">
                       <a href="{{ item.url }}"
                          target="_blank"
                          rel="nofollow noopener"
@@ -328,23 +339,32 @@
                         Zum Angebot
                       </a>
 
-                      <form method="post"
-                            action="{{ url_for('watchlist.add') }}"
-                            class="flex-fill m-0 watchlist-form">
-                        <input type="hidden" name="item_id" value="{{ item.id or item.url }}" />
-                        <input type="hidden" name="title" value="{{ item.title }}" />
-                        <input type="hidden" name="price" value="{{ item.price }}" />
-                        <input type="hidden" name="url" value="{{ item.url }}" />
-                        <input type="hidden" name="image_url" value="{{ item.img }}" />
-                        <input type="hidden" name="source" value="search" />
-                        <button type="submit"
-                                class="btn btn-sm btn-warning w-100"
-                                title="Zur Watchlist hinzufügen"
-                                {% if not item.id and not item.url %}disabled{% endif %}>
-                          ⭐ Watchlist
-                        </button>
-                      </form>
+                      <button type="button"
+                              class="btn btn-sm btn-info text-white price-history-btn"
+                              data-item-title="{{ item.title }}"
+                              data-item-price="{{ item.price }}"
+                              data-item-source="{{ item.src or '' }}"
+                              title="Preisverlauf anzeigen">
+                        📈 Verlauf
+                      </button>
                     </div>
+
+                    <form method="post"
+                          action="{{ url_for('watchlist.add') }}"
+                          class="m-0 watchlist-form">
+                      <input type="hidden" name="item_id" value="{{ item.id or item.url }}" />
+                      <input type="hidden" name="title" value="{{ item.title }}" />
+                      <input type="hidden" name="price" value="{{ item.price }}" />
+                      <input type="hidden" name="url" value="{{ item.url }}" />
+                      <input type="hidden" name="image_url" value="{{ item.img }}" />
+                      <input type="hidden" name="source" value="search" />
+                      <button type="submit"
+                              class="btn btn-sm btn-warning w-100"
+                              title="Zur Watchlist hinzufügen"
+                              {% if not item.id and not item.url %}disabled{% endif %}>
+                        ⭐ Watchlist
+                      </button>
+                    </form>
                   </div>
 
                 </div>
@@ -524,4 +544,421 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 });
 </script>
+<script>
+document.getElementById('exportCsvBtn').addEventListener('click', function() {
+    const items = {{ results | tojson }};
+
+    if (!items || items.length === 0) {
+        alert('Keine Ergebnisse zum Exportieren');
+        return;
+    }
+
+    fetch('{{ url_for("search.export_csv") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: items })
+    })
+    .then(response => response.blob())
+    .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'ebay_search_' + new Date().toISOString().slice(0,10) + '.csv';
+        a.click();
+        window.URL.revokeObjectURL(url);
+    })
+    .catch(err => console.error('Export failed:', err));
+});
+</script>
+
+{# ---------------------- Modal: Price History Chart ---------------------- #}
+<div class="modal fade" id="priceHistoryModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">📈 Preisverlauf</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="historyTitle" class="fw-bold mb-2"></p>
+
+        <div id="historyStats" class="row mb-3">
+          <div class="col-6 col-md-3">
+            <small class="text-muted">Aktuell</small>
+            <div id="statCurrent" class="fw-bold">-</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <small class="text-muted">Min</small>
+            <div id="statMin" class="fw-bold text-success">-</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <small class="text-muted">Max</small>
+            <div id="statMax" class="fw-bold text-danger">-</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <small class="text-muted">Ersparnis</small>
+            <div id="statSavings" class="fw-bold text-info">-</div>
+          </div>
+        </div>
+
+        <div id="recommendationSection" class="alert mb-3 d-none">
+          <div class="row align-items-center">
+            <div class="col-auto">
+              <div id="recommendationBadge" style="font-size: 2.5rem;">🟡</div>
+            </div>
+            <div class="col">
+              <h6 id="recommendationMessage" class="mb-1"></h6>
+              <p id="recommendationAction" class="mb-0 fw-bold"></p>
+              <small id="recommendationDetails" class="text-muted d-block mt-1"></small>
+            </div>
+          </div>
+        </div>
+
+        <canvas id="priceChart" height="80"></canvas>
+
+        <div id="historyLoader" class="text-center mt-3 d-none">
+          <div class="spinner-border spinner-border-sm" role="status">
+            <span class="visually-hidden">Lädt...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ---------------------- JS: Price History mit Prognose ---------------------- #}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const modal = new bootstrap.Modal(document.getElementById('priceHistoryModal'));
+  let chartInstance = null;
+
+  document.querySelectorAll('.price-history-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const title = this.dataset.itemTitle;
+      const price = this.dataset.itemPrice;
+      const source = this.dataset.itemSource;
+
+      document.getElementById('historyTitle').textContent = title;
+      document.getElementById('historyLoader').classList.remove('d-none');
+
+      const itemHash = await generateHash(title, source);
+
+      try {
+        const [historyRes, forecastRes, recommendationRes] = await Promise.all([
+          fetch(`/stats/api/price-history/${itemHash}?days=30`),
+          fetch(`/stats/api/price-forecast/${itemHash}?days=7`),
+          fetch(`/stats/api/recommendation/${itemHash}`)
+        ]);
+        
+        const historyData = await historyRes.json();
+        const forecastData = await forecastRes.json();
+        const recommendationData = await recommendationRes.json();
+
+        if (historyData.stats) {
+          document.getElementById('statCurrent').textContent = (historyData.stats.price_current || 0).toFixed(2) + ' €';
+          document.getElementById('statMin').textContent = (historyData.stats.price_min || 0).toFixed(2) + ' €';
+          document.getElementById('statMax').textContent = (historyData.stats.price_max || 0).toFixed(2) + ' €';
+          document.getElementById('statSavings').textContent = (historyData.stats.savings || 0).toFixed(2) + ' €';
+        }
+
+        if (recommendationData.success) {
+          const recSection = document.getElementById('recommendationSection');
+          const badgeColor = recommendationData.recommendation === 'buy' ? 'alert-success' 
+                           : recommendationData.recommendation === 'wait' ? 'alert-warning' 
+                           : 'alert-secondary';
+          recSection.className = 'alert mb-3 ' + badgeColor;
+          recSection.classList.remove('d-none');
+          
+          document.getElementById('recommendationBadge').textContent = recommendationData.badge;
+          document.getElementById('recommendationMessage').textContent = recommendationData.message;
+          document.getElementById('recommendationAction').textContent = recommendationData.action;
+          
+          const details = [
+            `Vertrauensniveau: ${recommendationData.confidence}%`,
+            `Volatilität: ${recommendationData.volatility}`,
+            `7-Tage Prognose: ${recommendationData.forecast_price}€ (${recommendationData.price_change_percent > 0 ? '+' : ''}${recommendationData.price_change_percent}%)`
+          ].join(' • ');
+          document.getElementById('recommendationDetails').textContent = details;
+        }
+
+        if (historyData.history && historyData.history.length > 0) {
+          const dates = historyData.history.map(h => h.date).reverse();
+          const prices = historyData.history.map(h => h.price_current).reverse();
+
+          const ctx = document.getElementById('priceChart').getContext('2d');
+
+          if (chartInstance) {
+            chartInstance.destroy();
+          }
+
+          const datasets = [{
+            label: 'Historischer Preis',
+            data: prices,
+            borderColor: '#0d6efd',
+            backgroundColor: 'rgba(13, 110, 253, 0.1)',
+            tension: 0.3,
+            fill: true,
+            borderWidth: 2,
+            pointRadius: 4,
+            pointBackgroundColor: '#0d6efd',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2
+          }];
+
+          let allLabels = [...dates];
+
+          if (forecastData.success && forecastData.forecast && forecastData.forecast.prices && forecastData.forecast.prices.length > 0) {
+            const forecastDates = forecastData.forecast.dates;
+            const forecastPrices = forecastData.forecast.prices;
+            const upperBound = forecastData.forecast.upper_bound;
+            const lowerBound = forecastData.forecast.lower_bound;
+
+            const lastHistoricPrice = prices[prices.length - 1];
+            const transitionPrices = [...prices, lastHistoricPrice, ...forecastPrices];
+            const transitionDates = [...dates, dates[dates.length - 1], ...forecastDates];
+
+            datasets.push({
+              label: 'Prognose (7 Tage)',
+              data: [null, ...prices.slice(-1), ...forecastPrices],
+              borderColor: '#198754',
+              borderDash: [5, 5],
+              tension: 0.3,
+              fill: false,
+              borderWidth: 2,
+              pointRadius: 4,
+              pointBackgroundColor: '#198754',
+              pointBorderColor: '#fff',
+              pointBorderWidth: 2
+            });
+
+            datasets.push({
+              label: 'Obere Grenze (95%)',
+              data: [null, ...prices.slice(-1), ...upperBound],
+              borderColor: 'rgba(220, 53, 69, 0.5)',
+              borderDash: [2, 2],
+              fill: false,
+              borderWidth: 1,
+              pointRadius: 0,
+              tension: 0.3
+            });
+
+            datasets.push({
+              label: 'Untere Grenze (95%)',
+              data: [null, ...prices.slice(-1), ...lowerBound],
+              borderColor: 'rgba(40, 167, 69, 0.5)',
+              borderDash: [2, 2],
+              fill: '-1',
+              backgroundColor: 'rgba(100, 150, 100, 0.05)',
+              borderWidth: 1,
+              pointRadius: 0,
+              tension: 0.3
+            });
+
+            allLabels = transitionDates;
+          }
+
+          chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: allLabels,
+              datasets: datasets
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { 
+                  display: true,
+                  position: 'top'
+                }
+              },
+              scales: {
+                y: {
+                  ticks: { callback: function(v) { return v.toFixed(2) + ' €'; } }
+                }
+              }
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Price history/forecast fetch failed:', err);
+      } finally {
+        document.getElementById('historyLoader').classList.add('d-none');
+        modal.show();
+      }
+    });
+  });
+
+  async function generateHash(title, portal) {
+    const text = `${title.toLowerCase().substring(0, 100)}_${portal}`;
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex.substring(0, 16);
+  }
+});
+</script>
+
+{# ---------------------- Modal: Smart Price Alert ---------------------- #}
+<div class="modal fade" id="smartAlertModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">💰 Preis-Alert erstellen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Item-Titel</label>
+          <input type="text" class="form-control" id="alertItemTitle" placeholder="z.B. iPhone 13 Pro">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Zielpreis (€)</label>
+          <input type="number" step="0.01" class="form-control" id="alertTargetPrice" placeholder="z.B. 599.99">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Oder: Preis-Drop (%)</label>
+          <input type="number" step="1" class="form-control" id="alertThreshold" placeholder="z.B. 10 (= 10% unter aktuellem Preis)">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Suchbegriff (optional)</label>
+          <input type="text" class="form-control" id="alertSearchTerm" placeholder="z.B. iPhone">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+        <button type="button" class="btn btn-success" id="saveSmartAlertBtn">Alert erstellen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ---------------------- JS: Smart Alerts ---------------------- #}
+<script>
+document.getElementById('saveSmartAlertBtn').addEventListener('click', async function() {
+  const title = document.getElementById('alertItemTitle').value.trim();
+  const targetPrice = document.getElementById('alertTargetPrice').value;
+  const threshold = document.getElementById('alertThreshold').value;
+  const searchTerm = document.getElementById('alertSearchTerm').value.trim();
+
+  if (!title || (!targetPrice && !threshold)) {
+    alert('Bitte mindestens Titel und Zielpreis/Schwelle angeben');
+    return;
+  }
+
+  try {
+    const response = await fetch('/notifications/api/alerts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        item_title: title,
+        target_price: targetPrice ? parseFloat(targetPrice) : null,
+        threshold_percent: threshold ? parseFloat(threshold) : null,
+        search_term: searchTerm
+      })
+    });
+
+    if (response.ok) {
+      alert('✓ Alert erstellt! Du wirst benachrichtigt, wenn der Preis fällt.');
+      document.getElementById('alertItemTitle').value = '';
+      document.getElementById('alertTargetPrice').value = '';
+      document.getElementById('alertThreshold').value = '';
+      document.getElementById('alertSearchTerm').value = '';
+      bootstrap.Modal.getInstance(document.getElementById('smartAlertModal')).hide();
+    } else {
+      alert('Fehler beim Erstellen des Alerts');
+    }
+  } catch (err) {
+    console.error('Alert creation failed:', err);
+    alert('Fehler beim Erstellen des Alerts');
+  }
+});
+</script>
+
+{# ---------------------- Modal: Smart Price Alert ---------------------- #}
+<div class="modal fade" id="smartAlertModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">💰 Preis-Alert erstellen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Item-Titel</label>
+          <input type="text" class="form-control" id="alertItemTitle" placeholder="z.B. iPhone 13 Pro">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Zielpreis (€)</label>
+          <input type="number" step="0.01" class="form-control" id="alertTargetPrice" placeholder="z.B. 599.99">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Oder: Preis-Drop (%)</label>
+          <input type="number" step="1" class="form-control" id="alertThreshold" placeholder="z.B. 10 (= 10% unter aktuellem Preis)">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Suchbegriff (optional)</label>
+          <input type="text" class="form-control" id="alertSearchTerm" placeholder="z.B. iPhone">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+        <button type="button" class="btn btn-success" id="saveSmartAlertBtn">Alert erstellen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('saveSmartAlertBtn').addEventListener('click', async function() {
+  const title = document.getElementById('alertItemTitle').value.trim();
+  const targetPrice = document.getElementById('alertTargetPrice').value;
+  const threshold = document.getElementById('alertThreshold').value;
+  const searchTerm = document.getElementById('alertSearchTerm').value.trim();
+
+  if (!title || (!targetPrice && !threshold)) {
+    alert('Bitte mindestens Titel und Zielpreis/Schwelle angeben');
+    return;
+  }
+
+  try {
+    const response = await fetch('/notifications/api/alerts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        item_title: title,
+        target_price: targetPrice ? parseFloat(targetPrice) : null,
+        threshold_percent: threshold ? parseFloat(threshold) : null,
+        search_term: searchTerm
+      })
+    });
+
+    if (response.ok) {
+      alert('✓ Alert erstellt!');
+      document.getElementById('alertItemTitle').value = '';
+      document.getElementById('alertTargetPrice').value = '';
+      document.getElementById('alertThreshold').value = '';
+      document.getElementById('alertSearchTerm').value = '';
+      bootstrap.Modal.getInstance(document.getElementById('smartAlertModal')).hide();
+    } else {
+      alert('Fehler beim Erstellen des Alerts');
+    }
+  } catch (err) {
+    console.error('Alert creation failed:', err);
+    alert('Fehler beim Erstellen des Alerts');
+  }
+});
+</script>
+
+
+
 {% endblock %}

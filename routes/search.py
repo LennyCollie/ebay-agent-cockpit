@@ -18,6 +18,7 @@ from flask import (
 )
 
 from services.ebay_api import ebay_search
+from services.price_tracker import track_item_price
 from utils.ebay_browse import browse_search
 from utils.ebay_finding import finding_search
 from utils.ebay_normalize import normalize_browse, normalize_finding
@@ -313,6 +314,12 @@ def search_page():
             exc_info=True,
         )
 
+    for item in items:
+        try:
+            track_item_price(item)
+        except Exception as e:
+            current_app.logger.debug("[Price Track Error] %s", e)
+
     current_app.logger.debug("Total items after merge & filtering: %d", len(items))
 
     # -------------------------------------------------------------------------
@@ -367,6 +374,28 @@ def search_page():
     )
 
 
+from services.csv_exporter import export_search_results_to_csv
+from flask import make_response
+
+@bp_search.route("/export-csv", methods=["POST"])
+def export_csv():
+    """Exportiert aktuelle Suchergebnisse als CSV"""
+
+    items = request.json.get("items", [])
+
+    if not items:
+        return jsonify({"error": "Keine Items zum exportieren"}), 400
+
+    csv_content, filename = export_search_results_to_csv(items)
+
+    response = make_response(csv_content)
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+
+    return response
+
+
+
 # =============================================================================
 # 2) LEGACY-ROUTE: /search-legacy -> nutzt jetzt dieselbe Logik
 # =============================================================================
@@ -376,194 +405,4 @@ def search_legacy():
     Alte Links /search-legacy verwenden jetzt exakt die gleiche Logik wie /search.
     Dadurch ist es egal, ob irgendwo noch /search-legacy verlinkt ist.
     """
-    return search_page()
-
-
-# =============================================================================
-# 3) Alte eBay-only Beta-Suche (optional, kann später weg)
-# =============================================================================
-@bp_search.get("/search/results")
-def search_results():
-    """
-    Historische eBay/Kleinanzeigen-Route. Wird von der neuen Allround-Suche
-    eigentlich nicht mehr gebraucht, aber bleibt für Kompatibilität erhalten.
-    """
-    q = (request.args.get("q") or "").strip()
-    auction = request.args.get("auction") == "1"
-    bin_buy = request.args.get("bin") == "1"
-    postal = (request.args.get("postal") or "").strip() or None
-    radius = int(request.args.get("radius_km") or 0) or None
-    ship_to = (request.args.get("ship_to") or "").strip() or None
-    located_in = (request.args.get("located_in") or "").strip() or None
-
-    source = (request.args.get("source") or "ebay").strip().lower()
-    price_min = request.args.get("price_min")
-    price_max = request.args.get("price_max")
-
-    # Kleinanzeigen-only Modus dieser Legacy-Route
-    if source == "kleinanzeigen":
-        try:
-            ka_results = search_kleinanzeigen(
-                query=q,
-                price_min=float(price_min) if price_min else None,
-                price_max=float(price_max) if price_max else None,
-                location=postal,
-                radius_km=radius,
-            )
-            results = _normalize_kleinanzeigen(ka_results)
-            return render_template(
-                "search_results.html",
-                results=results,
-                q=q,
-                params=request.args,
-                items=results,
-                source="kleinanzeigen",
-            )
-        except Exception as e:
-            current_app.logger.error(
-                "Kleinanzeigen-Fehler (legacy): %s", e, exc_info=True
-            )
-            flash(f"Kleinanzeigen-Suche fehlgeschlagen: {e}", "danger")
-            return render_template(
-                "search_results.html",
-                results=[],
-                q=q,
-                params=request.args,
-                items=[],
-                source="kleinanzeigen",
-            )
-
-    # eBay-Teil dieser Legacy-Route
-    mode = (current_app.config.get("EBAY_MODE") or "auto").lower()
-    use_finding = (mode == "finding") or (mode == "auto" and postal and radius)
-
-    if use_finding:
-        raw = finding_search(
-            q,
-            auction=auction,
-            bin_buy=bin_buy,
-            buyer_postal=postal,
-            max_distance_km=radius,
-            ship_to=ship_to,
-            located_in=located_in,
-            entries=50,
-        )
-        results = normalize_finding(raw)
-    else:
-        raw = browse_search(
-            q,
-            auction=auction,
-            bin_buy=bin_buy,
-            ship_to=ship_to,
-            postal=postal,
-            located_in=located_in,
-            located_region=None,
-            price_min=None,
-            price_max=None,
-            local_pickup_radius_km=None,
-            pickup_country=None,
-            limit=50,
-        )
-        results = normalize_browse(raw)
-
-    # optionaler KI-Bildcheck
-    try:
-        from utils.vision_dispatch import analyze_images
-
-        for it in results:
-            vis = analyze_images(it.get("images") or [])
-            it["verdict"] = vis["verdict"]
-            it["score"] = vis["score"]
-    except Exception:
-        pass
-
-    strict = current_app.config.get("VISION_FILTER_STRICT", True) in (True, "1", "true")
-    if strict:
-        results = [r for r in results if r.get("verdict") != "damaged"]
-
-    return render_template(
-        "search_results.html",
-        results=results,
-        q=q,
-        params=request.args,
-        items=results,
-        source="ebay",
-    )
-
-
-# =============================================================================
-# 4) Hilfsrouten: Nur-eBay & Nur-Kleinanzeigen
-# =============================================================================
-@bp_search.route("/search_ebay", methods=["GET", "POST"])
-def search_ebay():
-    """
-    Historische eBay-Beta-Suche – leitet jetzt einfach auf /search um.
-    """
-    data = request.form if request.method == "POST" else request.args
-    params = data.to_dict(flat=True)
-    params.setdefault("source", "ebay")
-    return redirect(url_for("search.search_page", **params))
-
-
-@bp_search.route("/search/kleinanzeigen", methods=["GET", "POST"])
-def search_kleinanzeigen_page():
-    """
-    Dedizierte Route nur für Kleinanzeigen – nutzt den Scraper direkt.
-    """
-    plan_info = _get_plan_info()
-
-    data = request.form if request.method == "POST" else request.args
-    q = (data.get("q") or "").strip()
-    price_min = data.get("price_min")
-    price_max = data.get("price_max")
-    postal = (data.get("postal") or "").strip() or None
-    radius = int(data.get("radius_km") or 0) or None
-
-    if not q:
-        flash("Bitte einen Suchbegriff eingeben.", "warning")
-        return render_template(
-            "search.html", source="kleinanzeigen", plan_info=plan_info
-        )
-
-    try:
-        ka_results = search_kleinanzeigen(
-            query=q,
-            price_min=float(price_min) if price_min else None,
-            price_max=float(price_max) if price_max else None,
-            location=postal,
-            radius_km=radius,
-        )
-
-        results = _normalize_kleinanzeigen(ka_results)
-
-        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return jsonify(
-                {
-                    "success": True,
-                    "results": results,
-                    "count": len(results),
-                }
-            )
-
-        return render_template(
-            "search_results.html",
-            results=results,
-            q=q,
-            params=data,
-            items=results,
-            source="kleinanzeigen",
-            plan_info=plan_info,
-        )
-
-    except Exception as e:
-        current_app.logger.error(
-            "Kleinanzeigen-Fehler (dedizierte Route): %s", e, exc_info=True
-        )
-
-        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return jsonify({"success": False, "error": str(e)}), 500
-
-        flash(f"Fehler bei der Kleinanzeigen-Suche: {e}", "danger")
-        return render_template(
-            "search.html", source="kleinanzeigen", plan_info=plan_info
-        )
+    return search()
