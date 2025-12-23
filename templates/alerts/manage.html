@@ -103,24 +103,20 @@
                 Details
               </a>
               <form
-                action="{{ url_for('alerts.toggle_alert', alert_id=a.id) }}"
+                action="{{ url_for('alert_pause', alert_id=a.id) }}"
                 method="post"
                 class="d-inline"
               >
-                <button
-                  class="btn btn-sm {% if a.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %}"
-                >
-                  {% if a.is_active %}Pausieren{% else %}Aktivieren{% endif %}
-                </button>
+                <button class="btn btn-sm btn-outline-warning">⏸️ Pausieren</button>
               </form>
 
               <form
                 action="{{ url_for('alerts.delete_alert', alert_id=a.id) }}"
                 method="post"
                 class="d-inline"
-                onsubmit="return confirm('Alert wirklich löschen?');"
+                onsubmit="return confirm('Alert wirklich komplett löschen? Dies kann nicht rückgängig gemacht werden.');"
               >
-                <button class="btn btn-sm btn-outline-danger ms-1">Löschen</button>
+                <button class="btn btn-sm btn-outline-danger ms-1">🗑️ Löschen</button>
               </form>
             </td>
           </tr>
