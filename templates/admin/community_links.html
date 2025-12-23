@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}Community-Links verwalten{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h1 class="h3 mb-4">🌐 Community-Links verwalten</h1>
+
+  <div class="row mb-4">
+    <div class="col-md-8">
+      <button class="btn btn-primary" id="createLinkBtn">+ Neuer Link</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div id="linksContainer">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Wird geladen...</span>
+        </div> Wird geladen...
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="linkModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="linkModalTitle">Neuer Link</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="linkForm">
+          <div class="mb-3">
+            <label class="form-label">Titel *</label>
+            <input type="text" class="form-control" id="linkTitle" required/>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Beschreibung</label>
+            <textarea class="form-control" id="linkDescription" rows="3"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">URL *</label>
+            <input type="url" class="form-control" id="linkUrl" required/>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Kategorie *</label>
+            <select class="form-control" id="linkCategory" required>
+              <option value="">-- Wähle eine Kategorie --</option>
+              <option value="Blog">📝 Blog</option>
+              <option value="Tool">🛠️ Tool</option>
+              <option value="Tutorial">📚 Tutorial</option>
+              <option value="Ressource">📄 Ressource</option>
+              <option value="Community">👥 Community</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Icon (Emoji)</label>
+            <input type="text" class="form-control" id="linkIcon" placeholder="z.B. 📱"/>
+          </div>
+          <div class="mb-3">
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input" id="linkFeatured"/>
+              <label class="form-check-label" for="linkFeatured">
+                ⭐ Oben anzeigen
+              </label>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Sortierungsreihenfolge</label>
+            <input type="number" class="form-control" id="linkOrder" value="0"/>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="saveLinkBtn">Speichern</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentLinkId = null;
+let linkModal = null;
+
+async function loadLinks() {
+  try {
+    const response = await fetch('/api/admin/community-links');
+    const data = await response.json();
+    const container = document.getElementById('linksContainer');
+    
+    if (!data.links || data.links.length === 0) {
+      container.innerHTML = '<p class="text-muted">Keine Links vorhanden.</p>';
+      return;
+    }
+    
+    let html = '<div class="table-responsive"><table class="table mb-0"><thead class="table-light"><tr><th>Titel</th><th>Kategorie</th><th>Featured</th><th>Aktionen</th></tr></thead><tbody>';
+    
+    data.links.forEach(link => {
+      html += `
+        <tr>
+          <td>
+            <a href="${link.url}" target="_blank" class="text-decoration-none">
+              ${link.icon || '🔗'} ${link.title}
+            </a>
+          </td>
+          <td><span class="badge bg-secondary">${link.category}</span></td>
+          <td>${link.is_featured ? '⭐ Ja' : 'Nein'}</td>
+          <td>
+            <button class="btn btn-sm btn-outline-primary" onclick="editLink(${link.id})">Bearbeiten</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteLink(${link.id})">Löschen</button>
+          </td>
+        </tr>
+      `;
+    });
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+  } catch (error) {
+    document.getElementById('linksContainer').innerHTML = '<div class="alert alert-danger">Fehler beim Laden der Links</div>';
+  }
+}
+
+function resetForm() {
+  document.getElementById('linkForm').reset();
+  currentLinkId = null;
+  document.getElementById('linkModalTitle').textContent = 'Neuer Link';
+}
+
+function initModal() {
+  if (!linkModal) {
+    linkModal = new bootstrap.Modal(document.getElementById('linkModal'));
+  }
+}
+
+document.getElementById('createLinkBtn').addEventListener('click', () => {
+  initModal();
+  resetForm();
+  linkModal.show();
+});
+
+async function editLink(id) {
+  try {
+    const response = await fetch('/api/admin/community-links');
+    const data = await response.json();
+    const link = data.links.find(l => l.id === id);
+    
+    if (!link) return;
+    
+    currentLinkId = id;
+    document.getElementById('linkTitle').value = link.title;
+    document.getElementById('linkDescription').value = link.description || '';
+    document.getElementById('linkUrl').value = link.url;
+    document.getElementById('linkCategory').value = link.category;
+    document.getElementById('linkIcon').value = link.icon || '';
+    document.getElementById('linkFeatured').checked = link.is_featured;
+    document.getElementById('linkOrder').value = link.display_order;
+    document.getElementById('linkModalTitle').textContent = 'Link bearbeiten';
+    
+    initModal();
+    linkModal.show();
+  } catch (error) {
+    alert('Fehler beim Laden des Links');
+  }
+}
+
+document.getElementById('saveLinkBtn').addEventListener('click', async () => {
+  const title = document.getElementById('linkTitle').value.trim();
+  const description = document.getElementById('linkDescription').value.trim();
+  const url = document.getElementById('linkUrl').value.trim();
+  const category = document.getElementById('linkCategory').value;
+  const icon = document.getElementById('linkIcon').value.trim();
+  const featured = document.getElementById('linkFeatured').checked;
+  const order = parseInt(document.getElementById('linkOrder').value);
+  
+  if (!title || !url || !category) {
+    alert('Bitte Titel, URL und Kategorie ausfüllen');
+    return;
+  }
+  
+  try {
+    const method = currentLinkId ? 'PUT' : 'POST';
+    const endpoint = currentLinkId ? `/api/admin/community-links/${currentLinkId}` : '/api/admin/community-links';
+    
+    const response = await fetch(endpoint, {
+      method: method,
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        title: title,
+        description: description,
+        url: url,
+        category: category,
+        icon: icon,
+        is_featured: featured,
+        display_order: order
+      })
+    });
+    
+    if (response.ok) {
+      if (linkModal) {
+        linkModal.hide();
+      }
+      loadLinks();
+    } else {
+      alert('Fehler beim Speichern');
+    }
+  } catch (error) {
+    alert('Fehler: ' + error.message);
+  }
+});
+
+async function deleteLink(id) {
+  if (!confirm('Wirklich löschen?')) return;
+  
+  try {
+    const response = await fetch(`/api/admin/community-links/${id}`, {
+      method: 'DELETE'
+    });
+    
+    if (response.ok) {
+      loadLinks();
+    } else {
+      alert('Fehler beim Löschen');
+    }
+  } catch (error) {
+    alert('Fehler: ' + error.message);
+  }
+}
+
+loadLinks();
+</script>
+
+{% endblock %}

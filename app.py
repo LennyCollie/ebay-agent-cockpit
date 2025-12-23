@@ -4094,6 +4094,297 @@ def newsletter_verify(token):
         return f"Fehler: {str(e)}", 500
 
 
+@app.route("/api/affiliate/generate", methods=["POST"])
+@login_required
+def affiliate_generate():
+    import secrets
+    from models import AffiliateAccount
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        affiliate = db.query(AffiliateAccount).filter_by(user_id=current_user.id).first()
+        
+        if affiliate:
+            return jsonify({"error": "Sie haben bereits ein Affiliate-Konto"}), 400
+        
+        referral_code = secrets.token_urlsafe(8)
+        referral_url = f"{request.url_root}ref/{referral_code}"
+        
+        affiliate = AffiliateAccount(
+            user_id=current_user.id,
+            referral_code=referral_code,
+            referral_url=referral_url
+        )
+        db.add(affiliate)
+        db.commit()
+        
+        return jsonify({
+            "referral_code": referral_code,
+            "referral_url": referral_url,
+            "message": "Affiliate-Link erstellt!"
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/affiliate/stats", methods=["GET"])
+@login_required
+def affiliate_stats():
+    from models import AffiliateAccount
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        affiliate = db.query(AffiliateAccount).filter_by(user_id=current_user.id).first()
+        
+        if not affiliate:
+            return jsonify({"error": "Kein Affiliate-Konto gefunden"}), 404
+        
+        return jsonify({
+            "referral_code": affiliate.referral_code,
+            "referral_url": affiliate.referral_url,
+            "total_clicks": affiliate.total_clicks,
+            "total_conversions": affiliate.total_conversions,
+            "total_earnings": float(affiliate.total_earnings),
+            "commission_rate": affiliate.commission_rate,
+            "is_active": affiliate.is_active
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/ref/<referral_code>")
+def affiliate_track(referral_code):
+    from models import AffiliateAccount, AffiliateClick
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        affiliate = db.query(AffiliateAccount).filter_by(referral_code=referral_code).first()
+        
+        if not affiliate:
+            return redirect(url_for('public_home'))
+        
+        click = AffiliateClick(
+            affiliate_id=affiliate.id,
+            referrer_ip=request.remote_addr,
+            referrer_url=request.referrer,
+            user_agent=request.user_agent.string
+        )
+        db.add(click)
+        affiliate.total_clicks += 1
+        db.commit()
+        
+        session['affiliate_click_id'] = click.id
+        session['referral_code'] = referral_code
+        
+        return redirect(url_for('search.search_page'))
+    except Exception as e:
+        return redirect(url_for('public_home'))
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/community/links", methods=["GET"])
+def community_links():
+    from models import CommunityLink
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        links = db.query(CommunityLink).order_by(
+            CommunityLink.is_featured.desc(),
+            CommunityLink.display_order,
+            CommunityLink.created_at.desc()
+        ).all()
+        
+        return jsonify({
+            "links": [
+                {
+                    "id": link.id,
+                    "title": link.title,
+                    "description": link.description,
+                    "url": link.url,
+                    "category": link.category,
+                    "icon": link.icon,
+                    "is_featured": link.is_featured
+                }
+                for link in links
+            ]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/community-links", methods=["GET"])
+@login_required
+def admin_community_links_list():
+    from models import CommunityLink, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        links = db.query(CommunityLink).order_by(CommunityLink.display_order).all()
+        
+        return jsonify({
+            "links": [
+                {
+                    "id": link.id,
+                    "title": link.title,
+                    "description": link.description,
+                    "url": link.url,
+                    "category": link.category,
+                    "icon": link.icon,
+                    "is_featured": link.is_featured,
+                    "display_order": link.display_order
+                }
+                for link in links
+            ]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/community-links", methods=["POST"])
+@login_required
+def admin_community_links_create():
+    from models import CommunityLink, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        data = request.get_json()
+        
+        if not data.get("title") or not data.get("url") or not data.get("category"):
+            return jsonify({"error": "Titel, URL und Kategorie sind erforderlich"}), 400
+        
+        link = CommunityLink(
+            title=data["title"],
+            description=data.get("description"),
+            url=data["url"],
+            category=data["category"],
+            icon=data.get("icon"),
+            is_featured=data.get("is_featured", False),
+            display_order=data.get("display_order", 0)
+        )
+        db.add(link)
+        db.commit()
+        
+        return jsonify({
+            "message": "Link erstellt!",
+            "id": link.id
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/community-links/<int:link_id>", methods=["PUT"])
+@login_required
+def admin_community_links_update(link_id):
+    from models import CommunityLink, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        link = db.query(CommunityLink).filter_by(id=link_id).first()
+        if not link:
+            return jsonify({"error": "Link nicht gefunden"}), 404
+        
+        data = request.get_json()
+        
+        if "title" in data:
+            link.title = data["title"]
+        if "description" in data:
+            link.description = data["description"]
+        if "url" in data:
+            link.url = data["url"]
+        if "category" in data:
+            link.category = data["category"]
+        if "icon" in data:
+            link.icon = data["icon"]
+        if "is_featured" in data:
+            link.is_featured = data["is_featured"]
+        if "display_order" in data:
+            link.display_order = data["display_order"]
+        
+        db.commit()
+        
+        return jsonify({"message": "Link aktualisiert!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/community-links/<int:link_id>", methods=["DELETE"])
+@login_required
+def admin_community_links_delete(link_id):
+    from models import CommunityLink, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        link = db.query(CommunityLink).filter_by(id=link_id).first()
+        if not link:
+            return jsonify({"error": "Link nicht gefunden"}), 404
+        
+        db.delete(link)
+        db.commit()
+        
+        return jsonify({"message": "Link gelöscht!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"

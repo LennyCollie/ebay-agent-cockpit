@@ -12,6 +12,17 @@
 
   <hr class="my-4"/>
 
+  <h2 class="h5 mb-3">💰 Affiliate-Programm</h2>
+  <div id="affiliateSection" class="card mb-4">
+    <div class="card-body">
+      <div class="spinner-border spinner-border-sm text-primary" role="status">
+        <span class="visually-hidden">Wird geladen...</span>
+      </div> Wird geladen...
+    </div>
+  </div>
+
+  <hr class="my-4"/>
+
   <h2 class="h5 mb-3">Meine Abos</h2>
   {% if subscriptions %}
     <div class="table-responsive">
@@ -63,4 +74,112 @@
     <p class="text-muted">Noch keine Rechnungen vorhanden.</p>
   {% endif %}
 </div>
+
+<script>
+async function loadAffiliateData() {
+  try {
+    const response = await fetch('/api/affiliate/stats');
+    const section = document.getElementById('affiliateSection');
+    
+    if (response.status === 404) {
+      section.innerHTML = `
+        <div class="card-body">
+          <p class="text-muted mb-3">Du hast noch kein Affiliate-Konto. Verdiene Provisionen, wenn du andere einlädst!</p>
+          <button class="btn btn-primary" id="createAffiliateBtn">Affiliate-Link erstellen</button>
+        </div>
+      `;
+      document.getElementById('createAffiliateBtn').addEventListener('click', createAffiliate);
+      return;
+    }
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      const copyBtn = `
+        <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyToClipboard('${data.referral_url}')">
+          📋 Kopieren
+        </button>
+      `;
+      
+      section.innerHTML = `
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label fw-bold">Dein Referral-Link:</label>
+            <div class="input-group">
+              <input type="text" class="form-control" value="${data.referral_url}" readonly/>
+              ${copyBtn}
+            </div>
+          </div>
+          
+          <div class="row">
+            <div class="col-md-3">
+              <div class="text-center">
+                <h6 class="text-muted">Klicks</h6>
+                <h4 class="fw-bold text-primary">${data.total_clicks}</h4>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h6 class="text-muted">Conversions</h6>
+                <h4 class="fw-bold text-success">${data.total_conversions}</h4>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h6 class="text-muted">Provision</h6>
+                <h4 class="fw-bold">€${data.total_earnings.toFixed(2)}</h4>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h6 class="text-muted">Rate</h6>
+                <h4 class="fw-bold">${(data.commission_rate * 100).toFixed(0)}%</h4>
+              </div>
+            </div>
+          </div>
+          
+          <p class="text-muted small mt-3 mb-0">
+            📌 Teile deinen Link um neue User zu werben. Pro erfolgreicher Registrierung erhältst du ${(data.commission_rate * 100).toFixed(0)}% Provision!
+          </p>
+        </div>
+      `;
+    } else {
+      section.innerHTML = `<div class="alert alert-danger">Fehler beim Laden der Daten</div>`;
+    }
+  } catch (error) {
+    document.getElementById('affiliateSection').innerHTML = `<div class="alert alert-danger">Fehler beim Laden der Affiliate-Daten</div>`;
+  }
+}
+
+async function createAffiliate() {
+  try {
+    const response = await fetch('/api/affiliate/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (response.ok) {
+      alert('✓ Affiliate-Link erstellt! Bitte aktualisiere die Seite.');
+      loadAffiliateData();
+    } else {
+      alert('Fehler beim Erstellen des Affiliate-Links');
+    }
+  } catch (error) {
+    alert('Fehler: ' + error.message);
+  }
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    alert('✓ Link kopiert!');
+  }).catch(() => {
+    alert('Fehler beim Kopieren');
+  });
+}
+
+loadAffiliateData();
+</script>
+
 {% endblock %}

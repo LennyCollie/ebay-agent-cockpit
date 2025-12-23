@@ -115,3 +115,10 @@ def dashboard():
         active_alerts=active_alerts,
         cron_runs=cron_runs,
     )
+
+
+@bp.route("/community-links")
+@login_required
+@admin_required
+def community_links():
+    return render_template("admin/community_links.html")
