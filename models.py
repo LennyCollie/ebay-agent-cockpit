@@ -410,6 +410,97 @@ def sync_user_from_app(session, app_user_id: Optional[int] = None, email: Option
 
 
 
+class AffiliateAccount(Base):
+    __tablename__ = "affiliate_accounts"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, unique=True)
+    
+    referral_code = Column(String(50), unique=True, nullable=False, index=True)
+    referral_url = Column(Text, nullable=False)
+    
+    total_clicks = Column(Integer, default=0)
+    total_conversions = Column(Integer, default=0)
+    total_earnings = Column(Float, default=0.0)
+    
+    commission_rate = Column(Float, default=0.15)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = relationship("User", backref="affiliate_account")
+    referral_clicks = relationship("AffiliateClick", back_populates="affiliate", cascade="all, delete-orphan")
+    referral_conversions = relationship("AffiliateConversion", back_populates="affiliate", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<AffiliateAccount {self.referral_code}>"
+
+
+class AffiliateClick(Base):
+    __tablename__ = "affiliate_clicks"
+
+    id = Column(Integer, primary_key=True)
+    affiliate_id = Column(Integer, ForeignKey("affiliate_accounts.id"), nullable=False)
+    
+    referrer_ip = Column(String(50), nullable=True)
+    referrer_url = Column(Text, nullable=True)
+    user_agent = Column(Text, nullable=True)
+    
+    converted = Column(Boolean, default=False)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    affiliate = relationship("AffiliateAccount", back_populates="referral_clicks")
+
+    def __repr__(self):
+        return f"<AffiliateClick {self.affiliate_id} @ {self.created_at}>"
+
+
+class AffiliateConversion(Base):
+    __tablename__ = "affiliate_conversions"
+
+    id = Column(Integer, primary_key=True)
+    affiliate_id = Column(Integer, ForeignKey("affiliate_accounts.id"), nullable=False)
+    click_id = Column(Integer, ForeignKey("affiliate_clicks.id"), nullable=True)
+    
+    converted_user_id = Column(Integer, ForeignKey("model_users.id"), nullable=True)
+    
+    conversion_type = Column(String(50), default="signup")
+    commission_amount = Column(Float, default=0.0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    affiliate = relationship("AffiliateAccount", back_populates="referral_conversions")
+    click = relationship("AffiliateClick")
+    converted_user = relationship("User")
+
+    def __repr__(self):
+        return f"<AffiliateConversion {self.affiliate_id}>"
+
+
+class CommunityLink(Base):
+    __tablename__ = "community_links"
+
+    id = Column(Integer, primary_key=True)
+    
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    url = Column(Text, nullable=False)
+    
+    category = Column(String(50), nullable=False)
+    icon = Column(String(50), nullable=True)
+    
+    is_featured = Column(Boolean, default=False)
+    display_order = Column(Integer, default=0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<CommunityLink '{self.title}'>"
+
+
 class NewsletterSubscriber(Base):
     __tablename__ = "newsletter_subscribers"
 

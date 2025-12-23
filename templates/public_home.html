@@ -638,6 +638,24 @@
   </div>
 </section>
 
+<!-- =================== COMMUNITY LINKS =================== -->
+<section class="py-5 bg-light border-top" id="community">
+  <div class="container">
+    <h2 class="h3 fw-bold mb-1">🌐 Community & Ressourcen</h2>
+    <p class="text-muted mb-5">
+      Blogs, Tools, Tutorials & externe Ressourcen für bessere eBay-Agenten
+    </p>
+    
+    <div class="row" id="communityLinksContainer">
+      <div class="col-12 text-center">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Wird geladen...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- =================== NEWSLETTER SIGNUP =================== -->
 <section class="py-5 bg-primary text-white" id="newsletter">
   <div class="container">
@@ -921,6 +939,56 @@
     >
   </div>
 </section>
+
+<script>
+async function loadCommunityLinks() {
+  try {
+    const response = await fetch('/api/community/links');
+    const data = await response.json();
+    const container = document.getElementById('communityLinksContainer');
+    
+    if (!data.links || data.links.length === 0) {
+      container.innerHTML = '<div class="col-12"><p class="text-center text-muted">Keine Links vorhanden. Komm bald zurück!</p></div>';
+      return;
+    }
+    
+    const categoryGroups = {};
+    data.links.forEach(link => {
+      if (!categoryGroups[link.category]) {
+        categoryGroups[link.category] = [];
+      }
+      categoryGroups[link.category].push(link);
+    });
+    
+    let html = '';
+    Object.entries(categoryGroups).forEach(([category, links]) => {
+      html += `<div class="col-12"><h5 class="fw-bold mt-4 mb-3">${category}</h5></div>`;
+      links.forEach(link => {
+        const icon = link.icon || '🔗';
+        html += `
+          <div class="col-md-6 col-lg-4 mb-3">
+            <a href="${link.url}" target="_blank" class="card h-100 text-decoration-none text-dark border-0 shadow-sm hover" style="cursor: pointer;">
+              <div class="card-body">
+                <h6 class="card-title fw-bold">${icon} ${link.title}</h6>
+                <p class="card-text small text-muted">${link.description || 'Externe Ressource'}</p>
+              </div>
+              <div class="card-footer bg-transparent border-0 pt-0">
+                <small class="text-primary">Besuchen →</small>
+              </div>
+            </a>
+          </div>
+        `;
+      });
+    });
+    
+    container.innerHTML = html;
+  } catch (error) {
+    document.getElementById('communityLinksContainer').innerHTML = '<div class="col-12"><p class="text-center text-danger">Fehler beim Laden der Links</p></div>';
+  }
+}
+
+loadCommunityLinks();
+</script>
 
 <script>
 document.getElementById('newsletterForm').addEventListener('submit', async function(e) {
