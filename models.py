@@ -410,6 +410,23 @@ def sync_user_from_app(session, app_user_id: Optional[int] = None, email: Option
 
 
 
+class NewsletterSubscriber(Base):
+    __tablename__ = "newsletter_subscribers"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    verified = Column(Boolean, default=False)
+    verification_token = Column(String(255), nullable=True, unique=True)
+    is_active = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    verified_at = Column(DateTime, nullable=True)
+    unsubscribed_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<NewsletterSubscriber {self.email}>"
+
+
 if __name__ == "__main__":
     # Wenn direkt ausgeführt: Tabellen erstellen
     init_db()
