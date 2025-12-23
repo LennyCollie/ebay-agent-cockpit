@@ -33,6 +33,7 @@ from flask import (
     jsonify,
     redirect,
     render_template,
+    render_template_string,
     request,
     session,
     url_for,
@@ -4001,6 +4002,96 @@ def inject_user_flags():
         "current_user_email": user_email,
         "is_admin": is_admin_email(user_email) if user_email else False,
     }
+
+
+@app.route("/api/newsletter/subscribe", methods=["POST"])
+def newsletter_subscribe():
+    import secrets
+    import requests
+    from models import NewsletterSubscriber
+    
+    data = request.get_json()
+    email = data.get("email", "").strip().lower()
+    
+    if not email or "@" not in email:
+        return jsonify({"error": "Ungültige E-Mail"}), 400
+    
+    try:
+        subscriber = db.session.query(NewsletterSubscriber).filter_by(email=email).first()
+        
+        if subscriber and subscriber.verified:
+            return jsonify({"error": "Diese E-Mail ist bereits angemeldet"}), 400
+        
+        if subscriber:
+            subscriber.verified = False
+            subscriber.verification_token = secrets.token_urlsafe(32)
+        else:
+            subscriber = NewsletterSubscriber(
+                email=email,
+                verification_token=secrets.token_urlsafe(32)
+            )
+            db.session.add(subscriber)
+        
+        db.session.commit()
+        
+        verification_url = f"{request.url_root}api/newsletter/verify/{subscriber.verification_token}"
+        
+        postmark_token = os.getenv("POSTMARK_SERVER_TOKEN")
+        if postmark_token:
+            requests.post(
+                "https://api.postmarkapp.com/email",
+                headers={
+                    "X-Postmark-Server-Token": postmark_token,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "From": os.getenv("POSTMARK_FROM", "alerts@alerts.lennycolli.com"),
+                    "To": email,
+                    "Subject": "Newsletter-Anmeldung bestätigen",
+                    "HtmlBody": f"""
+                    <h2>Newsletter-Bestätigung 📧</h2>
+                    <p>Danke für deine Anmeldung! Bitte bestätige deine E-Mail-Adresse:</p>
+                    <p><a href="{verification_url}" class="btn">Bestätigen</a></p>
+                    <p style="color: #999; font-size: 12px;">Dieser Link ist 24 Stunden gültig.</p>
+                    """,
+                    "TextBody": f"Bestätige deine Anmeldung: {verification_url}",
+                }
+            )
+        
+        return jsonify({"message": "Bestätigungsemail sent! Bitte E-Mail überprüfen."}), 200
+    
+    except Exception as e:
+        return jsonify({"error": f"Fehler: {str(e)}"}), 500
+
+
+@app.route("/api/newsletter/verify/<token>", methods=["GET"])
+def newsletter_verify(token):
+    from models import NewsletterSubscriber
+    
+    try:
+        subscriber = db.session.query(NewsletterSubscriber).filter_by(
+            verification_token=token
+        ).first()
+        
+        if not subscriber:
+            return render_template_string("""
+            <h2>Ungültiger Link</h2>
+            <p><a href="/">Zurück zur Startseite</a></p>
+            """)
+        
+        subscriber.verified = True
+        subscriber.verification_token = None
+        subscriber.verified_at = datetime.utcnow()
+        db.session.commit()
+        
+        return render_template_string("""
+        <h2>✓ Vielen Dank!</h2>
+        <p>Deine E-Mail ist bestätigt. Du erhältst jetzt Newsletter!</p>
+        <p><a href="/">Zurück zur Startseite</a></p>
+        """)
+    
+    except Exception as e:
+        return f"Fehler: {str(e)}", 500
 
 
 if __name__ == "__main__":
