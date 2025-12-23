@@ -1613,7 +1613,13 @@ def root_redirect():
 
 @app.route("/public")
 def public_home():
-    return render_template("public_home.html", title="Start – ebay-agent-cockpit")
+    return render_template(
+        "public_home.html",
+        title="Super-Agent: eBay-Alerts in Echtzeit | Schnäppchen automatisch finden",
+        meta_desc="Erhalte sofort Benachrichtigungen, wenn neue eBay- und Kleinanzeigen-Angebote deinen Kriterien entsprechen. Kostenlos mit 3 Alerts starten, Premium ab 7€/Monat.",
+        og_title="Super-Agent – eBay-Schnäppchen automatisch finden",
+        og_desc="Echtzeit-Alerts für eBay & Kleinanzeigen. Preisfilter, Zustandswahl, Telegram-Integration. Jetzt kostenlos testen!"
+    )
 
 @app.route("/howto")
 def howto():
