@@ -141,3 +141,17 @@ def analytics():
 @admin_required
 def achievements():
     return render_template("admin/achievements.html")
+
+
+@bp.route("/webhooks")
+@login_required
+@admin_required
+def webhooks():
+    return render_template("admin/webhooks.html")
+
+
+@bp.route("/api-management")
+@login_required
+@admin_required
+def api_management():
+    return render_template("admin/api_management.html")
