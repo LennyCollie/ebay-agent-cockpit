@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+
+{% block title %}Meine Affiliate Analytics{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h1 class="h3 mb-4">📊 Meine Affiliate Performance</h1>
+
+  <ul class="nav nav-tabs mb-4" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="lifetime-tab" data-bs-toggle="tab" data-bs-target="#lifetime">
+        ⏱️ Lifetime
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="month-tab" data-bs-toggle="tab" data-bs-target="#month">
+        📅 Letzte 30 Tage
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+    <div class="tab-pane fade show active" id="lifetime" role="tabpanel">
+      <div class="row mb-4">
+        <div class="col-md-3">
+          <div class="card border-primary">
+            <div class="card-body">
+              <h6 class="card-title text-muted">Klicks</h6>
+              <h3 class="fw-bold text-primary" id="lifetime-clicks">-</h3>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-success">
+            <div class="card-body">
+              <h6 class="card-title text-muted">Conversions</h6>
+              <h3 class="fw-bold text-success" id="lifetime-conversions">-</h3>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-warning">
+            <div class="card-body">
+              <h6 class="card-title text-muted">💰 Earnings</h6>
+              <h3 class="fw-bold text-warning" id="lifetime-earnings">€ -</h3>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-info">
+            <div class="card-body">
+              <h6 class="card-title text-muted">Conversion Rate</h6>
+              <h3 class="fw-bold text-info" id="lifetime-rate">- %</h3>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="month" role="tabpanel">
+      <div class="row mb-4">
+        <div class="col-md-3">
+          <div class="card border-primary">
+            <div class="card-body">
+              <h6 class="card-title text-muted">Klicks (30d)</h6>
+              <h3 class="fw-bold text-primary" id="month-clicks">-</h3>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-success">
+            <div class="card-body">
+              <h6 class="card-title text-muted">Conversions (30d)</h6>
+              <h3 class="fw-bold text-success" id="month-conversions">-</h3>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-warning">
+            <div class="card-body">
+              <h6 class="card-title text-muted">💰 Earnings (30d)</h6>
+              <h3 class="fw-bold text-warning" id="month-earnings">€ -</h3>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-info">
+            <div class="card-body">
+              <h6 class="card-title text-muted">Conversion Rate (30d)</h6>
+              <h3 class="fw-bold text-info" id="month-rate">- %</h3>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">📈 Daily Performance (letzte 30 Tage)</h5>
+        </div>
+        <div class="card-body">
+          <canvas id="performanceChart" height="80"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h5 class="mb-0">🎟️ Meine Affiliate-Gutscheine</h5>
+    </div>
+    <div class="card-body">
+      <div id="couponsContainer">
+        <div class="spinner-border spinner-border-sm text-primary"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+<script>
+let performanceChart = null;
+
+async function loadAnalytics() {
+  try {
+    const response = await fetch('/api/user/analytics');
+    const data = await response.json();
+    
+    if (response.ok) {
+      document.getElementById('lifetime-clicks').textContent = data.lifetime.total_clicks;
+      document.getElementById('lifetime-conversions').textContent = data.lifetime.total_conversions;
+      document.getElementById('lifetime-earnings').textContent = '€ ' + data.lifetime.total_earnings.toFixed(2);
+      document.getElementById('lifetime-rate').textContent = data.lifetime.conversion_rate + ' %';
+      
+      document.getElementById('month-clicks').textContent = data.last_30_days.clicks;
+      document.getElementById('month-conversions').textContent = data.last_30_days.conversions;
+      document.getElementById('month-earnings').textContent = '€ ' + data.last_30_days.earnings.toFixed(2);
+      document.getElementById('month-rate').textContent = data.last_30_days.conversion_rate + ' %';
+      
+      if (data.coupons && data.coupons.length > 0) {
+        let html = '<div class="row">';
+        data.coupons.forEach(coupon => {
+          html += `
+            <div class="col-md-6 mb-2">
+              <div class="card border-info">
+                <div class="card-body py-2">
+                  <h6 class="card-title mb-1"><strong>${coupon.code}</strong></h6>
+                  <p class="card-text small mb-1">${coupon.type === 'fixed' ? '💶' : '📊'} ${coupon.amount}${coupon.type === 'percent' ? '%' : '€'}</p>
+                  <p class="text-muted small mb-0">
+                    Verwendet: ${coupon.used_count}${coupon.limit ? '/' + coupon.limit : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+          `;
+        });
+        html += '</div>';
+        document.getElementById('couponsContainer').innerHTML = html;
+      } else {
+        document.getElementById('couponsContainer').innerHTML = '<p class="text-muted">Keine Affiliate-Gutscheine erstellt</p>';
+      }
+      
+      if (data.daily_trends && data.daily_trends.length > 0) {
+        const dates = data.daily_trends.map(d => d.date);
+        const clicks = data.daily_trends.map(d => d.clicks);
+        const conversions = data.daily_trends.map(d => d.conversions);
+        const earnings = data.daily_trends.map(d => d.earnings);
+        
+        const ctx = document.getElementById('performanceChart').getContext('2d');
+        
+        if (performanceChart) performanceChart.destroy();
+        
+        performanceChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: dates,
+            datasets: [
+              {
+                label: 'Klicks',
+                data: clicks,
+                borderColor: '#0d6efd',
+                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                borderWidth: 2,
+                tension: 0.4,
+                yAxisID: 'y'
+              },
+              {
+                label: 'Conversions',
+                data: conversions,
+                borderColor: '#198754',
+                backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                borderWidth: 2,
+                tension: 0.4,
+                yAxisID: 'y'
+              },
+              {
+                label: 'Earnings (€)',
+                data: earnings,
+                borderColor: '#ffc107',
+                backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                borderWidth: 2,
+                tension: 0.4,
+                yAxisID: 'y1'
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+              y: {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                title: { display: true, text: 'Klicks / Conversions' }
+              },
+              y1: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                title: { display: true, text: 'Earnings €' },
+                grid: { drawOnChartArea: false }
+              }
+            }
+          }
+        });
+      }
+    } else {
+      if (response.status === 404) {
+        document.body.innerHTML = '<div class="container mt-5"><div class="alert alert-warning">Du hast noch kein Affiliate-Konto. Bitte erstelle eines in deinem <a href="/account">Konto</a>!</div></div>';
+      } else {
+        document.body.innerHTML = '<div class="container mt-5"><div class="alert alert-danger">Fehler beim Laden der Analytics: ' + data.error + '</div></div>';
+      }
+    }
+  } catch (error) {
+    console.error('Error loading analytics:', error);
+  }
+}
+
+loadAnalytics();
+</script>
+
+{% endblock %}

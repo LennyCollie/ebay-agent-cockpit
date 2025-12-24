@@ -289,13 +289,18 @@ except Exception as e:
 
 
 # Helper Functions
-def get_db():
-    """Gibt eine DB-Session zurück (für Flask Routes)"""
+def get_db_session():
+    """Gibt eine DB-Session zurück (für Flask Routes) - GENERATOR für use in with Statements"""
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+def get_db():
+    """Gibt eine neue SQLAlchemy Session direkt zurück (kein Generator)"""
+    return SessionLocal()
 
 
     # In models.py - am Ende einfügen
@@ -516,6 +521,214 @@ class NewsletterSubscriber(Base):
 
     def __repr__(self):
         return f"<NewsletterSubscriber {self.email}>"
+
+
+class Coupon(Base):
+    __tablename__ = "coupons"
+
+    id = Column(Integer, primary_key=True)
+    
+    code = Column(String(50), unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    
+    amount = Column(Float, nullable=False)
+    discount_type = Column(String(20), default="fixed")
+    
+    is_affiliate = Column(Boolean, default=False)
+    affiliate_conversion_id = Column(Integer, ForeignKey("affiliate_conversions.id"), nullable=True)
+    
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=True)
+    
+    usage_limit = Column(Integer, nullable=True)
+    used_count = Column(Integer, default=0)
+    
+    valid_from = Column(DateTime, default=datetime.utcnow)
+    valid_until = Column(DateTime, nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = relationship("User", backref="coupons")
+    affiliate_conversion = relationship("AffiliateConversion")
+    usages = relationship("CouponUsage", back_populates="coupon", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Coupon {self.code}>"
+    
+    def is_valid(self):
+        """Check if coupon is still valid and can be used"""
+        now = datetime.utcnow()
+        if not self.is_active:
+            return False
+        if self.valid_until and now > self.valid_until:
+            return False
+        if self.valid_from and now < self.valid_from:
+            return False
+        if self.usage_limit and self.used_count >= self.usage_limit:
+            return False
+        return True
+
+
+class CouponUsage(Base):
+    __tablename__ = "coupon_usages"
+
+    id = Column(Integer, primary_key=True)
+    coupon_id = Column(Integer, ForeignKey("coupons.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False)
+    
+    applied_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    coupon = relationship("Coupon", back_populates="usages")
+    user = relationship("User", backref="coupon_usages")
+
+    def __repr__(self):
+        return f"<CouponUsage {self.coupon_id} by User {self.user_id}>"
+
+
+class AnalyticsSnapshot(Base):
+    __tablename__ = "analytics_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    
+    snapshot_date = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    total_users = Column(Integer, default=0)
+    total_premium_users = Column(Integer, default=0)
+    total_basic_users = Column(Integer, default=0)
+    total_pro_users = Column(Integer, default=0)
+    total_team_users = Column(Integer, default=0)
+    
+    new_signups = Column(Integer, default=0)
+    churned_users = Column(Integer, default=0)
+    
+    affiliate_clicks = Column(Integer, default=0)
+    affiliate_conversions = Column(Integer, default=0)
+    affiliate_earnings = Column(Float, default=0.0)
+    
+    coupons_created = Column(Integer, default=0)
+    coupons_redeemed = Column(Integer, default=0)
+    coupons_total_value = Column(Float, default=0.0)
+    
+    agents_created = Column(Integer, default=0)
+    agents_active = Column(Integer, default=0)
+    alerts_triggered = Column(Integer, default=0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<AnalyticsSnapshot {self.snapshot_date.strftime('%Y-%m-%d')}>"
+
+
+class AnalyticsEvent(Base):
+    __tablename__ = "analytics_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=True)
+    
+    event_type = Column(String(50), nullable=False, index=True)
+    event_name = Column(String(255), nullable=False)
+    
+    event_data = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    user = relationship("User", backref="analytics_events")
+
+    def __repr__(self):
+        return f"<AnalyticsEvent {self.event_type}:{self.event_name}>"
+
+
+class Achievement(Base):
+    __tablename__ = "achievements"
+
+    id = Column(Integer, primary_key=True)
+    
+    code = Column(String(50), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    icon = Column(String(100), nullable=True)
+    
+    category = Column(String(50), nullable=False)
+    points = Column(Integer, default=10)
+    
+    trigger_type = Column(String(50), nullable=False)
+    trigger_condition = Column(String(255), nullable=False)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user_badges = relationship("UserBadge", back_populates="achievement", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Achievement {self.code}>"
+
+
+class UserBadge(Base):
+    __tablename__ = "user_badges"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    achievement_id = Column(Integer, ForeignKey("achievements.id"), nullable=False)
+    
+    earned_at = Column(DateTime, default=datetime.utcnow, index=True)
+    is_public = Column(Boolean, default=True)
+    
+    achievement = relationship("Achievement", back_populates="user_badges")
+    user = relationship("User", backref="badges")
+
+    def __repr__(self):
+        return f"<UserBadge user={self.user_id} achievement={self.achievement_id}>"
+
+
+class UserEngagement(Base):
+    __tablename__ = "user_engagement"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, unique=True)
+    
+    login_streak = Column(Integer, default=0)
+    last_login = Column(DateTime, nullable=True)
+    
+    searches_count = Column(Integer, default=0)
+    agents_created = Column(Integer, default=0)
+    alerts_triggered = Column(Integer, default=0)
+    
+    affiliate_clicks = Column(Integer, default=0)
+    affiliate_conversions = Column(Integer, default=0)
+    
+    coupons_applied = Column(Integer, default=0)
+    coupons_created = Column(Integer, default=0)
+    
+    total_points = Column(Integer, default=0)
+    tier = Column(String(50), default="bronze")
+    
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = relationship("User", backref="engagement", uselist=False)
+
+    def __repr__(self):
+        return f"<UserEngagement user={self.user_id} tier={self.tier}>"
+
+
+class LeaderboardSnapshot(Base):
+    __tablename__ = "leaderboard_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False)
+    
+    period = Column(String(20), nullable=False)
+    rank = Column(Integer, nullable=True)
+    points = Column(Integer, default=0)
+    metric_value = Column(Integer, default=0)
+    metric_type = Column(String(50), nullable=False)
+    
+    snapshot_date = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    user = relationship("User", backref="leaderboard_snapshots")
+
+    def __repr__(self):
+        return f"<LeaderboardSnapshot user={self.user_id} period={self.period}>"
 
 
 if __name__ == "__main__":

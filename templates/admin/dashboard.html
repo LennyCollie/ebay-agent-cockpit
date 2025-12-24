@@ -1,4 +1,67 @@
-{% extends "base.html" %} {% block content %}
+{% extends "base.html" %} 
+{% block content %}
+
+<style>
+  .admin-sidebar {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+  }
+
+  .admin-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .admin-nav a {
+    display: inline-flex;
+    align-items: center;
+    padding: 12px 16px;
+    background: white;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #333;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .admin-nav a:hover {
+    border-color: #667eea;
+    background: #f0f4ff;
+    color: #667eea;
+  }
+
+  .admin-nav a.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+  }
+</style>
+
+<!-- Admin Navigation -->
+<div class="admin-sidebar">
+  <div class="admin-nav">
+    <a href="{{ url_for('admin.dashboard') }}" class="{% if request.endpoint == 'admin.dashboard' %}active{% endif %}">
+      📊 Dashboard
+    </a>
+    <a href="{{ url_for('admin.achievements') }}" class="{% if request.endpoint == 'admin.achievements' %}active{% endif %}">
+      🏆 Achievements
+    </a>
+    <a href="{{ url_for('admin.coupons') }}" class="{% if request.endpoint == 'admin.coupons' %}active{% endif %}">
+      🎟️ Coupons
+    </a>
+    <a href="{{ url_for('admin.community_links') }}" class="{% if request.endpoint == 'admin.community_links' %}active{% endif %}">
+      🔗 Community-Links
+    </a>
+    <a href="{{ url_for('admin.analytics') }}" class="{% if request.endpoint == 'admin.analytics' %}active{% endif %}">
+      📈 Analytics
+    </a>
+  </div>
+</div>
+
 <h1 class="h3 mb-3">Admin Dashboard</h1>
 
 <div class="row g-3 mb-4">

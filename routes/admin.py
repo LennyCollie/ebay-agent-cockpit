@@ -122,3 +122,22 @@ def dashboard():
 @admin_required
 def community_links():
     return render_template("admin/community_links.html")
+
+
+@bp.route("/coupons")
+@login_required
+def coupons():
+    return render_template("admin/coupons.html")
+
+
+@bp.route("/analytics")
+@login_required
+def analytics():
+    return render_template("admin/analytics.html")
+
+
+@bp.route("/achievements")
+@login_required
+@admin_required
+def achievements():
+    return render_template("admin/achievements.html")

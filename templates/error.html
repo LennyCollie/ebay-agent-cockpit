@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Fehler{% endblock %}
+{% block content %}
+<div class="text-center py-5">
+  <h1 class="display-6">⚠️ Fehler</h1>
+  <p class="text-secondary">{{ error or 'Ein Fehler ist aufgetreten.' }}</p>
+  <a class="btn btn-primary" href="{{ url_for('dashboard') }}">Zurück zum Dashboard</a>
+</div>
+{% endblock %}

@@ -199,6 +199,150 @@
     text-decoration: none;
     color: #f59e0b;
   }
+
+  .badge-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+
+  .badge-item {
+    text-align: center;
+    padding: 12px 8px;
+    background: #fffbf0;
+    border: 2px solid #ffc107;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .badge-item:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+  }
+
+  .badge-icon {
+    font-size: 2rem;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .badge-name {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #333;
+  }
+
+  .badge-earned {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #22c55e;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+  }
+
+  .tier-badge {
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: 600;
+    margin: 8px 0;
+    font-size: 1rem;
+  }
+
+  .tier-bronze {
+    background: #cd7f32;
+    color: white;
+  }
+
+  .tier-silver {
+    background: #c0c0c0;
+    color: #333;
+  }
+
+  .tier-gold {
+    background: #ffd700;
+    color: #333;
+  }
+
+  .tier-platinum {
+    background: #e5e4e2;
+    color: #333;
+    border: 2px solid #999;
+  }
+
+  .engagement-stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .engagement-stat:last-child {
+    border-bottom: none;
+  }
+
+  .engagement-label {
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .engagement-value {
+    font-weight: 700;
+    color: #1f2937;
+    font-size: 1.1rem;
+  }
+
+  .loading-skeleton {
+    background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+  }
+
+  @keyframes loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  .rank-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-weight: bold;
+    color: white;
+    margin-right: 12px;
+  }
+
+  .rank-1 {
+    background: gold;
+    color: #333;
+  }
+
+  .rank-2 {
+    background: silver;
+    color: #333;
+  }
+
+  .rank-3 {
+    background: #cd7f32;
+  }
+
+  .rank-other {
+    background: #9ca3af;
+  }
 </style>
 
 <div class="container py-4">
@@ -219,6 +363,57 @@
     <a href="/pricing" class="btn-upgrade"> Jetzt upgraden </a>
   </div>
   {% endif %}
+
+  <!-- Gamification Stats Row -->
+  <div class="dashboard-grid">
+    <!-- Points & Tier -->
+    <div class="dashboard-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="card-icon">⭐</span>
+          Punkte & Tier
+        </div>
+      </div>
+      <div id="tier-container" class="loading-skeleton" style="height: 60px; border-radius: 8px;"></div>
+      <div id="points-info" class="mt-3"></div>
+      <a href="/leaderboard" class="quick-action"> 🏆 Leaderboard ansehen </a>
+    </div>
+
+    <!-- Achievements -->
+    <div class="dashboard-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="card-icon">🏆</span>
+          Achievements
+        </div>
+      </div>
+      <div id="achievement-container" class="loading-skeleton" style="height: 60px; border-radius: 8px;"></div>
+      <div id="badge-grid-container" class="badge-grid" style="display: none;"></div>
+      <a href="/profile" class="quick-action"> 👤 Mein Profil </a>
+    </div>
+
+    <!-- Engagement Metrics -->
+    <div class="dashboard-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="card-icon">📊</span>
+          Aktivität
+        </div>
+      </div>
+      <div id="engagement-container" class="loading-skeleton" style="height: 80px; border-radius: 8px;"></div>
+    </div>
+
+    <!-- Leaderboard Position -->
+    <div class="dashboard-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="card-icon">🥇</span>
+          Deine Ranking
+        </div>
+      </div>
+      <div id="leaderboard-container" class="loading-skeleton" style="height: 60px; border-radius: 8px;"></div>
+    </div>
+  </div>
 
   <!-- Main Grid -->
   <div class="dashboard-grid">
@@ -418,5 +613,160 @@
     </div>
   </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  loadGamificationData();
+});
+
+async function loadGamificationData() {
+  try {
+    // Lade User Engagement
+    const engResponse = await fetch('/api/user/engagement');
+    const engData = await engResponse.json();
+    displayEngagement(engData);
+    displayTierAndPoints(engData);
+
+    // Lade User Achievements
+    const achResponse = await fetch('/api/user/achievements');
+    const achData = await achResponse.json();
+    displayAchievements(achData);
+
+    // Lade Leaderboard Position
+    const lbResponse = await fetch('/api/leaderboard?period=all_time&limit=100');
+    const lbData = await lbResponse.json();
+    displayLeaderboardPosition(lbData);
+  } catch (error) {
+    console.error('Error loading gamification data:', error);
+    document.getElementById('tier-container').innerHTML = '<p class="text-danger">⚠️ Fehler beim Laden</p>';
+  }
+}
+
+function displayTierAndPoints(data) {
+  const tierClass = `tier-${data.tier || 'bronze'}`;
+  const html = `
+    <div class="card-value">${data.total_points || 0}</div>
+    <p class="card-subtitle mb-3">Gesammelte Punkte</p>
+    <span class="tier-badge ${tierClass}">
+      ${getTierIcon(data.tier || 'bronze')} ${(data.tier || 'bronze').toUpperCase()}
+    </span>
+  `;
+  document.getElementById('tier-container').innerHTML = html;
+  document.getElementById('tier-container').classList.remove('loading-skeleton');
+}
+
+function displayEngagement(data) {
+  const streakEmoji = (data.login_streak || 0) >= 7 ? '🔥' : '📅';
+  
+  const html = `
+    <div class="engagement-stat">
+      <span class="engagement-label">🔥 Login Streak</span>
+      <span class="engagement-value">${data.login_streak || 0} Tage</span>
+    </div>
+    <div class="engagement-stat">
+      <span class="engagement-label">🔍 Suchen</span>
+      <span class="engagement-value">${data.searches_count || 0}</span>
+    </div>
+    <div class="engagement-stat">
+      <span class="engagement-label">🚨 Alerts</span>
+      <span class="engagement-value">${data.agents_created || 0}</span>
+    </div>
+    <div class="engagement-stat">
+      <span class="engagement-label">💰 Konvertierungen</span>
+      <span class="engagement-value">${data.affiliate_conversions || 0}</span>
+    </div>
+    <div class="engagement-stat">
+      <span class="engagement-label">🎟️ Coupons</span>
+      <span class="engagement-value">${data.coupons_applied || 0}</span>
+    </div>
+  `;
+  document.getElementById('engagement-container').innerHTML = html;
+  document.getElementById('engagement-container').classList.remove('loading-skeleton');
+}
+
+function displayAchievements(data) {
+  const badges = data.badges || [];
+  const totalBadges = badges.length;
+  
+  const summaryHtml = `
+    <div class="card-value">${totalBadges}</div>
+    <p class="card-subtitle">Badges verdient</p>
+  `;
+  document.getElementById('achievement-container').innerHTML = summaryHtml;
+  document.getElementById('achievement-container').classList.remove('loading-skeleton');
+
+  if (badges.length > 0) {
+    const badgeHtml = badges.map(badge => `
+      <div class="badge-item" title="${badge.name}">
+        <span class="badge-icon">${badge.icon || '🏆'}</span>
+        <div class="badge-name">${badge.code}</div>
+        <div class="badge-earned">✓</div>
+      </div>
+    `).join('');
+    
+    const container = document.getElementById('badge-grid-container');
+    container.innerHTML = badgeHtml;
+    container.style.display = 'grid';
+  }
+}
+
+function displayLeaderboardPosition(data) {
+  const leaderboard = data.leaderboard || [];
+  
+  if (leaderboard.length === 0) {
+    document.getElementById('leaderboard-container').innerHTML = '<p class="text-muted">Noch keine Rankings verfügbar</p>';
+    document.getElementById('leaderboard-container').classList.remove('loading-skeleton');
+    return;
+  }
+
+  // Finde deine Position (basierend auf current_user.id - wird von Server bereitgestellt)
+  const myPosition = leaderboard.find(u => u.is_current_user);
+  
+  if (myPosition) {
+    const medalEmoji = myPosition.rank <= 3 ? getMedalEmoji(myPosition.rank) : '🔹';
+    const html = `
+      <div style="display: flex; align-items: center;">
+        <div class="rank-badge rank-${myPosition.rank > 3 ? 'other' : myPosition.rank}">
+          ${myPosition.rank}
+        </div>
+        <div>
+          <div style="font-weight: 600; font-size: 1.1rem">${medalEmoji} Platz ${myPosition.rank}</div>
+          <div class="text-muted">${myPosition.points} Punkte</div>
+        </div>
+      </div>
+    `;
+    document.getElementById('leaderboard-container').innerHTML = html;
+  } else {
+    const topUser = leaderboard[0];
+    const html = `
+      <p class="card-subtitle">Top User: <strong>${topUser.email}</strong></p>
+      <div class="card-value">${topUser.points}</div>
+      <p class="card-subtitle">Punkte zum erreichen</p>
+    `;
+    document.getElementById('leaderboard-container').innerHTML = html;
+  }
+  
+  document.getElementById('leaderboard-container').classList.remove('loading-skeleton');
+}
+
+function getTierIcon(tier) {
+  const icons = {
+    'bronze': '🥉',
+    'silver': '🥈',
+    'gold': '🥇',
+    'platinum': '💎'
+  };
+  return icons[tier] || '⭐';
+}
+
+function getMedalEmoji(rank) {
+  const medals = {
+    1: '🥇',
+    2: '🥈',
+    3: '🥉'
+  };
+  return medals[rank] || '🔹';
+}
+</script>
 
 {% endblock %}
