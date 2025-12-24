@@ -58,7 +58,9 @@ from routes.alerts import bp as alerts_bp
 from routes.stats import bp as stats_bp
 from agent import get_mail_settings, send_mail
 from routes.admin import bp as admin_bp
-
+from routes.webhooks import webhooks_bp
+from routes.api_keys import api_keys_bp
+from flasgger import Flasgger
 
 
 
@@ -182,8 +184,12 @@ app.register_blueprint(stats_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(notifications_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(webhooks_bp)
+app.register_blueprint(api_keys_bp)
 
 Base.metadata.create_all(bind=engine)
+
+swagger = Flasgger(app)
 
 app.config.from_object(Config)
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
@@ -5484,6 +5490,20 @@ def view_user_profile(user_id):
 def view_leaderboard():
     """View leaderboard page"""
     return render_template("leaderboard.html")
+
+
+@app.route("/webhooks", methods=["GET"])
+@login_required
+def view_webhooks():
+    """Webhook management page"""
+    return render_template("webhooks.html")
+
+
+@app.route("/api-keys", methods=["GET"])
+@login_required
+def view_api_keys():
+    """API Keys & Documentation page"""
+    return render_template("api_keys.html")
 
 
 def process_affiliate_conversion(user_id, db=None):

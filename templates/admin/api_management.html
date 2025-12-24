@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block title %}API Management{% endblock %}
+{% block content %}
+
+<!-- Admin Navigation -->
+<div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+  <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+    <a href="{{ url_for('admin.dashboard') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">📊 Dashboard</a>
+    <a href="{{ url_for('admin.achievements') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">🏆 Achievements</a>
+    <a href="{{ url_for('admin.coupons') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">🎟️ Coupons</a>
+    <a href="{{ url_for('admin.community_links') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">🔗 Community-Links</a>
+    <a href="{{ url_for('admin.analytics') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">📈 Analytics</a>
+    <a href="{{ url_for('admin.webhooks') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">🪝 Webhooks</a>
+    <a href="{{ url_for('admin.api_management') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: #667eea; border: 2px solid #667eea; border-radius: 8px; text-decoration: none; color: white; font-weight: 500; transition: all 0.2s;">🔌 API Management</a>
+  </div>
+</div>
+
+<style>
+  .admin-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+  }
+
+  .stat-box {
+    text-align: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px;
+    margin-bottom: 10px;
+  }
+
+  .stat-number {
+    font-size: 2.5rem;
+    font-weight: bold;
+  }
+
+  .stat-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    margin-top: 5px;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+
+  .btn-secondary {
+    background: #e5e7eb;
+    color: #374151;
+  }
+
+  .btn-secondary:hover {
+    background: #d1d5db;
+  }
+
+  .btn-danger {
+    background: #ef4444;
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #dc2626;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    margin-top: 20px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th {
+    background: #f3f4f6;
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 1px solid #e5e7eb;
+    color: #374151;
+  }
+
+  td {
+    padding: 12px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  tr:hover {
+    background: #f9fafb;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .badge-active {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .badge-inactive {
+    background: #fee2e2;
+    color: #7f1d1d;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #6b7280;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 40px;
+    color: #6b7280;
+  }
+</style>
+
+<h1 class="h3 mb-4">🔌 API Management</h1>
+
+<!-- Stats -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+  <div class="stat-box">
+    <div class="stat-number" id="total-keys">0</div>
+    <div class="stat-label">API Keys gesamt</div>
+  </div>
+  <div class="stat-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+    <div class="stat-number" id="active-keys">0</div>
+    <div class="stat-label">Aktive Keys</div>
+  </div>
+  <div class="stat-box" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+    <div class="stat-number" id="total-requests">0</div>
+    <div class="stat-label">API Requests heute</div>
+  </div>
+  <div class="stat-box" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+    <div class="stat-number" id="avg-response-time">0ms</div>
+    <div class="stat-label">Durchschn. Response Time</div>
+  </div>
+</div>
+
+<!-- API Keys Table -->
+<div class="admin-card">
+  <h2 class="h5 mb-4">📋 Benutzer API Keys</h2>
+  <div id="keys-list" class="loading">Laden...</div>
+</div>
+
+<!-- Documentation -->
+<div class="admin-card">
+  <h2 class="h5 mb-4">📚 API Dokumentation</h2>
+  <p style="color: #6b7280; margin-bottom: 16px;">
+    Die interaktive OpenAPI/Swagger Dokumentation ist verfügbar unter: <a href="/api/docs" target="_blank" style="color: #667eea; text-decoration: underline;">/api/docs</a>
+  </p>
+  <p style="color: #6b7280;">
+    Benutzer können ihre API Keys unter <a href="/api-keys" style="color: #667eea; text-decoration: underline;">/api-keys</a> verwalten.
+  </p>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  loadAPIKeysStats();
+});
+
+async function loadAPIKeysStats() {
+  try {
+    const response = await fetch('/api/api-keys/admin/stats');
+    const data = await response.json();
+
+    if (!data.success) {
+      console.error('Failed to load stats');
+      return;
+    }
+
+    updateStats(data.stats);
+    renderAPIKeys(data.keys);
+  } catch (error) {
+    console.error('Error:', error);
+  }
+}
+
+function updateStats(stats) {
+  document.getElementById('total-keys').textContent = stats.total_keys;
+  document.getElementById('active-keys').textContent = stats.active_keys;
+  document.getElementById('total-requests').textContent = stats.total_requests;
+  document.getElementById('avg-response-time').textContent = Math.round(stats.avg_response_time * 1000) + 'ms';
+}
+
+function renderAPIKeys(keys) {
+  const container = document.getElementById('keys-list');
+
+  if (keys.length === 0) {
+    container.innerHTML = '<div class="empty-state">Keine API Keys erstellt</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Benutzer</th>
+            <th>Key Name</th>
+            <th>Status</th>
+            <th>Rate Limit</th>
+            <th>Erstellt</th>
+            <th>Zuletzt verwendet</th>
+            <th>Requests</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${keys.map(key => `
+            <tr>
+              <td>${key.user_email}</td>
+              <td>${key.name}</td>
+              <td><span class="badge ${key.is_active ? 'badge-active' : 'badge-inactive'}">${key.is_active ? 'Aktiv' : 'Inaktiv'}</span></td>
+              <td>${key.rate_limit}</td>
+              <td>${new Date(key.created_at).toLocaleDateString('de-DE')}</td>
+              <td>${key.last_used ? new Date(key.last_used).toLocaleString('de-DE') : 'Nie'}</td>
+              <td>${key.request_count}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+</script>
+
+{% endblock %}

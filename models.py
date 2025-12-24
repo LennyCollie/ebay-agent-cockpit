@@ -1,5 +1,3 @@
-# models.py – DIE FINALE, FUNKTIONIERENDE VERSION
-
 import os
 from datetime import datetime
 from sqlalchemy import (
@@ -17,10 +15,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from werkzeug.security import check_password_hash, generate_password_hash
 
-# === DAS FEHLTE BEI DIR!!! ===
-from flask_login import UserMixin     # ← OHNE DIESE ZEILE: KEIN is_authenticated!!!
+from flask_login import UserMixin
 
-# DB Connection
 from pathlib import Path
 
 DB_PATH = Path("instance/db.sqlite3")
@@ -729,6 +725,129 @@ class LeaderboardSnapshot(Base):
 
     def __repr__(self):
         return f"<LeaderboardSnapshot user={self.user_id} period={self.period}>"
+
+
+class WebhookEndpoint(Base):
+    __tablename__ = "webhook_endpoints"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    
+    name = Column(String(255), nullable=False)
+    url = Column(String(500), nullable=False)
+    secret = Column(String(255), nullable=False, unique=True)
+    
+    events = Column(String(500), nullable=False)
+    
+    is_active = Column(Boolean, default=True)
+    is_verified = Column(Boolean, default=False)
+    
+    retry_count = Column(Integer, default=3)
+    timeout = Column(Integer, default=5)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_triggered = Column(DateTime, nullable=True)
+    
+    webhook_logs = relationship("WebhookLog", back_populates="endpoint", cascade="all, delete-orphan")
+    user = relationship("User", backref="webhooks")
+
+    def __repr__(self):
+        return f"<WebhookEndpoint {self.name} ({self.url})>"
+
+
+class WebhookEvent(Base):
+    __tablename__ = "webhook_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    
+    event_type = Column(String(100), nullable=False, index=True)
+    event_data = Column(Text, nullable=False)
+    
+    source = Column(String(50), nullable=False)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    webhook_logs = relationship("WebhookLog", back_populates="event")
+    user = relationship("User", backref="webhook_events")
+
+    def __repr__(self):
+        return f"<WebhookEvent {self.event_type} user={self.user_id}>"
+
+
+class WebhookLog(Base):
+    __tablename__ = "webhook_logs"
+
+    id = Column(Integer, primary_key=True)
+    endpoint_id = Column(Integer, ForeignKey("webhook_endpoints.id"), nullable=False, index=True)
+    event_id = Column(Integer, ForeignKey("webhook_events.id"), nullable=False, index=True)
+    
+    status = Column(String(50), nullable=False)
+    response_code = Column(Integer, nullable=True)
+    response_body = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    
+    attempt_number = Column(Integer, default=1)
+    next_retry_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    completed_at = Column(DateTime, nullable=True)
+    
+    endpoint = relationship("WebhookEndpoint", back_populates="webhook_logs")
+    event = relationship("WebhookEvent", back_populates="webhook_logs")
+
+    def __repr__(self):
+        return f"<WebhookLog endpoint={self.endpoint_id} status={self.status}>"
+
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    
+    name = Column(String(255), nullable=False)
+    key = Column(String(255), unique=True, nullable=False, index=True)
+    secret = Column(String(255), nullable=False)
+    
+    permissions = Column(String(500), default="read,write")
+    
+    is_active = Column(Boolean, default=True)
+    last_used = Column(DateTime, nullable=True)
+    last_ip = Column(String(45), nullable=True)
+    
+    rate_limit = Column(Integer, default=1000)
+    rate_limit_window = Column(Integer, default=3600)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+    
+    user = relationship("User", backref="api_keys")
+
+    def __repr__(self):
+        return f"<APIKey {self.name}>"
+
+
+class APIKeyLog(Base):
+    __tablename__ = "api_key_logs"
+
+    id = Column(Integer, primary_key=True)
+    api_key_id = Column(Integer, ForeignKey("api_keys.id"), nullable=False, index=True)
+    
+    method = Column(String(10), nullable=False)
+    endpoint = Column(String(255), nullable=False)
+    status_code = Column(Integer, nullable=False)
+    response_time = Column(Float, default=0.0)
+    
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    api_key = relationship("APIKey", backref="logs")
+
+    def __repr__(self):
+        return f"<APIKeyLog {self.method} {self.endpoint} {self.status_code}>"
 
 
 if __name__ == "__main__":

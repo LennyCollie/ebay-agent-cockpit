@@ -1,0 +1,708 @@
+{% extends "base.html" %}
+{% block title %}Webhook-Verwaltung{% endblock %}
+{% block content %}
+
+<style>
+  .webhooks-container {
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  .header {
+    margin-bottom: 32px;
+  }
+
+  .section-title {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #1f2937;
+  }
+
+  .section-subtitle {
+    color: #6b7280;
+    font-size: 0.95rem;
+    margin-bottom: 24px;
+  }
+
+  .integration-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .integration-card {
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+
+  .integration-card:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  }
+
+  .integration-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+  }
+
+  .integration-name {
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin-bottom: 6px;
+    color: #1f2937;
+  }
+
+  .integration-description {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-bottom: 12px;
+  }
+
+  .integration-status {
+    display: inline-block;
+    padding: 4px 8px;
+    background: #dbeafe;
+    color: #1e40af;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .integration-status.active {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 24px;
+  }
+
+  .card-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #1f2937;
+  }
+
+  .webhook-item {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .webhook-item:hover {
+    background: #f3f4f6;
+  }
+
+  .webhook-details {
+    flex: 1;
+  }
+
+  .webhook-name {
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 4px;
+  }
+
+  .webhook-url {
+    font-size: 0.85rem;
+    color: #6b7280;
+    word-break: break-all;
+    font-family: monospace;
+    background: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+  }
+
+  .webhook-events {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .event-tag {
+    background: #dbeafe;
+    color: #1e40af;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+  }
+
+  .webhook-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: #667eea;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #5568d3;
+  }
+
+  .btn-secondary {
+    background: #e5e7eb;
+    color: #374151;
+  }
+
+  .btn-secondary:hover {
+    background: #d1d5db;
+  }
+
+  .btn-danger {
+    background: #ef4444;
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #dc2626;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .form-label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .form-input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    box-sizing: border-box;
+  }
+
+  .form-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  }
+
+  .checkbox-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+  }
+
+  .checkbox-item {
+    display: flex;
+    align-items: center;
+  }
+
+  .checkbox-item input {
+    margin-right: 8px;
+    cursor: pointer;
+  }
+
+  .checkbox-item label {
+    cursor: pointer;
+    margin: 0;
+  }
+
+  .modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.4);
+  }
+
+  .modal.show {
+    display: block;
+  }
+
+  .modal-content {
+    background-color: white;
+    margin: 5% auto;
+    padding: 30px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+
+  .modal-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #6b7280;
+  }
+
+  .alert {
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+  }
+
+  .alert-success {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+
+  .alert-error {
+    background: #fee2e2;
+    color: #7f1d1d;
+    border: 1px solid #fecaca;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #6b7280;
+  }
+
+  .empty-state-icon {
+    font-size: 3rem;
+    margin-bottom: 12px;
+  }
+
+  .info-box {
+    background: #eff6ff;
+    border-left: 4px solid #3b82f6;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    color: #1e40af;
+  }
+
+  .code-block {
+    background: #1f2937;
+    color: #f3f4f6;
+    padding: 12px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    overflow-x: auto;
+    margin: 10px 0;
+  }
+
+  .success-message {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px;
+    background: #d1fae5;
+    border: 1px solid #a7f3d0;
+    border-radius: 6px;
+    margin-bottom: 16px;
+  }
+</style>
+
+<div class="webhooks-container">
+  <!-- Header -->
+  <div class="header">
+    <h1 class="section-title">🪝 Webhook-Verwaltung</h1>
+    <p class="section-subtitle">
+      Verbinde externe Services und erhalte Benachrichtigungen für wichtige Events in Echtzeit.
+    </p>
+  </div>
+
+  <!-- Integration Templates -->
+  <div class="card">
+    <h2 class="card-title">🚀 Schnell-Integration</h2>
+    <div class="integration-grid">
+      <div class="integration-card" onclick="createFromTemplate('discord')">
+        <div class="integration-icon">💬</div>
+        <div class="integration-name">Discord</div>
+        <div class="integration-description">
+          Erhalte Benachrichtigungen in Discord-Channels
+        </div>
+        <span class="integration-status">Beliebt</span>
+      </div>
+
+      <div class="integration-card" onclick="createFromTemplate('slack')">
+        <div class="integration-icon">💼</div>
+        <div class="integration-name">Slack</div>
+        <div class="integration-description">
+          Integriere mit deinem Slack-Workspace
+        </div>
+        <span class="integration-status">Beliebt</span>
+      </div>
+
+      <div class="integration-card" onclick="createFromTemplate('generic')">
+        <div class="integration-icon">⚙️</div>
+        <div class="integration-name">Custom Webhook</div>
+        <div class="integration-description">
+          Verbinde jeden HTTP-Endpoint
+        </div>
+        <span class="integration-status">Advanced</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Existing Webhooks -->
+  <div class="card">
+    <h2 class="card-title">📋 Meine Webhooks</h2>
+    <div id="webhooks-list" class="empty-state">
+      Laden...
+    </div>
+  </div>
+
+  <!-- Documentation -->
+  <div class="card">
+    <h2 class="card-title">📚 Webhook-Format</h2>
+    <div class="info-box">
+      <strong>Signature Verification:</strong> Alle Webhooks werden mit HMAC-SHA256 signiert.
+    </div>
+    <p>Webhook Payload:</p>
+    <div class="code-block">{
+  "id": 123,
+  "type": "alert.triggered",
+  "timestamp": "2025-01-15T10:30:00Z",
+  "data": {
+    "alert_id": 456,
+    "search_term": "iPhone 13",
+    "price": 299.99
+  }
+}</div>
+    <p style="margin-top: 16px;">Header zur Signatur-Verifizierung:</p>
+    <div class="code-block">X-Webhook-Signature: {{hmac_sha256_hex}}</div>
+  </div>
+</div>
+
+<!-- Create/Edit Modal -->
+<div id="webhookModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Neuen Webhook erstellen</h2>
+      <button class="close-btn" onclick="closeModal()">&times;</button>
+    </div>
+
+    <div id="successMessage" class="success-message" style="display: none;">
+      <span>✅</span>
+      <span id="successText"></span>
+    </div>
+
+    <form id="webhookForm">
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input type="text" id="webhookName" class="form-input" placeholder="z.B. Discord Alert Channel" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Webhook URL *</label>
+        <input type="url" id="webhookUrl" class="form-input" placeholder="https://hooks.slack.com/services/..." required>
+        <small style="color: #6b7280; margin-top: 6px; display: block;">
+          Discord: https://discord.com/api/webhooks/...
+        </small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Events *</label>
+        <div class="checkbox-group" id="eventsCheckbox"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Retry-Versuche</label>
+        <input type="number" id="retryCount" class="form-input" value="3" min="0" max="10">
+        <small style="color: #6b7280; margin-top: 6px; display: block;">
+          Wie oft sollen fehlgeschlagene Deliveries erneut versucht werden?
+        </small>
+      </div>
+
+      <div class="form-actions" style="display: flex; gap: 10px; margin-top: 24px;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">
+          Abbrechen
+        </button>
+        <button type="submit" class="btn btn-primary" style="flex: 1;">
+          Erstellen
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+let webhooks = [];
+let currentEditingId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+  loadWebhooks();
+  renderEventOptions();
+});
+
+async function loadWebhooks() {
+  try {
+    const response = await fetch('/api/webhooks/');
+    const data = await response.json();
+
+    if (!data.success) {
+      showAlert('Fehler beim Laden', 'error');
+      return;
+    }
+
+    webhooks = data.data;
+    renderWebhooks();
+  } catch (error) {
+    console.error('Error:', error);
+    showAlert('Fehler: ' + error.message, 'error');
+  }
+}
+
+function renderWebhooks() {
+  const container = document.getElementById('webhooks-list');
+
+  if (webhooks.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">🪝</div>
+        <p>Keine Webhooks konfiguriert</p>
+        <p style="font-size: 0.9rem; margin-top: 12px;">
+          Erstelle deinen ersten Webhook, um Benachrichtigungen zu erhalten
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = webhooks.map(webhook => `
+    <div class="webhook-item">
+      <div class="webhook-details">
+        <div class="webhook-name">
+          ${webhook.name}
+          <span style="margin-left: 8px; font-size: 0.8rem; ${webhook.is_active ? 'color: #10b981' : 'color: #ef4444'};">
+            ${webhook.is_active ? '● Aktiv' : '● Inaktiv'}
+          </span>
+        </div>
+        <div class="webhook-url">${webhook.url}</div>
+        <div class="webhook-events">
+          ${webhook.events.map(e => `<span class="event-tag">${e}</span>`).join('')}
+        </div>
+      </div>
+      <div class="webhook-actions">
+        <button class="btn btn-secondary" onclick="editWebhook(${webhook.id})">Edit</button>
+        <button class="btn btn-secondary" onclick="testWebhook(${webhook.id})">Test</button>
+        <button class="btn btn-danger" onclick="deleteWebhook(${webhook.id})">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderEventOptions() {
+  const container = document.getElementById('eventsCheckbox');
+  const events = {
+    'alert.triggered': '🔔 Alert ausgelöst',
+    'alert.matched': '✅ Treffer gefunden',
+    'search.completed': '🔍 Suche fertig',
+    'affiliate.converted': '💰 Affiliate Konvertierung',
+    'coupon.applied': '🎟️ Coupon genutzt',
+    'payment.success': '💳 Zahlung OK',
+    'payment.failed': '❌ Zahlung fehlgeschlagen',
+    'subscription.created': '📅 Abo erstellt',
+    'subscription.canceled': '🚫 Abo gekündigt',
+    'achievement.earned': '🏆 Achievement verdient',
+    'leaderboard.updated': '🥇 Leaderboard aktualisiert'
+  };
+
+  container.innerHTML = Object.entries(events).map(([key, label]) => `
+    <div class="checkbox-item">
+      <input type="checkbox" id="event_${key}" name="events" value="${key}">
+      <label for="event_${key}">${label}</label>
+    </div>
+  `).join('');
+}
+
+function openModal() {
+  currentEditingId = null;
+  document.getElementById('webhookForm').reset();
+  document.querySelectorAll('input[name="events"]').forEach(cb => cb.checked = false);
+  document.getElementById('webhookModal').classList.add('show');
+}
+
+function createFromTemplate(template) {
+  openModal();
+
+  if (template === 'discord') {
+    document.getElementById('webhookName').value = 'Discord Alerts';
+    document.getElementById('webhookUrl').value = 'https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN';
+    document.getElementById('webhookUrl').placeholder = 'https://discord.com/api/webhooks/...';
+  } else if (template === 'slack') {
+    document.getElementById('webhookName').value = 'Slack Alerts';
+    document.getElementById('webhookUrl').value = 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL';
+  }
+}
+
+function editWebhook(id) {
+  const webhook = webhooks.find(w => w.id === id);
+  if (!webhook) return;
+
+  currentEditingId = id;
+  document.getElementById('webhookName').value = webhook.name;
+  document.getElementById('webhookUrl').value = webhook.url;
+  document.getElementById('retryCount').value = webhook.retry_count;
+
+  document.querySelectorAll('input[name="events"]').forEach(cb => {
+    cb.checked = webhook.events.includes(cb.value);
+  });
+
+  document.getElementById('webhookModal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('webhookModal').classList.remove('show');
+  document.getElementById('successMessage').style.display = 'none';
+  currentEditingId = null;
+}
+
+document.getElementById('webhookForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const events = Array.from(document.querySelectorAll('input[name="events"]:checked')).map(cb => cb.value);
+
+  if (events.length === 0) {
+    showAlert('Mindestens ein Event erforderlich', 'error');
+    return;
+  }
+
+  const payload = {
+    name: document.getElementById('webhookName').value,
+    url: document.getElementById('webhookUrl').value,
+    events: events,
+    retry_count: parseInt(document.getElementById('retryCount').value)
+  };
+
+  try {
+    let response;
+    if (currentEditingId) {
+      response = await fetch(`/api/webhooks/${currentEditingId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      response = await fetch('/api/webhooks/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      showAlert(data.error || 'Fehler', 'error');
+      return;
+    }
+
+    document.getElementById('successText').textContent = 
+      currentEditingId ? '✅ Webhook aktualisiert' : '✅ Webhook erstellt';
+    document.getElementById('successMessage').style.display = 'flex';
+
+    setTimeout(() => {
+      closeModal();
+      loadWebhooks();
+    }, 1500);
+  } catch (error) {
+    showAlert('Fehler: ' + error.message, 'error');
+  }
+});
+
+async function deleteWebhook(id) {
+  if (!confirm('Webhook wirklich löschen?')) return;
+
+  try {
+    const response = await fetch(`/api/webhooks/${id}`, { method: 'DELETE' });
+    const data = await response.json();
+
+    if (!data.success) {
+      showAlert('Fehler beim Löschen', 'error');
+      return;
+    }
+
+    showAlert('✅ Webhook gelöscht', 'success');
+    loadWebhooks();
+  } catch (error) {
+    showAlert('Fehler: ' + error.message, 'error');
+  }
+}
+
+async function testWebhook(id) {
+  try {
+    const response = await fetch(`/api/webhooks/${id}/test`, { method: 'POST' });
+    const data = await response.json();
+
+    if (!data.success) {
+      showAlert('❌ Test fehlgeschlagen: ' + data.error, 'error');
+      return;
+    }
+
+    showAlert('✅ Test-Webhook gesendet', 'success');
+  } catch (error) {
+    showAlert('Fehler: ' + error.message, 'error');
+  }
+}
+
+function showAlert(message, type) {
+  const container = document.body;
+  const alertDiv = document.createElement('div');
+  alertDiv.className = `alert alert-${type}`;
+  alertDiv.textContent = message;
+  alertDiv.style.position = 'fixed';
+  alertDiv.style.top = '20px';
+  alertDiv.style.right = '20px';
+  alertDiv.style.zIndex = '2000';
+  alertDiv.style.maxWidth = '400px';
+  container.appendChild(alertDiv);
+
+  setTimeout(() => {
+    alertDiv.remove();
+  }, 4000);
+}
+</script>
+
+{% endblock %}

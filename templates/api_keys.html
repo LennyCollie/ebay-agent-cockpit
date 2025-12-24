@@ -1,0 +1,808 @@
+{% extends "base.html" %}
+{% block title %}API Keys & Dokumentation{% endblock %}
+{% block content %}
+
+<style>
+  .api-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  .header {
+    margin-bottom: 32px;
+  }
+
+  .section-title {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #1f2937;
+  }
+
+  .section-subtitle {
+    color: #6b7280;
+    font-size: 0.95rem;
+    margin-bottom: 24px;
+  }
+
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 24px;
+  }
+
+  .info-box {
+    background: #eff6ff;
+    border-left: 4px solid #3b82f6;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    color: #1e40af;
+  }
+
+  .code-block {
+    background: #1f2937;
+    color: #f3f4f6;
+    padding: 16px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+
+  .btn {
+    padding: 10px 16px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: #667eea;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #5568d3;
+  }
+
+  .btn-secondary {
+    background: #e5e7eb;
+    color: #374151;
+  }
+
+  .btn-secondary:hover {
+    background: #d1d5db;
+  }
+
+  .btn-danger {
+    background: #ef4444;
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #dc2626;
+  }
+
+  .btn-small {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+
+  .api-key-item {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .api-key-info {
+    flex: 1;
+  }
+
+  .api-key-name {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 6px;
+    color: #1f2937;
+  }
+
+  .api-key-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .detail-item {
+    font-size: 0.85rem;
+  }
+
+  .detail-label {
+    color: #6b7280;
+    font-weight: 500;
+  }
+
+  .detail-value {
+    color: #1f2937;
+    margin-top: 2px;
+    font-family: monospace;
+    word-break: break-all;
+  }
+
+  .key-display {
+    background: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #d1d5db;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .badge-active {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .badge-inactive {
+    background: #fee2e2;
+    color: #7f1d1d;
+  }
+
+  .permission-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .permission-badge {
+    background: #dbeafe;
+    color: #1e40af;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+  }
+
+  .api-key-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.4);
+  }
+
+  .modal.show {
+    display: block;
+  }
+
+  .modal-content {
+    background-color: white;
+    margin: 5% auto;
+    padding: 30px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+
+  .modal-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #6b7280;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .form-label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .form-input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    box-sizing: border-box;
+  }
+
+  .form-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  }
+
+  .checkbox-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+    margin-top: 10px;
+  }
+
+  .checkbox-item {
+    display: flex;
+    align-items: center;
+  }
+
+  .checkbox-item input {
+    margin-right: 8px;
+    cursor: pointer;
+  }
+
+  .checkbox-item label {
+    cursor: pointer;
+    margin: 0;
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .alert {
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+  }
+
+  .alert-success {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+
+  .alert-error {
+    background: #fee2e2;
+    color: #7f1d1d;
+    border: 1px solid #fecaca;
+  }
+
+  .success-message {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px;
+    background: #d1fae5;
+    border: 1px solid #a7f3d0;
+    border-radius: 6px;
+    margin-bottom: 16px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #6b7280;
+  }
+
+  .empty-state-icon {
+    font-size: 3rem;
+    margin-bottom: 12px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  .tab-btn {
+    padding: 12px 20px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #6b7280;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+  }
+
+  .tab-btn.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+  }
+
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  .docs-section {
+    margin-bottom: 32px;
+  }
+
+  .docs-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #1f2937;
+  }
+
+  .docs-description {
+    color: #6b7280;
+    line-height: 1.6;
+    margin-bottom: 12px;
+  }
+
+  .docs-example {
+    background: #f9fafb;
+    padding: 16px;
+    border-radius: 6px;
+    margin-top: 12px;
+    border-left: 3px solid #667eea;
+  }
+
+  .example-label {
+    font-size: 0.85rem;
+    color: #6b7280;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+</style>
+
+<div class="api-container">
+  <!-- Header -->
+  <div class="header">
+    <h1 class="section-title">🔌 API & Dokumentation</h1>
+    <p class="section-subtitle">
+      Nutze die eBay Agent Cockpit API für programmatischen Zugriff auf deine Daten.
+    </p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('keys')">
+      🔑 API Keys
+    </button>
+    <button class="tab-btn" onclick="switchTab('docs')">
+      📚 Dokumentation
+    </button>
+    <button class="tab-btn" onclick="switchTab('swagger')">
+      🔍 Swagger UI
+    </button>
+  </div>
+
+  <!-- Tab 1: API Keys Management -->
+  <div id="keys-tab" class="tab-content active">
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 class="section-title" style="margin-bottom: 0;">API Keys</h2>
+        <button class="btn btn-primary" onclick="openCreateModal()">
+          ➕ Neuer API Key
+        </button>
+      </div>
+
+      <div id="alert-container"></div>
+
+      <div id="api-keys-list"></div>
+    </div>
+  </div>
+
+  <!-- Tab 2: Documentation -->
+  <div id="docs-tab" class="tab-content">
+    <div class="card">
+      <div class="docs-section">
+        <h3 class="docs-title">🔐 Authentifizierung</h3>
+        <p class="docs-description">
+          Alle API-Requests müssen mit einem API Key authentifiziert werden. Verwende den Header <code>Authorization</code> mit dem Format: <code>Bearer KEY:SECRET</code>
+        </p>
+        <div class="code-block">curl -H "Authorization: Bearer YOUR_KEY:YOUR_SECRET" \
+  https://ebay-agent-cockpit.onrender.com/api/watchlist</div>
+      </div>
+
+      <div class="docs-section">
+        <h3 class="docs-title">📊 Rate Limiting</h3>
+        <p class="docs-description">
+          Jeder API Key hat ein Rate Limit. Standard ist 1000 Requests pro Stunde.
+        </p>
+        <div class="docs-example">
+          <div class="example-label">Response Headers</div>
+          <div class="code-block">X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 995
+X-RateLimit-Reset: 1234567890</div>
+        </div>
+      </div>
+
+      <div class="docs-section">
+        <h3 class="docs-title">🚨 Fehlerbehandlung</h3>
+        <p class="docs-description">
+          Die API gibt standardisierte Fehler zurück:
+        </p>
+        <div class="code-block">{
+  "success": false,
+  "error": "Invalid API key or secret"
+}</div>
+      </div>
+
+      <div class="docs-section">
+        <h3 class="docs-title">📝 Endpoints</h3>
+        <p class="docs-description">
+          Hier sind die wichtigsten API Endpoints:
+        </p>
+        
+        <div style="margin-top: 20px;">
+          <strong style="display: block; margin-bottom: 12px;">GET /api/watchlist</strong>
+          <p style="color: #6b7280; margin-bottom: 8px;">Rufe alle deine Watchlist-Alerts ab</p>
+          <div class="code-block">curl -H "Authorization: Bearer YOUR_KEY:YOUR_SECRET" \
+  https://ebay-agent-cockpit.onrender.com/api/watchlist</div>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <strong style="display: block; margin-bottom: 12px;">GET /api/webhooks/</strong>
+          <p style="color: #6b7280; margin-bottom: 8px;">Rufe alle deine Webhooks ab</p>
+          <div class="code-block">curl -H "Authorization: Bearer YOUR_KEY:YOUR_SECRET" \
+  https://ebay-agent-cockpit.onrender.com/api/webhooks/</div>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <strong style="display: block; margin-bottom: 12px;">GET /api/user/engagement</strong>
+          <p style="color: #6b7280; margin-bottom: 8px;">Rufe deine Engagement-Daten ab</p>
+          <div class="code-block">curl -H "Authorization: Bearer YOUR_KEY:YOUR_SECRET" \
+  https://ebay-agent-cockpit.onrender.com/api/user/engagement</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 3: Swagger UI -->
+  <div id="swagger-tab" class="tab-content">
+    <div class="card">
+      <div class="info-box">
+        <strong>Interactive API Documentation</strong><br>
+        Öffne die <a href="/api/docs" target="_blank" style="color: #1e40af; text-decoration: underline;">Swagger UI</a> um alle verfügbaren Endpoints zu erkunden und zu testen.
+      </div>
+      
+      <iframe 
+        src="/api/docs" 
+        style="width: 100%; height: 800px; border: 1px solid #e5e7eb; border-radius: 8px;"
+      ></iframe>
+    </div>
+  </div>
+</div>
+
+<!-- Create API Key Modal -->
+<div id="createModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">Neuen API Key erstellen</h2>
+      <button class="close-btn" onclick="closeModal()">&times;</button>
+    </div>
+
+    <form id="createForm">
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input type="text" id="apiKeyName" class="form-input" placeholder="z.B. Mobile App Integration" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Berechtigungen *</label>
+        <div class="checkbox-group">
+          <div class="checkbox-item">
+            <input type="checkbox" id="perm-read" name="permissions" value="read" checked>
+            <label for="perm-read">Read (Lesezugriff)</label>
+          </div>
+          <div class="checkbox-item">
+            <input type="checkbox" id="perm-write" name="permissions" value="write" checked>
+            <label for="perm-write">Write (Schreibzugriff)</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Rate Limit (Requests/Stunde)</label>
+        <input type="number" id="rateLimit" class="form-input" value="1000" min="10" max="10000">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Ablaufdatum (optional)</label>
+        <input type="number" id="expiresDays" class="form-input" placeholder="z.B. 365 (Tage)" min="1" max="36500">
+        <small style="color: #6b7280; margin-top: 4px; display: block;">
+          Leer lassen für unbegrenzten Zugriff
+        </small>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Erstellen</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Success Modal (für Secret anzeigen) -->
+<div id="successModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 class="modal-title">🎉 API Key erstellt!</h2>
+      <button class="close-btn" onclick="closeSuccessModal()">&times;</button>
+    </div>
+
+    <div class="alert alert-success">
+      ⚠️ Speichere den Secret sicher. Er wird nicht erneut angezeigt!
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">API Key</label>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="displayKey" class="form-input" readonly style="flex: 1;">
+        <button type="button" class="btn btn-secondary btn-small" onclick="copyToClipboard('displayKey')">
+          Kopieren
+        </button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Secret (nur einmal sichtbar!)</label>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="displaySecret" class="form-input" readonly style="flex: 1;">
+        <button type="button" class="btn btn-secondary btn-small" onclick="copyToClipboard('displaySecret')">
+          Kopieren
+        </button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Verwendungsbeispiel</label>
+      <div class="code-block" id="curlExample"></div>
+      <button type="button" class="btn btn-secondary btn-small" style="margin-top: 8px;" onclick="copyToClipboard('curlExample')">
+        Kopieren
+      </button>
+    </div>
+
+    <div class="form-actions">
+      <button type="button" class="btn btn-primary" onclick="closeSuccessModal()">Verstanden</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  
+  document.getElementById(tab + '-tab').classList.add('active');
+  event.target.classList.add('active');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  loadAPIKeys();
+});
+
+async function loadAPIKeys() {
+  try {
+    const response = await fetch('/api/api-keys/');
+    const data = await response.json();
+
+    if (!data.success) {
+      showAlert('Fehler beim Laden', 'error');
+      return;
+    }
+
+    renderAPIKeys(data.data);
+  } catch (error) {
+    showAlert('Fehler: ' + error.message, 'error');
+  }
+}
+
+function renderAPIKeys(keys) {
+  const container = document.getElementById('api-keys-list');
+
+  if (keys.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">🔑</div>
+        <p>Keine API Keys erstellt</p>
+        <p style="font-size: 0.9rem; margin-top: 12px;">
+          Erstelle deinen ersten API Key für den programmatischen Zugriff
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = keys.map(key => `
+    <div class="api-key-item">
+      <div class="api-key-info">
+        <div class="api-key-name">
+          ${key.name}
+          <span class="badge ${key.is_active ? 'badge-active' : 'badge-inactive'}">
+            ${key.is_active ? '✓ Aktiv' : '✗ Inaktiv'}
+          </span>
+        </div>
+        <div class="api-key-details">
+          <div class="detail-item">
+            <div class="detail-label">Key</div>
+            <div class="detail-value"><span class="key-display">${key.key}</span></div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Rate Limit</div>
+            <div class="detail-value">${key.rate_limit}/Stunde</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Erstellt</div>
+            <div class="detail-value">${new Date(key.created_at).toLocaleDateString('de-DE')}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Zuletzt verwendet</div>
+            <div class="detail-value">${key.last_used ? new Date(key.last_used).toLocaleString('de-DE') : 'Nie'}</div>
+          </div>
+        </div>
+        <div class="permission-badges">
+          ${key.permissions.map(p => `<span class="permission-badge">${p}</span>`).join('')}
+        </div>
+      </div>
+      <div class="api-key-actions">
+        <button class="btn btn-secondary btn-small" onclick="editAPIKey(${key.id})">Edit</button>
+        <button class="btn btn-secondary btn-small" onclick="showLogs(${key.id})">Logs</button>
+        <button class="btn btn-danger btn-small" onclick="deleteAPIKey(${key.id})">Löschen</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openCreateModal() {
+  document.getElementById('createModal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('createModal').classList.remove('show');
+  document.getElementById('createForm').reset();
+}
+
+function closeSuccessModal() {
+  document.getElementById('successModal').classList.remove('show');
+  loadAPIKeys();
+}
+
+document.getElementById('createForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const permissions = Array.from(document.querySelectorAll('input[name="permissions"]:checked')).map(cb => cb.value);
+
+  if (permissions.length === 0) {
+    showAlert('Mindestens eine Berechtigung erforderlich', 'error');
+    return;
+  }
+
+  const payload = {
+    name: document.getElementById('apiKeyName').value,
+    permissions: permissions,
+    rate_limit: parseInt(document.getElementById('rateLimit').value),
+    expires_days: document.getElementById('expiresDays').value ? parseInt(document.getElementById('expiresDays').value) : null
+  };
+
+  try {
+    const response = await fetch('/api/api-keys/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+
+    if (!data.success) {
+      showAlert(data.error || 'Fehler', 'error');
+      return;
+    }
+
+    closeModal();
+    
+    document.getElementById('displayKey').value = data.data.key;
+    document.getElementById('displaySecret').value = data.data.secret;
+    document.getElementById('curlExample').textContent = 
+      `curl -H "Authorization: Bearer ${data.data.key}:${data.data.secret}" \\
+  https://ebay-agent-cockpit.onrender.com/api/watchlist`;
+
+    document.getElementById('successModal').classList.add('show');
+  } catch (error) {
+    showAlert('Fehler: ' + error.message, 'error');
+  }
+});
+
+async function deleteAPIKey(id) {
+  if (!confirm('API Key wirklich löschen?')) return;
+
+  try {
+    const response = await fetch(`/api/api-keys/${id}`, { method: 'DELETE' });
+    const data = await response.json();
+
+    if (!data.success) {
+      showAlert('Fehler beim Löschen', 'error');
+      return;
+    }
+
+    showAlert('✅ API Key gelöscht', 'success');
+    loadAPIKeys();
+  } catch (error) {
+    showAlert('Fehler: ' + error.message, 'error');
+  }
+}
+
+function editAPIKey(id) {
+  alert('Bearbeitung folgt in der nächsten Version');
+}
+
+function showLogs(id) {
+  alert('Logs folgen in der nächsten Version');
+}
+
+function copyToClipboard(elementId) {
+  const element = document.getElementById(elementId);
+  if (element) {
+    element.select();
+    document.execCommand('copy');
+    showAlert('✅ In Zwischenablage kopiert', 'success');
+  }
+}
+
+function showAlert(message, type) {
+  const container = document.getElementById('alert-container');
+  const alertDiv = document.createElement('div');
+  alertDiv.className = `alert alert-${type}`;
+  alertDiv.textContent = message;
+  container.appendChild(alertDiv);
+
+  setTimeout(() => {
+    alertDiv.remove();
+  }, 4000);
+}
+</script>
+
+{% endblock %}
