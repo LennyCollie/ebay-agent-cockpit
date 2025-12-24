@@ -23,6 +23,24 @@
 
   <hr class="my-4"/>
 
+  <h2 class="h5 mb-3">🎟️ Meine Gutscheine</h2>
+  <div id="couponsSection" class="card mb-4">
+    <div class="card-body">
+      <div class="row mb-3">
+        <div class="col-md-9">
+          <div class="input-group">
+            <input type="text" class="form-control" id="couponInput" placeholder="Gutschein-Code eingeben...">
+            <button class="btn btn-primary" id="applyCouponBtn" type="button">Anwenden</button>
+          </div>
+        </div>
+      </div>
+      <div id="couponsList"></div>
+      <div id="couponMessage"></div>
+    </div>
+  </div>
+
+  <hr class="my-4"/>
+
   <h2 class="h5 mb-3">Meine Abos</h2>
   {% if subscriptions %}
     <div class="table-responsive">
@@ -180,6 +198,71 @@ function copyToClipboard(text) {
 }
 
 loadAffiliateData();
+
+async function loadMyCoupons() {
+  try {
+    const response = await fetch('/api/user/coupons');
+    const data = await response.json();
+    const couponsList = document.getElementById('couponsList');
+    
+    if (response.ok && data.coupons && data.coupons.length > 0) {
+      let html = '<div class="row gx-2 gy-2">';
+      data.coupons.forEach(coupon => {
+        html += `
+          <div class="col-md-6">
+            <div class="card border-success">
+              <div class="card-body py-2">
+                <h6 class="card-title mb-1"><strong>${coupon.code}</strong></h6>
+                <p class="card-text small mb-1">${coupon.description || 'Gutschein'}</p>
+                <p class="text-success fw-bold mb-0">
+                  ${coupon.discount_type === 'fixed' ? '💶 +' + coupon.amount.toFixed(2) + ' €' : '📊 ' + coupon.amount + '%'}
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      couponsList.innerHTML = html;
+    } else {
+      couponsList.innerHTML = '<p class="text-muted small">Keine angewendeten Gutscheine. Verwende einen Code oben um einen hinzuzufügen!</p>';
+    }
+  } catch (error) {
+    couponsList.innerHTML = '';
+  }
+}
+
+document.getElementById('applyCouponBtn').addEventListener('click', async function() {
+  const code = document.getElementById('couponInput').value.trim().toUpperCase();
+  const messageDiv = document.getElementById('couponMessage');
+  
+  if (!code) {
+    messageDiv.innerHTML = '<div class="alert alert-warning py-2 mb-2">Bitte einen Code eingeben</div>';
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/coupons/apply', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code: code})
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      messageDiv.innerHTML = `<div class="alert alert-success py-2 mb-2">✓ Gutschein angewendet! ${data.amount.toFixed(2)} € ${data.discount_type === 'fixed' ? 'Rabatt' : '%'}.</div>`;
+      document.getElementById('couponInput').value = '';
+      setTimeout(() => loadMyCoupons(), 1000);
+    } else {
+      messageDiv.innerHTML = `<div class="alert alert-danger py-2 mb-2">✗ ${data.error}</div>`;
+    }
+  } catch (error) {
+    messageDiv.innerHTML = `<div class="alert alert-danger py-2 mb-2">Fehler: ${error.message}</div>`;
+  }
+});
+
+loadMyCoupons();
 </script>
 
 {% endblock %}

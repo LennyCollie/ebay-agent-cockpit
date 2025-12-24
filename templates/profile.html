@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ user_name }} Profil{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="row mb-4">
+    <div class="col-md-8">
+      <h1 class="h3 mb-4">👤 {{ user_name }}</h1>
+      
+      <div class="row mb-4">
+        <div class="col-md-3">
+          <div class="card border-primary">
+            <div class="card-body text-center">
+              <h6 class="card-title text-muted">Total Points</h6>
+              <h2 class="fw-bold text-primary">{{ total_points }}</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-success">
+            <div class="card-body text-center">
+              <h6 class="card-title text-muted">Tier</h6>
+              <h3 class="fw-bold text-success text-capitalize">{{ tier }}</h3>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-info">
+            <div class="card-body text-center">
+              <h6 class="card-title text-muted">Badges</h6>
+              <h2 class="fw-bold text-info">{{ badge_count }}</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card border-warning">
+            <div class="card-body text-center">
+              <h6 class="card-title text-muted">Level</h6>
+              <h3 class="fw-bold text-warning">⭐</h3>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-md-12">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">🏆 Achievements</h5>
+        </div>
+        <div class="card-body">
+          {% if badges %}
+            <div class="row">
+              {% for badge in badges %}
+              <div class="col-md-4 mb-3">
+                <div class="card text-center" style="border: 2px solid #ffc107; background-color: #fffbf0;">
+                  <div class="card-body">
+                    <div style="font-size: 3rem;">{{ badge.icon }}</div>
+                    <h6 class="card-title mt-2">{{ badge.name }}</h6>
+                    <small class="text-muted">{{ badge.earned_at }}</small>
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="alert alert-info">
+              Noch keine Achievements verdient. Nutze die Plattform um deine ersten Badges freizuschalten!
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

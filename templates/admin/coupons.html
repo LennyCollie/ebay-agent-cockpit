@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+
+{% block title %}Gutscheine verwalten{% endblock %}
+
+{% block content %}
+
+<!-- Admin Navigation -->
+<div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+  <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+    <a href="{{ url_for('admin.dashboard') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">📊 Dashboard</a>
+    <a href="{{ url_for('admin.achievements') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">🏆 Achievements</a>
+    <a href="{{ url_for('admin.coupons') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: #667eea; border: 2px solid #667eea; border-radius: 8px; text-decoration: none; color: white; font-weight: 500;">🎟️ Coupons</a>
+    <a href="{{ url_for('admin.community_links') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">🔗 Community-Links</a>
+    <a href="{{ url_for('admin.analytics') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">📈 Analytics</a>
+  </div>
+</div>
+
+<div class="container">
+  <h1 class="h3 mb-4">🎟️ Gutscheine verwalten</h1>
+
+  <div class="row mb-4">
+    <div class="col-md-8">
+      <button class="btn btn-primary" id="createCouponBtn">+ Neuer Gutschein</button>
+    </div>
+    <div class="col-md-4">
+      <div class="input-group input-group-sm">
+        <input type="text" class="form-control" id="searchFilter" placeholder="Nach Code suchen...">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div id="couponsContainer">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Wird geladen...</span>
+        </div> Wird geladen...
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="couponModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="couponModalTitle">Neuer Gutschein</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="couponForm">
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Code *</label>
+              <input type="text" class="form-control" id="couponCode" placeholder="Auto-generiert wenn leer"/>
+              <small class="text-muted">Optional - wird auto-generiert falls leer</small>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Betrag (€) *</label>
+              <input type="number" class="form-control" id="couponAmount" step="0.01" required/>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Typ *</label>
+              <select class="form-control" id="couponType" required>
+                <option value="fixed">💶 Festbetrag</option>
+                <option value="percent">📊 Prozentual</option>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Verwendungslimit</label>
+              <input type="number" class="form-control" id="couponLimit" placeholder="Unbegrenzt falls leer"/>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Beschreibung</label>
+            <textarea class="form-control" id="couponDescription" rows="2" placeholder="z.B. Willkommensbonus für neue User"></textarea>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="couponIsAffiliate"/>
+                <label class="form-check-label" for="couponIsAffiliate">
+                  🔗 Affiliate-Gutschein
+                </label>
+              </div>
+              <small class="text-muted">Für automatische Affiliate-Provisionen</small>
+            </div>
+            <div class="col-md-6 mb-3">
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="couponActive" checked/>
+                <label class="form-check-label" for="couponActive">
+                  ✅ Aktiv
+                </label>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="saveCouponBtn">Speichern</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentCouponId = null;
+let couponModal = null;
+
+async function loadCoupons() {
+  try {
+    const response = await fetch('/api/admin/coupons');
+    const data = await response.json();
+    const container = document.getElementById('couponsContainer');
+    
+    if (!data.coupons || data.coupons.length === 0) {
+      container.innerHTML = '<p class="text-muted">Keine Gutscheine vorhanden.</p>';
+      return;
+    }
+    
+    let html = '<div class="table-responsive"><table class="table mb-0"><thead class="table-light"><tr><th>Code</th><th>Betrag</th><th>Typ</th><th>Status</th><th>Verwendet</th><th>Aktionen</th></tr></thead><tbody>';
+    
+    data.coupons.forEach(coupon => {
+      const statusBadge = coupon.is_active ? '<span class="badge bg-success">Aktiv</span>' : '<span class="badge bg-danger">Inaktiv</span>';
+      const usageText = coupon.usage_limit ? `${coupon.used_count}/${coupon.usage_limit}` : `${coupon.used_count}/∞`;
+      const affiliateTag = coupon.is_affiliate ? ' 🔗' : '';
+      
+      html += `<tr>
+        <td><strong>${coupon.code}</strong>${affiliateTag}</td>
+        <td>${coupon.amount.toFixed(2)} €</td>
+        <td>${coupon.discount_type === 'fixed' ? '💶 Festbetrag' : '📊 %'}</td>
+        <td>${statusBadge}</td>
+        <td>${usageText}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-primary" onclick="editCoupon(${coupon.id})">✏️ Bearbeiten</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="deleteCoupon(${coupon.id})">🗑️ Löschen</button>
+        </td>
+      </tr>`;
+    });
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+  } catch (error) {
+    document.getElementById('couponsContainer').innerHTML = `<div class="alert alert-danger">Fehler beim Laden: ${error.message}</div>`;
+  }
+}
+
+function initModal() {
+  if (!couponModal) {
+    couponModal = new bootstrap.Modal(document.getElementById('couponModal'), {keyboard: false});
+  }
+}
+
+function resetForm() {
+  document.getElementById('couponForm').reset();
+  currentCouponId = null;
+  document.getElementById('couponModalTitle').textContent = 'Neuer Gutschein';
+  document.getElementById('couponCode').disabled = false;
+}
+
+document.getElementById('createCouponBtn').addEventListener('click', function() {
+  resetForm();
+  initModal();
+  couponModal.show();
+});
+
+async function editCoupon(id) {
+  try {
+    const response = await fetch('/api/admin/coupons');
+    const data = await response.json();
+    const coupon = data.coupons.find(c => c.id === id);
+    
+    if (coupon) {
+      currentCouponId = id;
+      document.getElementById('couponModalTitle').textContent = 'Gutschein bearbeiten';
+      document.getElementById('couponCode').value = coupon.code;
+      document.getElementById('couponCode').disabled = true;
+      document.getElementById('couponAmount').value = coupon.amount;
+      document.getElementById('couponType').value = coupon.discount_type;
+      document.getElementById('couponLimit').value = coupon.usage_limit || '';
+      document.getElementById('couponDescription').value = coupon.description || '';
+      document.getElementById('couponIsAffiliate').checked = coupon.is_affiliate;
+      document.getElementById('couponActive').checked = coupon.is_active;
+      
+      initModal();
+      couponModal.show();
+    }
+  } catch (error) {
+    alert('Fehler beim Laden des Gutscheins: ' + error.message);
+  }
+}
+
+document.getElementById('saveCouponBtn').addEventListener('click', async function() {
+  const code = document.getElementById('couponCode').value.trim();
+  const amount = parseFloat(document.getElementById('couponAmount').value);
+  
+  if (!code || !amount) {
+    alert('Bitte alle erforderlichen Felder ausfüllen');
+    return;
+  }
+  
+  const payload = {
+    code: code,
+    amount: amount,
+    discount_type: document.getElementById('couponType').value,
+    usage_limit: document.getElementById('couponLimit').value ? parseInt(document.getElementById('couponLimit').value) : null,
+    description: document.getElementById('couponDescription').value,
+    is_affiliate: document.getElementById('couponIsAffiliate').checked,
+    is_active: document.getElementById('couponActive').checked
+  };
+  
+  try {
+    let response;
+    if (currentCouponId) {
+      response = await fetch(`/api/admin/coupons/${currentCouponId}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+    } else {
+      response = await fetch('/api/admin/coupons', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+    }
+    
+    if (response.ok) {
+      couponModal.hide();
+      loadCoupons();
+    } else {
+      const error = await response.json();
+      alert('Fehler: ' + (error.error || 'Unbekannter Fehler'));
+    }
+  } catch (error) {
+    alert('Fehler beim Speichern: ' + error.message);
+  }
+});
+
+async function deleteCoupon(id) {
+  if (!confirm('Gutschein wirklich löschen?')) return;
+  
+  try {
+    const response = await fetch(`/api/admin/coupons/${id}`, {method: 'DELETE'});
+    if (response.ok) {
+      loadCoupons();
+    } else {
+      alert('Fehler beim Löschen des Gutscheins');
+    }
+  } catch (error) {
+    alert('Fehler: ' + error.message);
+  }
+}
+
+document.getElementById('searchFilter').addEventListener('keyup', function() {
+  const filter = this.value.toUpperCase();
+  const rows = document.querySelectorAll('tbody tr');
+  rows.forEach(row => {
+    const code = row.cells[0].textContent.toUpperCase();
+    row.style.display = code.includes(filter) ? '' : 'none';
+  });
+});
+
+loadCoupons();
+setInterval(loadCoupons, 30000);
+</script>
+
+{% endblock %}

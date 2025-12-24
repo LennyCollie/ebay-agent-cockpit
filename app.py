@@ -16,6 +16,7 @@ from math import ceil
 from alert_checker import run_alert_check
 from database import get_db, dict_cursor, init_db, IS_POSTGRES, get_placeholder
 from werkzeug.middleware.proxy_fix import ProxyFix
+from models import Base, engine
 from services.kleinanzeigen import search_kleinanzeigen, check_dependencies as ka_check_dependencies
 from typing import List, Dict, Tuple, Optional
 
@@ -182,7 +183,7 @@ app.register_blueprint(search_bp)
 app.register_blueprint(notifications_bp)
 app.register_blueprint(admin_bp)
 
-
+Base.metadata.create_all(bind=engine)
 
 app.config.from_object(Config)
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
@@ -4385,6 +4386,1467 @@ def admin_community_links_delete(link_id):
             db.close()
 
 
+@app.route("/api/admin/coupons", methods=["GET"])
+@login_required
+def admin_coupons_list():
+    from models import Coupon, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        coupons = db.query(Coupon).order_by(Coupon.created_at.desc()).all()
+        
+        return jsonify({
+            "coupons": [
+                {
+                    "id": c.id,
+                    "code": c.code,
+                    "description": c.description,
+                    "amount": c.amount,
+                    "discount_type": c.discount_type,
+                    "is_affiliate": c.is_affiliate,
+                    "usage_limit": c.usage_limit,
+                    "used_count": c.used_count,
+                    "is_active": c.is_active,
+                    "valid_from": c.valid_from.isoformat(),
+                    "valid_until": c.valid_until.isoformat() if c.valid_until else None
+                }
+                for c in coupons
+            ]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/coupons", methods=["POST"])
+@login_required
+def admin_coupons_create():
+    import secrets
+    from models import Coupon, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        data = request.get_json()
+        
+        if not data.get("amount"):
+            return jsonify({"error": "Betrag ist erforderlich"}), 400
+        
+        code = data.get("code") or f"COUPON{secrets.token_hex(4).upper()}"
+        
+        existing = db.query(Coupon).filter_by(code=code).first()
+        if existing:
+            return jsonify({"error": "Code existiert bereits"}), 400
+        
+        coupon = Coupon(
+            code=code,
+            description=data.get("description"),
+            amount=float(data["amount"]),
+            discount_type=data.get("discount_type", "fixed"),
+            is_affiliate=data.get("is_affiliate", False),
+            usage_limit=data.get("usage_limit"),
+            valid_until=None
+        )
+        
+        db.add(coupon)
+        db.commit()
+        
+        return jsonify({
+            "message": "Gutschein erstellt!",
+            "id": coupon.id,
+            "code": coupon.code
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/coupons/<int:coupon_id>", methods=["PUT"])
+@login_required
+def admin_coupons_update(coupon_id):
+    from models import Coupon, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        coupon = db.query(Coupon).filter_by(id=coupon_id).first()
+        if not coupon:
+            return jsonify({"error": "Gutschein nicht gefunden"}), 404
+        
+        data = request.get_json()
+        
+        if "amount" in data:
+            coupon.amount = float(data["amount"])
+        if "description" in data:
+            coupon.description = data["description"]
+        if "discount_type" in data:
+            coupon.discount_type = data["discount_type"]
+        if "usage_limit" in data:
+            coupon.usage_limit = data["usage_limit"]
+        if "is_active" in data:
+            coupon.is_active = data["is_active"]
+        
+        db.commit()
+        
+        return jsonify({"message": "Gutschein aktualisiert!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/coupons/<int:coupon_id>", methods=["DELETE"])
+@login_required
+def admin_coupons_delete(coupon_id):
+    from models import Coupon, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        coupon = db.query(Coupon).filter_by(id=coupon_id).first()
+        if not coupon:
+            return jsonify({"error": "Gutschein nicht gefunden"}), 404
+        
+        db.delete(coupon)
+        db.commit()
+        
+        return jsonify({"message": "Gutschein gelöscht!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/coupons/validate", methods=["POST"])
+def validate_coupon():
+    from models import Coupon
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        
+        data = request.get_json()
+        code = data.get("code")
+        
+        if not code:
+            return jsonify({"error": "Code erforderlich"}), 400
+        
+        coupon = db.query(Coupon).filter_by(code=code).first()
+        
+        if not coupon:
+            return jsonify({"error": "Gutschein nicht gefunden"}), 404
+        
+        if not coupon.is_valid():
+            return jsonify({"error": "Gutschein ist nicht mehr gültig"}), 400
+        
+        return jsonify({
+            "valid": True,
+            "code": coupon.code,
+            "amount": coupon.amount,
+            "discount_type": coupon.discount_type,
+            "description": coupon.description
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/coupons/apply", methods=["POST"])
+@login_required
+def apply_coupon():
+    from models import Coupon, CouponUsage, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        
+        data = request.get_json()
+        code = data.get("code")
+        
+        if not code:
+            return jsonify({"error": "Code erforderlich"}), 400
+        
+        coupon = db.query(Coupon).filter_by(code=code).first()
+        if not coupon:
+            return jsonify({"error": "Gutschein nicht gefunden"}), 404
+        
+        if not coupon.is_valid():
+            return jsonify({"error": "Gutschein ist nicht mehr gültig"}), 400
+        
+        existing_usage = db.query(CouponUsage).filter_by(
+            coupon_id=coupon.id,
+            user_id=current_user.id
+        ).first()
+        
+        if existing_usage:
+            return jsonify({"error": "Du hast diesen Gutschein bereits verwendet"}), 400
+        
+        usage = CouponUsage(
+            coupon_id=coupon.id,
+            user_id=current_user.id
+        )
+        coupon.used_count += 1
+        
+        db.add(usage)
+        db.commit()
+        
+        return jsonify({
+            "message": "Gutschein angewendet!",
+            "amount": coupon.amount,
+            "discount_type": coupon.discount_type
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/user/coupons", methods=["GET"])
+@login_required
+def user_coupons():
+    from models import CouponUsage, Coupon
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        usages = db.query(CouponUsage).filter_by(user_id=current_user.id).all()
+        
+        coupons = []
+        for usage in usages:
+            coupon = usage.coupon
+            coupons.append({
+                "id": coupon.id,
+                "code": coupon.code,
+                "amount": coupon.amount,
+                "discount_type": coupon.discount_type,
+                "description": coupon.description,
+                "is_affiliate": coupon.is_affiliate,
+                "applied_at": usage.applied_at.isoformat()
+            })
+        
+        return jsonify({"coupons": coupons}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/user/analytics", methods=["GET"])
+@login_required
+def user_analytics():
+    from models import AffiliateAccount, AffiliateClick, AffiliateConversion, Coupon
+    from database import get_db
+    from datetime import timedelta
+    
+    db = None
+    try:
+        db = next(get_db())
+        affiliate = db.query(AffiliateAccount).filter_by(user_id=current_user.id).first()
+        
+        if not affiliate:
+            return jsonify({"error": "Kein Affiliate-Konto gefunden"}), 404
+        
+        last_30_days = datetime.utcnow() - timedelta(days=30)
+        
+        clicks_30d = db.query(AffiliateClick).filter(
+            AffiliateClick.affiliate_id == affiliate.id,
+            AffiliateClick.created_at >= last_30_days
+        ).count()
+        
+        conversions_30d = db.query(AffiliateConversion).filter(
+            AffiliateConversion.affiliate_id == affiliate.id,
+            AffiliateConversion.created_at >= last_30_days
+        ).count()
+        
+        earnings_30d = db.query(AffiliateConversion).filter(
+            AffiliateConversion.affiliate_id == affiliate.id,
+            AffiliateConversion.created_at >= last_30_days
+        ).with_entities(
+            db.func.sum(AffiliateConversion.commission_amount)
+        ).scalar() or 0.0
+        
+        coupons = db.query(Coupon).filter_by(
+            is_affiliate=True,
+            user_id=current_user.id
+        ).all()
+        
+        coupon_data = []
+        for coupon in coupons:
+            coupon_data.append({
+                "code": coupon.code,
+                "amount": coupon.amount,
+                "type": coupon.discount_type,
+                "used_count": coupon.used_count,
+                "limit": coupon.usage_limit
+            })
+        
+        daily_data = {}
+        clicks_all = db.query(AffiliateClick).filter(
+            AffiliateClick.affiliate_id == affiliate.id,
+            AffiliateClick.created_at >= last_30_days
+        ).all()
+        
+        conversions_all = db.query(AffiliateConversion).filter(
+            AffiliateConversion.affiliate_id == affiliate.id,
+            AffiliateConversion.created_at >= last_30_days
+        ).all()
+        
+        for i in range(30):
+            date_key = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
+            daily_data[date_key] = {"clicks": 0, "conversions": 0, "earnings": 0.0}
+        
+        for click in clicks_all:
+            date_key = click.created_at.strftime("%Y-%m-%d")
+            if date_key in daily_data:
+                daily_data[date_key]["clicks"] += 1
+        
+        for conv in conversions_all:
+            date_key = conv.created_at.strftime("%Y-%m-%d")
+            if date_key in daily_data:
+                daily_data[date_key]["conversions"] += 1
+                daily_data[date_key]["earnings"] += conv.commission_amount
+        
+        daily_list = sorted(daily_data.items())
+        
+        return jsonify({
+            "lifetime": {
+                "total_clicks": affiliate.total_clicks,
+                "total_conversions": affiliate.total_conversions,
+                "total_earnings": float(affiliate.total_earnings),
+                "conversion_rate": round((affiliate.total_conversions / affiliate.total_clicks * 100) if affiliate.total_clicks > 0 else 0, 2)
+            },
+            "last_30_days": {
+                "clicks": clicks_30d,
+                "conversions": conversions_30d,
+                "earnings": float(earnings_30d),
+                "conversion_rate": round((conversions_30d / clicks_30d * 100) if clicks_30d > 0 else 0, 2)
+            },
+            "coupons": coupon_data,
+            "daily_trends": [{"date": d[0], **d[1]} for d in daily_list]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/analytics/overview", methods=["GET"])
+@login_required
+def analytics_overview():
+    from models import User, AffiliateAccount, Coupon, CouponUsage, AffiliateConversion
+    from database import get_db
+    from datetime import timedelta
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        today = datetime.utcnow().date()
+        last_30_days = datetime.utcnow() - timedelta(days=30)
+        
+        total_users = db.query(User).count()
+        premium_users = db.query(User).filter(User.plan != "free").count()
+        
+        new_users_30d = db.query(User).filter(User.created_at >= last_30_days).count()
+        
+        total_affiliate_clicks = db.query(AffiliateAccount).with_entities(
+            db.func.sum(AffiliateAccount.total_clicks)
+        ).scalar() or 0
+        
+        total_conversions = db.query(AffiliateConversion).count()
+        total_earnings = db.query(AffiliateConversion).with_entities(
+            db.func.sum(AffiliateConversion.commission_amount)
+        ).scalar() or 0.0
+        
+        total_coupons = db.query(Coupon).count()
+        redeemed_coupons = db.query(CouponUsage).count()
+        
+        return jsonify({
+            "total_users": total_users,
+            "premium_users": premium_users,
+            "new_users_30d": new_users_30d,
+            "affiliate_metrics": {
+                "total_clicks": total_affiliate_clicks,
+                "total_conversions": total_conversions,
+                "total_earnings": float(total_earnings),
+                "conversion_rate": round((total_conversions / total_affiliate_clicks * 100) if total_affiliate_clicks > 0 else 0, 2)
+            },
+            "coupon_metrics": {
+                "total_coupons": total_coupons,
+                "redeemed_coupons": redeemed_coupons,
+                "redemption_rate": round((redeemed_coupons / total_coupons * 100) if total_coupons > 0 else 0, 2)
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/analytics/trends", methods=["GET"])
+@login_required
+def analytics_trends():
+    from models import AnalyticsSnapshot, User
+    from database import get_db
+    from datetime import timedelta
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        days = request.args.get("days", 30, type=int)
+        start_date = datetime.utcnow() - timedelta(days=days)
+        
+        snapshots = db.query(AnalyticsSnapshot).filter(
+            AnalyticsSnapshot.snapshot_date >= start_date
+        ).order_by(AnalyticsSnapshot.snapshot_date).all()
+        
+        trends = []
+        for snap in snapshots:
+            trends.append({
+                "date": snap.snapshot_date.strftime("%Y-%m-%d"),
+                "users": snap.total_users,
+                "premium_users": snap.total_premium_users,
+                "conversions": snap.affiliate_conversions,
+                "coupons_redeemed": snap.coupons_redeemed,
+                "earnings": float(snap.affiliate_earnings)
+            })
+        
+        return jsonify({"trends": trends, "days": days}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/analytics/affiliate", methods=["GET"])
+@login_required
+def analytics_affiliate():
+    from models import AffiliateAccount, AffiliateConversion, AffiliateClick, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        affiliates = db.query(AffiliateAccount).order_by(
+            AffiliateAccount.total_earnings.desc()
+        ).limit(20).all()
+        
+        top_affiliates = []
+        for aff in affiliates:
+            top_affiliates.append({
+                "user_email": aff.user.email,
+                "code": aff.referral_code,
+                "clicks": aff.total_clicks,
+                "conversions": aff.total_conversions,
+                "earnings": float(aff.total_earnings),
+                "ctr": round((aff.total_clicks / aff.total_conversions) if aff.total_conversions > 0 else 0, 2)
+            })
+        
+        total_clicks = sum(a.total_clicks for a in affiliates)
+        total_conversions = sum(a.total_conversions for a in affiliates)
+        total_earnings = sum(a.total_earnings for a in affiliates)
+        
+        return jsonify({
+            "top_affiliates": top_affiliates,
+            "summary": {
+                "total_affiliates": db.query(AffiliateAccount).count(),
+                "total_clicks": total_clicks,
+                "total_conversions": total_conversions,
+                "total_earnings": float(total_earnings),
+                "avg_conversion_rate": round((total_conversions / total_clicks * 100) if total_clicks > 0 else 0, 2)
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/analytics/coupons", methods=["GET"])
+@login_required
+def analytics_coupons():
+    from models import Coupon, CouponUsage, User
+    from database import get_db
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        coupons = db.query(Coupon).order_by(Coupon.used_count.desc()).limit(20).all()
+        
+        top_coupons = []
+        for coupon in coupons:
+            top_coupons.append({
+                "code": coupon.code,
+                "description": coupon.description,
+                "amount": coupon.amount,
+                "type": coupon.discount_type,
+                "used_count": coupon.used_count,
+                "usage_limit": coupon.usage_limit,
+                "is_affiliate": coupon.is_affiliate
+            })
+        
+        total_coupons = db.query(Coupon).count()
+        total_redeemed = db.query(CouponUsage).count()
+        total_value = db.query(Coupon).with_entities(
+            db.func.sum(Coupon.amount)
+        ).scalar() or 0.0
+        
+        return jsonify({
+            "top_coupons": top_coupons,
+            "summary": {
+                "total_coupons": total_coupons,
+                "total_redeemed": total_redeemed,
+                "redemption_rate": round((total_redeemed / total_coupons * 100) if total_coupons > 0 else 0, 2),
+                "total_value_distributed": float(total_value)
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/analytics")
+@login_required
+def user_analytics_page():
+    return render_template("user_analytics.html")
+
+
+@app.route("/leaderboard")
+@login_required
+def leaderboard_page():
+    return render_template("leaderboard.html")
+
+
+@app.route("/api/analytics/export", methods=["GET"])
+@login_required
+def analytics_export():
+    import csv
+    from io import StringIO
+    from models import AffiliateAccount, AffiliateClick, AffiliateConversion
+    from database import get_db
+    from datetime import timedelta
+    
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            affiliate = db.query(AffiliateAccount).filter_by(user_id=current_user.id).first()
+            if not affiliate:
+                return jsonify({"error": "Nicht berechtigt"}), 403
+            affiliates = [affiliate]
+        else:
+            affiliates = db.query(AffiliateAccount).all()
+        
+        format_type = request.args.get("format", "csv").lower()
+        
+        if format_type == "csv":
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            writer.writerow(["Affiliate Report"])
+            writer.writerow([datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")])
+            writer.writerow([])
+            writer.writerow(["Email", "Code", "Total Clicks", "Total Conversions", "Total Earnings", "30d Clicks", "30d Conversions", "30d Earnings"])
+            
+            last_30 = datetime.utcnow() - timedelta(days=30)
+            
+            for aff in affiliates:
+                clicks_30 = db.query(AffiliateClick).filter(
+                    AffiliateClick.affiliate_id == aff.id,
+                    AffiliateClick.created_at >= last_30
+                ).count()
+                
+                conversions_30 = db.query(AffiliateConversion).filter(
+                    AffiliateConversion.affiliate_id == aff.id,
+                    AffiliateConversion.created_at >= last_30
+                ).count()
+                
+                earnings_30 = db.query(AffiliateConversion).filter(
+                    AffiliateConversion.affiliate_id == aff.id,
+                    AffiliateConversion.created_at >= last_30
+                ).with_entities(
+                    db.func.sum(AffiliateConversion.commission_amount)
+                ).scalar() or 0.0
+                
+                writer.writerow([
+                    aff.user.email,
+                    aff.referral_code,
+                    aff.total_clicks,
+                    aff.total_conversions,
+                    f"{aff.total_earnings:.2f}",
+                    clicks_30,
+                    conversions_30,
+                    f"{earnings_30:.2f}"
+                ])
+            
+            response = app.response_class(
+                response=output.getvalue(),
+                status=200,
+                mimetype="text/csv"
+            )
+            response.headers["Content-Disposition"] = "attachment;filename=affiliate-report.csv"
+            return response
+        
+        elif format_type == "json":
+            data = []
+            last_30 = datetime.utcnow() - timedelta(days=30)
+            
+            for aff in affiliates:
+                clicks_30 = db.query(AffiliateClick).filter(
+                    AffiliateClick.affiliate_id == aff.id,
+                    AffiliateClick.created_at >= last_30
+                ).count()
+                
+                conversions_30 = db.query(AffiliateConversion).filter(
+                    AffiliateConversion.affiliate_id == aff.id,
+                    AffiliateConversion.created_at >= last_30
+                ).count()
+                
+                earnings_30 = db.query(AffiliateConversion).filter(
+                    AffiliateConversion.affiliate_id == aff.id,
+                    AffiliateConversion.created_at >= last_30
+                ).with_entities(
+                    db.func.sum(AffiliateConversion.commission_amount)
+                ).scalar() or 0.0
+                
+                data.append({
+                    "email": aff.user.email,
+                    "code": aff.referral_code,
+                    "lifetime": {
+                        "clicks": aff.total_clicks,
+                        "conversions": aff.total_conversions,
+                        "earnings": float(aff.total_earnings)
+                    },
+                    "last_30_days": {
+                        "clicks": clicks_30,
+                        "conversions": conversions_30,
+                        "earnings": float(earnings_30)
+                    }
+                })
+            
+            return jsonify({
+                "export_date": datetime.utcnow().isoformat(),
+                "affiliates": data
+            }), 200
+        
+        else:
+            return jsonify({"error": "Unsupported format. Use 'csv' or 'json'"}), 400
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/user/achievements", methods=["GET"])
+@login_required
+def get_user_achievements():
+    from models import UserBadge, Achievement, SessionLocal
+    
+    db = None
+    try:
+        db = SessionLocal()
+        badges = db.query(UserBadge).filter_by(user_id=current_user.id).all()
+        
+        badge_list = []
+        for badge in badges:
+            badge_list.append({
+                "id": badge.achievement.id,
+                "code": badge.achievement.code,
+                "name": badge.achievement.name,
+                "description": badge.achievement.description,
+                "icon": badge.achievement.icon,
+                "category": badge.achievement.category,
+                "points": badge.achievement.points,
+                "earned_at": badge.earned_at.isoformat(),
+                "is_public": badge.is_public
+            })
+        
+        return jsonify({"badges": badge_list, "total": len(badge_list)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/user/engagement", methods=["GET"])
+@login_required
+def get_user_engagement():
+    from models import UserEngagement, SessionLocal
+    
+    db = None
+    try:
+        db = SessionLocal()
+        engagement = db.query(UserEngagement).filter_by(user_id=current_user.id).first()
+        
+        if not engagement:
+            return jsonify({"error": "Engagement data not found"}), 404
+        
+        return jsonify({
+            "login_streak": engagement.login_streak,
+            "last_login": engagement.last_login.isoformat() if engagement.last_login else None,
+            "searches_count": engagement.searches_count,
+            "agents_created": engagement.agents_created,
+            "alerts_triggered": engagement.alerts_triggered,
+            "affiliate_clicks": engagement.affiliate_clicks,
+            "affiliate_conversions": engagement.affiliate_conversions,
+            "coupons_applied": engagement.coupons_applied,
+            "coupons_created": engagement.coupons_created,
+            "total_points": engagement.total_points,
+            "tier": engagement.tier
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/leaderboard", methods=["GET"])
+@login_required
+def get_leaderboard():
+    from models import LeaderboardSnapshot, User, SessionLocal
+    from datetime import datetime, timedelta
+    
+    db = None
+    try:
+        db = SessionLocal()
+        period = request.args.get("period", "all_time")
+        limit = request.args.get("limit", 50, type=int)
+        
+        now = datetime.utcnow()
+        
+        if period == "weekly":
+            start_date = now - timedelta(days=7)
+        elif period == "monthly":
+            start_date = now - timedelta(days=30)
+        else:
+            start_date = now - timedelta(days=365)
+        
+        snapshots = db.query(LeaderboardSnapshot).filter(
+            LeaderboardSnapshot.period == period,
+            LeaderboardSnapshot.snapshot_date >= start_date
+        ).all()
+        
+        user_scores = {}
+        for snapshot in snapshots:
+            if snapshot.user_id not in user_scores:
+                user_scores[snapshot.user_id] = snapshot.points
+            else:
+                user_scores[snapshot.user_id] = max(user_scores[snapshot.user_id], snapshot.points)
+        
+        sorted_users = sorted(user_scores.items(), key=lambda x: x[1], reverse=True)[:limit]
+        
+        leaderboard = []
+        for rank, (user_id, points) in enumerate(sorted_users, 1):
+            user = db.query(User).filter_by(id=user_id).first()
+            if user:
+                leaderboard.append({
+                    "rank": rank,
+                    "user_id": user_id,
+                    "email": user.email,
+                    "points": points,
+                    "is_current_user": user_id == current_user.id
+                })
+        
+        return jsonify({
+            "period": period,
+            "leaderboard": leaderboard,
+            "count": len(leaderboard)
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/achievements", methods=["GET"])
+@login_required
+def get_all_achievements():
+    from models import Achievement, SessionLocal
+    
+    db = None
+    try:
+        db = SessionLocal()
+        achievements = db.query(Achievement).filter_by(is_active=True).all()
+        
+        ach_list = []
+        for ach in achievements:
+            ach_list.append({
+                "id": ach.id,
+                "code": ach.code,
+                "name": ach.name,
+                "description": ach.description,
+                "icon": ach.icon,
+                "category": ach.category,
+                "points": ach.points,
+                "trigger_type": ach.trigger_type,
+                "trigger_condition": ach.trigger_condition
+            })
+        
+        return jsonify({"achievements": ach_list, "total": len(ach_list)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/profile/<int:user_id>", methods=["GET"])
+def get_public_profile(user_id):
+    from models import User, UserBadge, UserEngagement, SessionLocal
+    
+    db = None
+    try:
+        db = SessionLocal()
+        user = db.query(User).filter_by(id=user_id).first()
+        
+        if not user:
+            return render_template("error.html", error="User not found"), 404
+        
+        engagement = db.query(UserEngagement).filter_by(user_id=user_id).first()
+        
+        public_badges = db.query(UserBadge).filter(
+            UserBadge.user_id == user_id,
+            UserBadge.is_public == True
+        ).all()
+        
+        badge_list = []
+        for badge in public_badges:
+            badge_list.append({
+                "name": badge.achievement.name,
+                "icon": badge.achievement.icon,
+                "earned_at": badge.earned_at.strftime("%Y-%m-%d")
+            })
+        
+        return render_template("profile.html", 
+            user_name=user.email.split("@")[0],
+            total_points=engagement.total_points if engagement else 0,
+            tier=engagement.tier if engagement else "bronze",
+            badges=badge_list,
+            badge_count=len(badge_list)
+        ), 200
+    except Exception as e:
+        return render_template("error.html", error=str(e)), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/achievements", methods=["GET", "POST", "PUT", "DELETE"])
+@login_required
+def manage_achievements():
+    from models import Achievement, User, SessionLocal
+    import os
+    
+    db = None
+    try:
+        db = SessionLocal()
+        user = db.query(User).filter_by(id=current_user.id).first()
+        
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+        
+        if request.method == "GET":
+            achievements = db.query(Achievement).all()
+            ach_list = []
+            for ach in achievements:
+                ach_list.append({
+                    "id": ach.id,
+                    "code": ach.code,
+                    "name": ach.name,
+                    "description": ach.description,
+                    "icon": ach.icon,
+                    "category": ach.category,
+                    "points": ach.points,
+                    "trigger_type": ach.trigger_type,
+                    "trigger_condition": ach.trigger_condition,
+                    "is_active": ach.is_active
+                })
+            return jsonify({"achievements": ach_list}), 200
+        
+        elif request.method == "POST":
+            data = request.get_json()
+            new_ach = Achievement(
+                code=data.get("code"),
+                name=data.get("name"),
+                description=data.get("description"),
+                icon=data.get("icon"),
+                category=data.get("category"),
+                points=int(data.get("points", 10)),
+                trigger_type=data.get("trigger_type"),
+                trigger_condition=data.get("trigger_condition"),
+                is_active=data.get("is_active", True)
+            )
+            db.add(new_ach)
+            db.commit()
+            return jsonify({"id": new_ach.id, "code": new_ach.code}), 201
+        
+        elif request.method == "PUT":
+            data = request.get_json()
+            ach_id = data.get("id")
+            ach = db.query(Achievement).filter_by(id=ach_id).first()
+            if not ach:
+                return jsonify({"error": "Achievement not found"}), 404
+            
+            ach.name = data.get("name", ach.name)
+            ach.description = data.get("description", ach.description)
+            ach.icon = data.get("icon", ach.icon)
+            ach.category = data.get("category", ach.category)
+            ach.points = int(data.get("points", ach.points))
+            ach.is_active = data.get("is_active", ach.is_active)
+            
+            db.commit()
+            return jsonify({"success": True}), 200
+        
+        elif request.method == "DELETE":
+            ach_id = request.args.get("id")
+            ach = db.query(Achievement).filter_by(id=ach_id).first()
+            if not ach:
+                return jsonify({"error": "Achievement not found"}), 404
+            
+            db.delete(ach)
+            db.commit()
+            return jsonify({"success": True}), 200
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/profile", methods=["GET"])
+@login_required
+def view_own_profile():
+    """View own profile with achievements"""
+    from models import UserBadge, UserEngagement, SessionLocal
+    
+    db = None
+    try:
+        db = SessionLocal()
+        user = current_user
+        
+        engagement = db.query(UserEngagement).filter_by(user_id=user.id).first()
+        if not engagement:
+            engagement = UserEngagement(user_id=user.id)
+            db.add(engagement)
+            db.commit()
+        
+        badges = db.query(UserBadge).filter_by(user_id=user.id).all()
+        badge_list = []
+        for badge in badges:
+            if badge.is_public:
+                badge_list.append({
+                    "code": badge.achievement.code,
+                    "name": badge.achievement.name,
+                    "description": badge.achievement.description,
+                    "icon": badge.achievement.icon,
+                    "category": badge.achievement.category,
+                    "points": badge.achievement.points,
+                    "earned_at": badge.earned_at.strftime("%d.%m.%Y") if badge.earned_at else "Unknown"
+                })
+        
+        return render_template(
+            "profile.html",
+            user_name=user.email.split("@")[0],
+            total_points=engagement.total_points,
+            tier=engagement.tier,
+            badge_count=len(badge_list),
+            badges=badge_list
+        )
+    except Exception as e:
+        print(f"[ERROR] Failed to load profile: {e}")
+        return render_template("error.html", error="Profil konnte nicht geladen werden"), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/profile/<int:user_id>", methods=["GET"])
+def view_user_profile(user_id):
+    """View public profile of any user"""
+    from models import User, UserBadge, UserEngagement, SessionLocal
+    
+    db = None
+    try:
+        db = SessionLocal()
+        user = db.query(User).filter_by(id=user_id).first()
+        
+        if not user:
+            return render_template("error.html", error="User nicht gefunden"), 404
+        
+        engagement = db.query(UserEngagement).filter_by(user_id=user.id).first()
+        if not engagement:
+            engagement = UserEngagement(user_id=user.id)
+            db.add(engagement)
+            db.commit()
+        
+        badges = db.query(UserBadge).filter_by(user_id=user.id).all()
+        badge_list = []
+        for badge in badges:
+            if badge.is_public:
+                badge_list.append({
+                    "code": badge.achievement.code,
+                    "name": badge.achievement.name,
+                    "description": badge.achievement.description,
+                    "icon": badge.achievement.icon,
+                    "category": badge.achievement.category,
+                    "points": badge.achievement.points,
+                    "earned_at": badge.earned_at.strftime("%d.%m.%Y") if badge.earned_at else "Unknown"
+                })
+        
+        return render_template(
+            "profile.html",
+            user_name=user.email.split("@")[0],
+            total_points=engagement.total_points,
+            tier=engagement.tier,
+            badge_count=len(badge_list),
+            badges=badge_list
+        )
+    except Exception as e:
+        print(f"[ERROR] Failed to load profile: {e}")
+        return render_template("error.html", error="Profil konnte nicht geladen werden"), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/leaderboard", methods=["GET"])
+def view_leaderboard():
+    """View leaderboard page"""
+    return render_template("leaderboard.html")
+
+
+def process_affiliate_conversion(user_id, db=None):
+    """
+    Verarbeite Affiliate-Konversion und erstelle automatisch Gutschein für beide Seiten
+    - Gutschein für Affiliate (als Provision)
+    - Gutschein für referrierten Benutzer (als Anreiz)
+    """
+    from models import (
+        AffiliateClick, AffiliateConversion, AffiliateAccount,
+        Coupon, SessionLocal
+    )
+    import secrets
+    
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+    
+    try:
+        affiliate_click_id = session.get('affiliate_click_id')
+        referral_code_session = session.get('referral_code')
+        
+        if not affiliate_click_id or not referral_code_session:
+            return None
+        
+        click = db.query(AffiliateClick).filter_by(id=affiliate_click_id).first()
+        if not click:
+            return None
+        
+        affiliate = db.query(AffiliateAccount).filter_by(referral_code=referral_code_session).first()
+        if not affiliate:
+            return None
+        
+        conversion = AffiliateConversion(
+            affiliate_id=affiliate.id,
+            click_id=click.id,
+            converted_user_id=user_id,
+            conversion_type="signup",
+            commission_amount=25.0
+        )
+        click.converted = True
+        affiliate.total_conversions += 1
+        affiliate.total_earnings += 25.0
+        
+        db.add(conversion)
+        db.commit()
+        
+        affiliate_code = f"AFF{secrets.token_hex(4).upper()}"
+        new_referral_code = f"REF{secrets.token_hex(4).upper()}"
+        
+        affiliate_coupon = Coupon(
+            code=affiliate_code,
+            description=f"Affiliate-Provision für Referral",
+            amount=25.0,
+            discount_type="fixed",
+            is_affiliate=True,
+            affiliate_conversion_id=conversion.id,
+            user_id=affiliate.user_id,
+            usage_limit=None
+        )
+        
+        referral_coupon = Coupon(
+            code=new_referral_code,
+            description=f"Willkommensbonus - über Referral beigetreten",
+            amount=10.0,
+            discount_type="fixed",
+            is_affiliate=True,
+            user_id=user_id,
+            usage_limit=None
+        )
+        
+        db.add(affiliate_coupon)
+        db.add(referral_coupon)
+        db.commit()
+        
+        session.pop('affiliate_click_id', None)
+        session.pop('referral_code', None)
+        
+        return {
+            "conversion_id": conversion.id,
+            "affiliate_coupon": affiliate_code,
+            "referral_coupon": new_referral_code
+        }
+    except Exception as e:
+        print(f"[ERROR] Affiliate conversion processing failed: {e}")
+        return None
+    finally:
+        if close_db:
+            db.close()
+
+
+def init_default_achievements(db=None):
+    """Initialize default achievements in the database"""
+    from models import Achievement, SessionLocal
+    
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+    
+    try:
+        achievements = [
+            {
+                "code": "first_search",
+                "name": "🔍 Erste Suche",
+                "description": "Erstelle deine erste Suchabfrage",
+                "icon": "🔍",
+                "category": "searches",
+                "points": 10,
+                "trigger_type": "counter",
+                "trigger_condition": "searches_count:1"
+            },
+            {
+                "code": "search_100",
+                "name": "🔍 100 Searches",
+                "description": "Führe 100 Suchen durch",
+                "icon": "🔍",
+                "category": "searches",
+                "points": 50,
+                "trigger_type": "counter",
+                "trigger_condition": "searches_count:100"
+            },
+            {
+                "code": "search_500",
+                "name": "🔍🔍 500 Searches",
+                "description": "Führe 500 Suchen durch",
+                "icon": "🔍",
+                "category": "searches",
+                "points": 150,
+                "trigger_type": "counter",
+                "trigger_condition": "searches_count:500"
+            },
+            {
+                "code": "first_alert",
+                "name": "🚨 Erste Benachrichtigung",
+                "description": "Erstelle deinen ersten Alert",
+                "icon": "🚨",
+                "category": "alerts",
+                "points": 20,
+                "trigger_type": "counter",
+                "trigger_condition": "agents_created:1"
+            },
+            {
+                "code": "alert_master",
+                "name": "🚨 Alert Master",
+                "description": "Erstelle 10 verschiedene Alerts",
+                "icon": "🚨",
+                "category": "alerts",
+                "points": 100,
+                "trigger_type": "counter",
+                "trigger_condition": "agents_created:10"
+            },
+            {
+                "code": "first_conversion",
+                "name": "💰 Erste Konvertierung",
+                "description": "Generiere deine erste Affiliate-Konvertierung",
+                "icon": "💰",
+                "category": "affiliate",
+                "points": 50,
+                "trigger_type": "counter",
+                "trigger_condition": "affiliate_conversions:1"
+            },
+            {
+                "code": "top_affiliate",
+                "name": "🏆 Top Affiliate",
+                "description": "Erreiche 10 Affiliate-Konvertierungen",
+                "icon": "🏆",
+                "category": "affiliate",
+                "points": 200,
+                "trigger_type": "counter",
+                "trigger_condition": "affiliate_conversions:10"
+            },
+            {
+                "code": "coupon_collector",
+                "name": "🎟️ Gutschein-Sammler",
+                "description": "Nutze 5 verschiedene Gutscheine",
+                "icon": "🎟️",
+                "category": "coupons",
+                "points": 30,
+                "trigger_type": "counter",
+                "trigger_condition": "coupons_applied:5"
+            },
+            {
+                "code": "login_streak_7",
+                "name": "🔥 7-Tage Streak",
+                "description": "Logge dich 7 Tage in Folge ein",
+                "icon": "🔥",
+                "category": "engagement",
+                "points": 75,
+                "trigger_type": "counter",
+                "trigger_condition": "login_streak:7"
+            },
+            {
+                "code": "login_streak_30",
+                "name": "🔥🔥 30-Tage Streak",
+                "description": "Logge dich 30 Tage in Folge ein",
+                "icon": "🔥",
+                "category": "engagement",
+                "points": 300,
+                "trigger_type": "counter",
+                "trigger_condition": "login_streak:30"
+            }
+        ]
+        
+        for ach_data in achievements:
+            existing = db.query(Achievement).filter_by(code=ach_data["code"]).first()
+            if not existing:
+                ach = Achievement(**ach_data)
+                db.add(ach)
+        
+        db.commit()
+        print("[OK] Default achievements initialized")
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize achievements: {e}")
+    finally:
+        if close_db:
+            db.close()
+
+
+def update_user_engagement(user_id, metric=None, value=1, db=None):
+    """Update user engagement metrics"""
+    from models import UserEngagement, User, SessionLocal
+    from datetime import timedelta
+    
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+    
+    try:
+        engagement = db.query(UserEngagement).filter_by(user_id=user_id).first()
+        if not engagement:
+            engagement = UserEngagement(user_id=user_id)
+            db.add(engagement)
+            db.flush()
+        
+        if metric == "search":
+            engagement.searches_count += value
+        elif metric == "agent":
+            engagement.agents_created += value
+        elif metric == "alert":
+            engagement.alerts_triggered += value
+        elif metric == "affiliate_click":
+            engagement.affiliate_clicks += value
+        elif metric == "affiliate_conversion":
+            engagement.affiliate_conversions += value
+        elif metric == "coupon_applied":
+            engagement.coupons_applied += value
+        elif metric == "coupon_created":
+            engagement.coupons_created += value
+        elif metric == "login":
+            user = db.query(User).filter_by(id=user_id).first()
+            if user:
+                now = datetime.utcnow()
+                last_login = engagement.last_login
+                
+                if last_login and (now - last_login).days == 1:
+                    engagement.login_streak += 1
+                elif not last_login or (now - last_login).days > 1:
+                    engagement.login_streak = 1
+                
+                engagement.last_login = now
+                user.last_login = now
+        
+        db.commit()
+        return engagement
+    except Exception as e:
+        print(f"[ERROR] Failed to update engagement for user {user_id}: {e}")
+        return None
+    finally:
+        if close_db:
+            db.close()
+
+
+def check_and_award_achievement(user_id, db=None):
+    """Check if user qualifies for any achievements and award them"""
+    from models import Achievement, UserBadge, UserEngagement, SessionLocal
+    
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+    
+    try:
+        engagement = db.query(UserEngagement).filter_by(user_id=user_id).first()
+        if not engagement:
+            return []
+        
+        achievements = db.query(Achievement).filter_by(is_active=True).all()
+        awarded = []
+        
+        for achievement in achievements:
+            trigger_condition = achievement.trigger_condition
+            field, threshold = trigger_condition.split(":")
+            threshold = int(threshold)
+            
+            user_has_badge = db.query(UserBadge).filter(
+                UserBadge.user_id == user_id,
+                UserBadge.achievement_id == achievement.id
+            ).first()
+            
+            if user_has_badge:
+                continue
+            
+            current_value = getattr(engagement, field, 0)
+            
+            if current_value >= threshold:
+                badge = UserBadge(
+                    user_id=user_id,
+                    achievement_id=achievement.id,
+                    is_public=True
+                )
+                db.add(badge)
+                engagement.total_points += achievement.points
+                awarded.append(achievement.code)
+        
+        db.commit()
+        return awarded
+    except Exception as e:
+        print(f"[ERROR] Failed to check achievements for user {user_id}: {e}")
+        return []
+    finally:
+        if close_db:
+            db.close()
+
+
+def update_leaderboard_snapshots(db=None):
+    """Update daily leaderboard snapshots for all users"""
+    from models import UserEngagement, LeaderboardSnapshot, User, SessionLocal
+    from datetime import datetime, timedelta
+    
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+    
+    try:
+        now = datetime.utcnow()
+        
+        engagements = db.query(UserEngagement).all()
+        
+        for engagement in engagements:
+            for period in ["all_time", "monthly", "weekly"]:
+                snapshot = LeaderboardSnapshot(
+                    user_id=engagement.user_id,
+                    period=period,
+                    points=engagement.total_points,
+                    metric_value=engagement.searches_count,
+                    metric_type="searches",
+                    snapshot_date=now
+                )
+                db.add(snapshot)
+        
+        db.commit()
+        print("[OK] Leaderboard snapshots updated")
+    except Exception as e:
+        print(f"[ERROR] Failed to update leaderboard snapshots: {e}")
+    finally:
+        if close_db:
+            db.close()
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
@@ -4395,5 +5857,8 @@ if __name__ == "__main__":
     print(f"   Debug: {debug}")
     print(f"   Database: {'PostgreSQL' if IS_POSTGRES else 'SQLite'}")
     print("="*50 + "\n")
+
+    Base.metadata.create_all(bind=engine)
+    init_default_achievements()
 
     app.run(host="0.0.0.0", port=port, debug=debug)

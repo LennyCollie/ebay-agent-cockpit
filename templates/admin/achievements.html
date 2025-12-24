@@ -1,0 +1,568 @@
+{% extends "base.html" %}
+{% block title %}Achievements verwalten{% endblock %}
+{% block content %}
+
+<!-- Admin Navigation -->
+<div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+  <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+    <a href="{{ url_for('admin.dashboard') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">
+      📊 Dashboard
+    </a>
+    <a href="{{ url_for('admin.achievements') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: #667eea; border: 2px solid #667eea; border-radius: 8px; text-decoration: none; color: white; font-weight: 500; transition: all 0.2s;">
+      🏆 Achievements
+    </a>
+    <a href="{{ url_for('admin.coupons') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">
+      🎟️ Coupons
+    </a>
+    <a href="{{ url_for('admin.community_links') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">
+      🔗 Community-Links
+    </a>
+    <a href="{{ url_for('admin.analytics') }}" style="display: inline-flex; align-items: center; padding: 12px 16px; background: white; border: 2px solid #ddd; border-radius: 8px; text-decoration: none; color: #333; font-weight: 500; transition: all 0.2s;">
+      📈 Analytics
+    </a>
+  </div>
+</div>
+
+<style>
+  .admin-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+  }
+
+  .stat-box {
+    text-align: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px;
+    margin-bottom: 10px;
+  }
+
+  .stat-box.searches {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  }
+
+  .stat-box.alerts {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  }
+
+  .stat-box.affiliate {
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+  }
+
+  .stat-box.coupons {
+    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+  }
+
+  .stat-box.engagement {
+    background: linear-gradient(135deg, #30cfd0 0%, #330867 100%);
+  }
+
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 10px 0;
+  }
+
+  .stat-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+  }
+
+  .filter-btn {
+    margin: 5px;
+    padding: 8px 16px;
+    border: 2px solid #ddd;
+    background: white;
+    color: #333;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+  }
+
+  .filter-btn:hover, .filter-btn.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+  }
+
+  .achievement-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    background: #f9f9f9;
+    border-left: 4px solid #667eea;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    transition: all 0.2s;
+  }
+
+  .achievement-row:hover {
+    background: #f0f0f0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+
+  .achievement-info {
+    flex: 1;
+  }
+
+  .achievement-icon {
+    font-size: 2rem;
+    margin-right: 15px;
+  }
+
+  .achievement-title {
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: #1f2937;
+  }
+
+  .achievement-meta {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-top: 5px;
+  }
+
+  .category-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin: 2px;
+  }
+
+  .points-badge {
+    background: #fbbf24;
+    color: #78350f;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 8px;
+  }
+</style>
+
+<div class="container-fluid">
+  <h1 class="h3 mb-4">🏆 Achievements & Badges verwalten</h1>
+
+  <!-- Stats Row -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="stat-box">
+        <div class="stat-label">📊 Insgesamt</div>
+        <div class="stat-value" id="totalAchievements">-</div>
+        <div class="stat-label">Achievements</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="stat-box searches">
+        <div class="stat-label">🔍 Aktiv</div>
+        <div class="stat-value" id="activeAchievements">-</div>
+        <div class="stat-label">aktiviert</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="stat-box alerts">
+        <div class="stat-label">🚀 Kategorien</div>
+        <div class="stat-value" id="totalCategories">5</div>
+        <div class="stat-label">verfügbar</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="stat-box engagement">
+        <div class="stat-label">👥 Verdient</div>
+        <div class="stat-value" id="totalEarned">-</div>
+        <div class="stat-label">von Usern</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="admin-card">
+    <div class="row align-items-center">
+      <div class="col-md-6">
+        <button class="btn btn-success btn-lg" id="createAchievementBtn">
+          <strong>+ Neuer Achievement</strong>
+        </button>
+      </div>
+      <div class="col-md-6">
+        <input type="text" class="form-control" id="searchFilter" placeholder="🔍 Nach Name, Code oder Icon suchen...">
+      </div>
+    </div>
+
+    <!-- Category Filter -->
+    <div style="margin-top: 15px;">
+      <div style="margin-bottom: 10px; font-weight: 600;">Filtern nach Kategorie:</div>
+      <div>
+        <button class="filter-btn active" data-category="all">Alle</button>
+        <button class="filter-btn" data-category="searches">🔍 Searches</button>
+        <button class="filter-btn" data-category="alerts">🚨 Alerts</button>
+        <button class="filter-btn" data-category="affiliate">💰 Affiliate</button>
+        <button class="filter-btn" data-category="coupons">🎟️ Coupons</button>
+        <button class="filter-btn" data-category="engagement">🔥 Engagement</button>
+      </div>
+    </div>
+
+    <!-- Status Filter -->
+    <div style="margin-top: 15px;">
+      <div style="margin-bottom: 10px; font-weight: 600;">Status:</div>
+      <div>
+        <button class="filter-btn active" data-status="all">Alle</button>
+        <button class="filter-btn" data-status="active">✅ Aktiv</button>
+        <button class="filter-btn" data-status="inactive">❌ Inaktiv</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Achievements List -->
+  <div class="admin-card">
+    <h5 class="mb-3">📋 Alle Achievements</h5>
+    <div id="achievementsContainer">
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Wird geladen...</span>
+        </div>
+        <p class="mt-3">Wird geladen...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="achievementModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="achievementModalTitle">Neuer Achievement</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="achievementForm">
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Code *</label>
+              <input type="text" class="form-control" id="achievementCode" placeholder="z.B. first_search" required/>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Name *</label>
+              <input type="text" class="form-control" id="achievementName" placeholder="z.B. 🔍 Erste Suche" required/>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Icon</label>
+              <input type="text" class="form-control" id="achievementIcon" placeholder="z.B. 🏆"/>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Kategorie *</label>
+              <select class="form-control" id="achievementCategory" required>
+                <option value="">-- Wählen --</option>
+                <option value="searches">🔍 Searches</option>
+                <option value="alerts">🚨 Alerts</option>
+                <option value="affiliate">💰 Affiliate</option>
+                <option value="coupons">🎟️ Coupons</option>
+                <option value="engagement">🔥 Engagement</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Points *</label>
+              <input type="number" class="form-control" id="achievementPoints" placeholder="10" required/>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Trigger Type *</label>
+              <select class="form-control" id="achievementTriggerType" required>
+                <option value="counter">Counter</option>
+                <option value="event">Event</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Trigger Condition * (z.B. searches_count:100)</label>
+            <input type="text" class="form-control" id="achievementTriggerCondition" placeholder="field:value" required/>
+            <small class="text-muted">Format: field_name:threshold_value</small>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Beschreibung</label>
+            <textarea class="form-control" id="achievementDescription" rows="2"></textarea>
+          </div>
+
+          <div class="form-check">
+            <input type="checkbox" class="form-check-input" id="achievementActive" checked/>
+            <label class="form-check-label" for="achievementActive">
+              ✅ Aktiv
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="saveAchievementBtn">Speichern</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentAchievementId = null;
+let modal = null;
+let allAchievements = [];
+let selectedCategory = 'all';
+let selectedStatus = 'all';
+
+document.addEventListener('DOMContentLoaded', function() {
+  modal = new bootstrap.Modal(document.getElementById('achievementModal'));
+  loadAchievements();
+  setupEventListeners();
+});
+
+function setupEventListeners() {
+  document.getElementById('createAchievementBtn').addEventListener('click', function() {
+    currentAchievementId = null;
+    document.getElementById('achievementForm').reset();
+    document.getElementById('achievementModalTitle').textContent = 'Neuer Achievement';
+    modal.show();
+  });
+  
+  document.getElementById('saveAchievementBtn').addEventListener('click', saveAchievement);
+  document.getElementById('searchFilter').addEventListener('keyup', applyFilters);
+
+  // Category Filter Buttons
+  document.querySelectorAll('[data-category]').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('[data-category]').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      selectedCategory = this.dataset.category;
+      applyFilters();
+    });
+  });
+
+  // Status Filter Buttons
+  document.querySelectorAll('[data-status]').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('[data-status]').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      selectedStatus = this.dataset.status;
+      applyFilters();
+    });
+  });
+}
+
+function loadAchievements() {
+  fetch('/api/admin/achievements')
+    .then(r => r.json())
+    .then(data => {
+      if (data.achievements) {
+        allAchievements = data.achievements;
+        updateStats();
+        applyFilters();
+      }
+    })
+    .catch(err => console.error(err));
+}
+
+function updateStats() {
+  document.getElementById('totalAchievements').textContent = allAchievements.length;
+  document.getElementById('activeAchievements').textContent = allAchievements.filter(a => a.is_active).length;
+  
+  // Calculate total earned badges (from user_badges table)
+  fetch('/api/achievements')
+    .then(r => r.json())
+    .then(data => {
+      // This is placeholder - in production you'd need an endpoint to count total badges earned
+      document.getElementById('totalEarned').textContent = '?';
+    })
+    .catch(err => {
+      document.getElementById('totalEarned').textContent = '?';
+    });
+}
+
+function applyFilters() {
+  let filtered = allAchievements;
+
+  // Category Filter
+  if (selectedCategory !== 'all') {
+    filtered = filtered.filter(a => a.category === selectedCategory);
+  }
+
+  // Status Filter
+  if (selectedStatus !== 'all') {
+    filtered = filtered.filter(a => {
+      if (selectedStatus === 'active') return a.is_active;
+      if (selectedStatus === 'inactive') return !a.is_active;
+      return true;
+    });
+  }
+
+  // Search Filter
+  const searchTerm = document.getElementById('searchFilter').value.toLowerCase();
+  if (searchTerm) {
+    filtered = filtered.filter(a => {
+      return a.name.toLowerCase().includes(searchTerm) ||
+             a.code.toLowerCase().includes(searchTerm) ||
+             a.icon.toLowerCase().includes(searchTerm);
+    });
+  }
+
+  renderAchievements(filtered);
+}
+
+function getCategoryColor(category) {
+  const colors = {
+    'searches': 'bg-danger',
+    'alerts': 'bg-info',
+    'affiliate': 'bg-success',
+    'coupons': 'bg-warning',
+    'engagement': 'bg-primary'
+  };
+  return colors[category] || 'bg-secondary';
+}
+
+function getCategoryEmoji(category) {
+  const emojis = {
+    'searches': '🔍',
+    'alerts': '🚨',
+    'affiliate': '💰',
+    'coupons': '🎟️',
+    'engagement': '🔥'
+  };
+  return emojis[category] || '🎯';
+}
+
+function renderAchievements(achievements) {
+  if (achievements.length === 0) {
+    document.getElementById('achievementsContainer').innerHTML = `
+      <div class="text-center py-5">
+        <p class="text-muted">Keine Achievements gefunden</p>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '';
+  achievements.forEach(ach => {
+    const statusBadge = ach.is_active 
+      ? '<span class="badge bg-success">✅ Aktiv</span>' 
+      : '<span class="badge bg-secondary">❌ Inaktiv</span>';
+    
+    html += `
+      <div class="achievement-row" data-id="${ach.id}">
+        <div style="display: flex; align-items: center; flex: 1;">
+          <div class="achievement-icon">${ach.icon || '🎯'}</div>
+          <div class="achievement-info">
+            <div class="achievement-title">${ach.name}</div>
+            <div class="achievement-meta">
+              <code>${ach.code}</code>
+              <span class="category-badge bg-light text-dark">${getCategoryEmoji(ach.category)} ${ach.category}</span>
+              ${statusBadge}
+            </div>
+            ${ach.description ? `<div class="achievement-meta" style="margin-top: 8px;">${ach.description}</div>` : ''}
+            <div class="achievement-meta" style="margin-top: 5px;">
+              <strong>Trigger:</strong> ${ach.trigger_condition}
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="points-badge">⭐ ${ach.points} Pts</span>
+          <div class="action-buttons">
+            <button class="btn btn-sm btn-primary" onclick="editAchievement(${ach.id})">✏️ Bearbeiten</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteAchievement(${ach.id})">🗑️ Löschen</button>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  document.getElementById('achievementsContainer').innerHTML = html;
+}
+
+function editAchievement(id) {
+  const ach = allAchievements.find(a => a.id === id);
+  if (ach) {
+    currentAchievementId = id;
+    document.getElementById('achievementCode').value = ach.code;
+    document.getElementById('achievementName').value = ach.name;
+    document.getElementById('achievementIcon').value = ach.icon || '';
+    document.getElementById('achievementCategory').value = ach.category;
+    document.getElementById('achievementPoints').value = ach.points;
+    document.getElementById('achievementTriggerType').value = ach.trigger_type;
+    document.getElementById('achievementTriggerCondition').value = ach.trigger_condition;
+    document.getElementById('achievementDescription').value = ach.description || '';
+    document.getElementById('achievementActive').checked = ach.is_active;
+    document.getElementById('achievementModalTitle').textContent = '✏️ Achievement bearbeiten';
+    modal.show();
+  }
+}
+
+function saveAchievement() {
+  const data = {
+    code: document.getElementById('achievementCode').value,
+    name: document.getElementById('achievementName').value,
+    icon: document.getElementById('achievementIcon').value,
+    category: document.getElementById('achievementCategory').value,
+    points: document.getElementById('achievementPoints').value,
+    trigger_type: document.getElementById('achievementTriggerType').value,
+    trigger_condition: document.getElementById('achievementTriggerCondition').value,
+    description: document.getElementById('achievementDescription').value,
+    is_active: document.getElementById('achievementActive').checked
+  };
+  
+  if (currentAchievementId) {
+    data.id = currentAchievementId;
+    fetch('/api/admin/achievements', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        alert('✅ Achievement aktualisiert!');
+        modal.hide();
+        loadAchievements();
+      }
+    });
+  } else {
+    fetch('/api/admin/achievements', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.id) {
+        alert('✅ Achievement erstellt!');
+        modal.hide();
+        loadAchievements();
+      }
+    });
+  }
+}
+
+function deleteAchievement(id) {
+  if (confirm('❌ Achievement wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) {
+    fetch(`/api/admin/achievements?id=${id}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          alert('✅ Achievement gelöscht!');
+          loadAchievements();
+        }
+      });
+  }
+}
+</script>
+{% endblock %}
