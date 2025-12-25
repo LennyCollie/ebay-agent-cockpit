@@ -152,6 +152,28 @@ class SearchAgent(Base):
         return f"<SearchAgent '{self.name}' by User {self.user_id}>"
 
 
+class Alert(Base):
+    __tablename__ = "alerts"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    keywords = Column(Text, nullable=False)
+    category = Column(String(100), nullable=True)
+    min_price = Column(Float, nullable=True)
+    max_price = Column(Float, nullable=True)
+    current_price = Column(Float, nullable=True)
+    is_active = Column(Boolean, default=True)
+    last_check = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user = relationship("User", backref="alerts")
+    price_histories = relationship("PriceHistory", back_populates="alert", cascade="all, delete-orphan")
+    price_forecasts = relationship("PriceForecast", back_populates="alert", cascade="all, delete-orphan")
+    trend_analyses = relationship("PriceTrendAnalysis", back_populates="alert", cascade="all, delete-orphan")
+    def __repr__(self):
+        return f"<Alert {self.name} user={self.user_id}>"
+
+
 class SearchResult(Base):
     __tablename__ = "search_results"
 
@@ -225,6 +247,7 @@ class PriceHistory(Base):
     __tablename__ = "price_history"
 
     id = Column(Integer, primary_key=True)
+    alert_id = Column(Integer, ForeignKey("alerts.id"), nullable=True, index=True)
 
     # Suchbegriff
     search_term = Column(String(255), nullable=False, index=True)
@@ -243,6 +266,8 @@ class PriceHistory(Base):
     # Zeitstempel
     recorded_at = Column(DateTime, default=datetime.utcnow, index=True)
 
+    alert = relationship("Alert", back_populates="price_histories")
+    
     def __repr__(self):
         return f"<PriceHistory '{self.search_term}' @ {self.recorded_at.strftime('%Y-%m-%d')}>"
 
@@ -800,6 +825,65 @@ class WebhookLog(Base):
         return f"<WebhookLog endpoint={self.endpoint_id} status={self.status}>"
 
 
+class SMSNotificationSetting(Base):
+    __tablename__ = "sms_notification_settings"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, unique=True, index=True)
+    
+    phone_number = Column(String(20), nullable=True)
+    phone_verified = Column(Boolean, default=False)
+    verification_code = Column(String(6), nullable=True)
+    verification_attempts = Column(Integer, default=0)
+    
+    is_enabled = Column(Boolean, default=False)
+    alert_types = Column(String(500), default="price_drop,new_item")
+    
+    max_sms_per_day = Column(Integer, default=5)
+    quiet_hours_start = Column(String(5), default="22:00")
+    quiet_hours_end = Column(String(5), default="08:00")
+    
+    total_sms_sent = Column(Integer, default=0)
+    total_sms_cost = Column(Float, default=0.0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = relationship("User", backref="sms_settings", uselist=False)
+    sms_logs = relationship("SMSSendLog", back_populates="settings", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<SMSNotificationSetting user={self.user_id} phone={self.phone_number}>"
+
+
+class SMSSendLog(Base):
+    __tablename__ = "sms_send_logs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    settings_id = Column(Integer, ForeignKey("sms_notification_settings.id"), nullable=True)
+    
+    phone_number = Column(String(20), nullable=False)
+    message_content = Column(Text, nullable=False)
+    alert_type = Column(String(100), nullable=True)
+    
+    status = Column(String(50), default="pending")
+    provider_message_id = Column(String(255), nullable=True)
+    error_message = Column(Text, nullable=True)
+    
+    cost_cents = Column(Integer, default=0)
+    retry_count = Column(Integer, default=0)
+    
+    sent_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    user = relationship("User", backref="sms_logs")
+    settings = relationship("SMSNotificationSetting", back_populates="sms_logs")
+
+    def __repr__(self):
+        return f"<SMSSendLog user={self.user_id} status={self.status}>"
+
+
 class APIKey(Base):
     __tablename__ = "api_keys"
 
@@ -848,6 +932,477 @@ class APIKeyLog(Base):
 
     def __repr__(self):
         return f"<APIKeyLog {self.method} {self.endpoint} {self.status_code}>"
+
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    report_type = Column(String(50), nullable=False)
+    format = Column(String(20), default="pdf")
+    
+    is_scheduled = Column(Boolean, default=False)
+    schedule_frequency = Column(String(20), nullable=True)
+    schedule_day_of_month = Column(Integer, nullable=True)
+    schedule_day_of_week = Column(Integer, nullable=True)
+    schedule_time = Column(String(5), nullable=True)
+    
+    email_recipients = Column(Text, nullable=True)
+    include_charts = Column(Boolean, default=True)
+    include_summary = Column(Boolean, default=True)
+    include_detailed_data = Column(Boolean, default=True)
+    
+    filters = Column(Text, nullable=True)
+    
+    is_enabled = Column(Boolean, default=True)
+    last_generated = Column(DateTime, nullable=True)
+    next_scheduled = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = relationship("User", backref="reports")
+    generations = relationship("ReportGeneration", back_populates="report", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Report {self.name} user={self.user_id}>"
+
+
+class ReportGeneration(Base):
+    __tablename__ = "report_generations"
+
+    id = Column(Integer, primary_key=True)
+    report_id = Column(Integer, ForeignKey("reports.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    
+    status = Column(String(50), default="pending")
+    file_path = Column(String(500), nullable=True)
+    file_size = Column(Integer, nullable=True)
+    file_url = Column(String(500), nullable=True)
+    
+    error_message = Column(Text, nullable=True)
+    
+    generation_time_ms = Column(Integer, nullable=True)
+    row_count = Column(Integer, default=0)
+    
+    triggered_by = Column(String(50), default="manual")
+    
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    completed_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    
+    report = relationship("Report", back_populates="generations")
+    user = relationship("User", backref="report_generations")
+
+    def __repr__(self):
+        return f"<ReportGeneration report={self.report_id} status={self.status}>"
+
+
+class ReportTemplate(Base):
+    __tablename__ = "report_templates"
+
+    id = Column(Integer, primary_key=True)
+    
+    name = Column(String(255), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    report_type = Column(String(50), nullable=False)
+    
+    format = Column(String(20), default="pdf")
+    include_charts = Column(Boolean, default=True)
+    include_summary = Column(Boolean, default=True)
+    include_detailed_data = Column(Boolean, default=True)
+    
+    default_filters = Column(Text, nullable=True)
+    
+    is_premium = Column(Boolean, default=False)
+    min_plan = Column(String(50), default="basic")
+    
+    icon = Column(String(50), nullable=True)
+    color = Column(String(7), nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<ReportTemplate {self.name}>"
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+
+    id = Column(Integer, primary_key=True)
+    
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    
+    permissions = Column(Text, nullable=True)
+    
+    is_system_role = Column(Boolean, default=False)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user_role_assignments = relationship("UserRoleAssignment", back_populates="role", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<UserRole {self.name}>"
+
+
+class UserRoleAssignment(Base):
+    __tablename__ = "user_role_assignments"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    role_id = Column(Integer, ForeignKey("user_roles.id"), nullable=False, index=True)
+    
+    assigned_by = Column(Integer, ForeignKey("model_users.id"), nullable=True)
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+    
+    expires_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True)
+    
+    user = relationship("User", foreign_keys=[user_id], backref="role_assignments")
+    role = relationship("UserRole", back_populates="user_role_assignments")
+    assigned_by_user = relationship("User", foreign_keys=[assigned_by])
+
+    def __repr__(self):
+        return f"<UserRoleAssignment user={self.user_id} role={self.role_id}>"
+
+
+class SponsorLevel(Base):
+    __tablename__ = "sponsor_levels"
+
+    id = Column(Integer, primary_key=True)
+    
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    
+    monthly_price = Column(Float, nullable=False)
+    
+    benefits = Column(Text, nullable=True)
+    max_team_members = Column(Integer, default=1)
+    
+    badge_color = Column(String(7), nullable=True)
+    badge_icon = Column(String(50), nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    sponsors = relationship("Sponsor", back_populates="level", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<SponsorLevel {self.name}>"
+
+
+class Sponsor(Base):
+    __tablename__ = "sponsors"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True, unique=True)
+    
+    level_id = Column(Integer, ForeignKey("sponsor_levels.id"), nullable=False)
+    
+    monthly_donation = Column(Float, default=0.0)
+    total_donated = Column(Float, default=0.0)
+    
+    started_at = Column(DateTime, default=datetime.utcnow)
+    canceled_at = Column(DateTime, nullable=True)
+    
+    stripe_subscription_id = Column(String(255), nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    auto_renew = Column(Boolean, default=True)
+    
+    custom_badge_name = Column(String(100), nullable=True)
+    custom_badge_color = Column(String(7), nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = relationship("User", backref="sponsor_profile", uselist=False)
+    level = relationship("SponsorLevel", back_populates="sponsors")
+
+    def __repr__(self):
+        return f"<Sponsor user={self.user_id} level={self.level_id}>"
+
+
+class TeamMember(Base):
+    __tablename__ = "team_members"
+
+    id = Column(Integer, primary_key=True)
+    
+    owner_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    member_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    
+    role = Column(String(50), default="member")
+    permissions = Column(Text, nullable=True)
+    
+    invited_at = Column(DateTime, default=datetime.utcnow)
+    joined_at = Column(DateTime, nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    can_manage_alerts = Column(Boolean, default=True)
+    can_manage_team = Column(Boolean, default=False)
+    can_view_reports = Column(Boolean, default=True)
+    
+    owner = relationship("User", foreign_keys=[owner_id], backref="owned_teams")
+    member = relationship("User", foreign_keys=[member_id], backref="team_memberships")
+
+    def __repr__(self):
+        return f"<TeamMember owner={self.owner_id} member={self.member_id}>"
+
+
+class WhiteLabelBrand(Base):
+    __tablename__ = "white_label_brands"
+
+    id = Column(Integer, primary_key=True)
+    reseller_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True, unique=True)
+    
+    brand_name = Column(String(255), nullable=False)
+    brand_domain = Column(String(255), nullable=True, unique=True)
+    brand_logo_url = Column(String(500), nullable=True)
+    brand_favicon_url = Column(String(500), nullable=True)
+    
+    primary_color = Column(String(7), default="#3b82f6")
+    secondary_color = Column(String(7), default="#2563eb")
+    accent_color = Column(String(7), default="#10b981")
+    
+    support_email = Column(String(255), nullable=True)
+    support_phone = Column(String(20), nullable=True)
+    support_url = Column(String(500), nullable=True)
+    
+    custom_css = Column(Text, nullable=True)
+    footer_text = Column(String(500), nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    reseller = relationship("User", backref="white_label_brand", uselist=False)
+
+    def __repr__(self):
+        return f"<WhiteLabelBrand {self.brand_name}>"
+
+
+class ResellerAccount(Base):
+    __tablename__ = "reseller_accounts"
+
+    id = Column(Integer, primary_key=True)
+    reseller_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True, unique=True)
+    
+    company_name = Column(String(255), nullable=False)
+    company_address = Column(Text, nullable=True)
+    company_tax_id = Column(String(50), nullable=True)
+    
+    reseller_discount_percentage = Column(Float, default=20.0)
+    
+    max_end_users = Column(Integer, default=100)
+    current_end_users = Column(Integer, default=0)
+    
+    commission_percentage = Column(Float, default=15.0)
+    total_revenue = Column(Float, default=0.0)
+    total_commission = Column(Float, default=0.0)
+    
+    api_key = Column(String(255), nullable=True, unique=True)
+    webhook_url = Column(String(500), nullable=True)
+    
+    is_approved = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    
+    approved_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    reseller = relationship("User", backref="reseller_account", uselist=False)
+    end_users = relationship("EndUserAccount", back_populates="reseller", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<ResellerAccount {self.company_name}>"
+
+
+class EndUserAccount(Base):
+    __tablename__ = "end_user_accounts"
+
+    id = Column(Integer, primary_key=True)
+    reseller_id = Column(Integer, ForeignKey("reseller_accounts.id"), nullable=False, index=True)
+    end_user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    
+    custom_domain = Column(String(255), nullable=True)
+    
+    plan = Column(String(50), default="basic")
+    monthly_fee = Column(Float, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    reseller = relationship("ResellerAccount", back_populates="end_users")
+    end_user = relationship("User", backref="reseller_end_user_account")
+
+    def __repr__(self):
+        return f"<EndUserAccount end_user={self.end_user_id}>"
+
+
+class ResellerCommission(Base):
+    __tablename__ = "reseller_commissions"
+
+    id = Column(Integer, primary_key=True)
+    reseller_id = Column(Integer, ForeignKey("reseller_accounts.id"), nullable=False, index=True)
+    
+    period = Column(String(20), nullable=False)
+    
+    total_revenue = Column(Float, default=0.0)
+    commission_amount = Column(Float, default=0.0)
+    commission_percentage = Column(Float, nullable=True)
+    
+    status = Column(String(50), default="pending")
+    paid_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<ResellerCommission reseller={self.reseller_id} period={self.period}>"
+
+
+class PriceForecast(Base):
+    __tablename__ = "price_forecasts"
+
+    id = Column(Integer, primary_key=True)
+    alert_id = Column(Integer, ForeignKey("alerts.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    
+    forecast_type = Column(String(50), nullable=False)
+    
+    current_price = Column(Float, nullable=True)
+    
+    predicted_price_7d = Column(Float, nullable=True)
+    predicted_price_14d = Column(Float, nullable=True)
+    predicted_price_30d = Column(Float, nullable=True)
+    
+    confidence_score_7d = Column(Float, nullable=True)
+    confidence_score_14d = Column(Float, nullable=True)
+    confidence_score_30d = Column(Float, nullable=True)
+    
+    trend_direction = Column(String(50), nullable=True)
+    trend_strength = Column(Float, nullable=True)
+    
+    recommendation = Column(String(255), nullable=True)
+    
+    last_trained = Column(DateTime, nullable=True)
+    training_samples = Column(Integer, default=0)
+    model_accuracy = Column(Float, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    alert = relationship("Alert", back_populates="price_forecasts")
+    user = relationship("User", backref="price_forecasts")
+
+    def __repr__(self):
+        return f"<PriceForecast alert={self.alert_id}>"
+
+
+class PriceTrendAnalysis(Base):
+    __tablename__ = "price_trend_analysis"
+
+    id = Column(Integer, primary_key=True)
+    alert_id = Column(Integer, ForeignKey("alerts.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    
+    period_days = Column(Integer, default=30)
+    
+    min_price = Column(Float, nullable=True)
+    max_price = Column(Float, nullable=True)
+    avg_price = Column(Float, nullable=True)
+    
+    price_volatility = Column(Float, nullable=True)
+    trend_slope = Column(Float, nullable=True)
+    
+    seasonal_pattern = Column(String(100), nullable=True)
+    anomalies = Column(Text, nullable=True)
+    
+    price_drops_count = Column(Integer, default=0)
+    avg_drop_percentage = Column(Float, nullable=True)
+    
+    best_buy_price = Column(Float, nullable=True)
+    good_deal_threshold = Column(Float, nullable=True)
+    fair_price_range_min = Column(Float, nullable=True)
+    fair_price_range_max = Column(Float, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    alert = relationship("Alert", back_populates="trend_analyses")
+    user = relationship("User", backref="trend_analyses")
+
+    def __repr__(self):
+        return f"<PriceTrendAnalysis alert={self.alert_id} period={self.period_days}d>"
+
+
+class MarketInsight(Base):
+    __tablename__ = "market_insights"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("model_users.id"), nullable=False, index=True)
+    
+    category = Column(String(255), nullable=False)
+    
+    market_trend = Column(String(50), nullable=True)
+    average_price = Column(Float, nullable=True)
+    price_range_min = Column(Float, nullable=True)
+    price_range_max = Column(Float, nullable=True)
+    
+    demand_level = Column(String(50), nullable=True)
+    supply_level = Column(String(50), nullable=True)
+    
+    competitive_intensity = Column(String(50), nullable=True)
+    
+    opportunities = Column(Text, nullable=True)
+    risks = Column(Text, nullable=True)
+    
+    insights_count = Column(Integer, default=0)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", backref="market_insights")
+
+    def __repr__(self):
+        return f"<MarketInsight user={self.user_id} category={self.category}>"
+
+
+class MLModel(Base):
+    __tablename__ = "ml_models"
+
+    id = Column(Integer, primary_key=True)
+    
+    model_type = Column(String(100), nullable=False)
+    model_name = Column(String(255), nullable=False)
+    
+    version = Column(String(50), default="1.0")
+    
+    accuracy = Column(Float, nullable=True)
+    precision = Column(Float, nullable=True)
+    recall = Column(Float, nullable=True)
+    f1_score = Column(Float, nullable=True)
+    
+    training_date = Column(DateTime, nullable=True)
+    training_samples = Column(Integer, default=0)
+    
+    parameters = Column(Text, nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    last_updated = Column(DateTime, default=datetime.utcnow)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<MLModel {self.model_name}>"
 
 
 if __name__ == "__main__":

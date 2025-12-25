@@ -60,6 +60,11 @@ from agent import get_mail_settings, send_mail
 from routes.admin import bp as admin_bp
 from routes.webhooks import webhooks_bp
 from routes.api_keys import api_keys_bp
+from routes.sms_notifications import sms_bp
+from routes.reports import reports_bp
+from routes.roles import roles_bp
+from routes.reseller import reseller_bp
+from routes.ml_analytics import ml_bp
 from flasgger import Flasgger
 
 
@@ -186,6 +191,11 @@ app.register_blueprint(notifications_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(webhooks_bp)
 app.register_blueprint(api_keys_bp)
+app.register_blueprint(sms_bp)
+app.register_blueprint(reports_bp)
+app.register_blueprint(roles_bp)
+app.register_blueprint(reseller_bp)
+app.register_blueprint(ml_bp)
 
 Base.metadata.create_all(bind=engine)
 
@@ -5504,6 +5514,20 @@ def view_webhooks():
 def view_api_keys():
     """API Keys & Documentation page"""
     return render_template("api_keys.html")
+
+
+@app.route("/sms-settings", methods=["GET"])
+@login_required
+def view_sms_settings():
+    """SMS Notifications settings page"""
+    return render_template("sms_settings.html")
+
+
+@app.route("/reports", methods=["GET"])
+@login_required
+def view_reports():
+    """Reports and PDF export page"""
+    return render_template("reports.html")
 
 
 def process_affiliate_conversion(user_id, db=None):
