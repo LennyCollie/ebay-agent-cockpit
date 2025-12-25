@@ -178,43 +178,67 @@
     </div>
   {% endif %}
 
-  <!-- ============ PLANS (3-Spalten) ============ -->
-  <div class="row g-4 row-cols-1 row-cols-md-3 align-items-stretch mb-4">
+  <!-- ============ PLANS (6-Tier) ============ -->
+  <div class="row g-4 align-items-stretch mb-4">
 
     <!-- Free -->
-    <div class="col">
+    <div class="col-12 col-md-6 col-lg-4">
       <div class="card pricing-card h-100 shadow-sm border-0">
         <div class="card-body p-4 d-flex flex-column">
           <h3 class="h4 mb-2 fw-bold">Free</h3>
-          <p class="text-muted mb-3">Ideal zum Ausprobieren</p>
+          <p class="text-muted mb-3">Kostenlos testen</p>
           <div class="mb-3">
             <span class="price-amount">0 €</span>
             <span class="price-period">/ immer</span>
           </div>
           <ul class="feature-list flex-grow-1">
-            <li>3 Suchen gratis</li>
+            <li>5 Alerts</li>
+            <li>10 Produkte</li>
             <li>Basisfunktionen</li>
-            <li>Teilen-Links</li>
           </ul>
           <a href="{{ url_for('search.search_page') }}" class="btn btn-outline-primary btn-pricing w-100 mt-auto">Kostenlos starten</a>
         </div>
       </div>
     </div>
 
-    <!-- Basic -->
-    <div class="col">
-      <div class="card pricing-card h-100 shadow border-0 border-primary border-2">
+    <!-- Starter -->
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card pricing-card h-100 shadow-sm border-0">
         <div class="card-body p-4 d-flex flex-column">
-          <h3 class="h4 mb-2 fw-bold">Basic</h3>
-          <p class="text-muted mb-3">Mehr Alerts, schneller</p>
+          <h3 class="h4 mb-2 fw-bold">Starter</h3>
+          <p class="text-muted mb-3">Mit SMS-Alerts</p>
           <div class="mb-3">
-            <span class="price-amount">7 €</span>
+            <span class="price-amount">4,99 €</span>
             <span class="price-period">/ Monat</span>
           </div>
           <ul class="feature-list flex-grow-1">
-            <li>10 Alerts</li>
-            <li>Schnellere Intervalle</li>
-            <li>Telegram inkl.</li>
+            <li>25 Alerts</li>
+            <li>50 Produkte</li>
+            <li>SMS-Benachrichtigungen</li>
+          </ul>
+          <form method="post" action="/checkout" class="mt-auto">
+            <input type="hidden" name="price" value="starter">
+            <button class="btn btn-primary btn-pricing w-100" type="submit">Starter wählen</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Basic -->
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card pricing-card h-100 shadow-sm border-0">
+        <div class="card-body p-4 d-flex flex-column">
+          <h3 class="h4 mb-2 fw-bold">Basic</h3>
+          <p class="text-muted mb-3">Mit PDF-Reports</p>
+          <div class="mb-3">
+            <span class="price-amount">9,99 €</span>
+            <span class="price-period">/ Monat</span>
+          </div>
+          <ul class="feature-list flex-grow-1">
+            <li>100 Alerts</li>
+            <li>200 Produkte</li>
+            <li>PDF-Reports</li>
+            <li>SMS-Alerts</li>
           </ul>
           <form method="post" action="/checkout" class="mt-auto">
             <input type="hidden" name="price" value="basic">
@@ -225,20 +249,21 @@
     </div>
 
     <!-- Pro -->
-    <div class="col">
+    <div class="col-12 col-md-6 col-lg-4">
       <div class="card pricing-card featured h-100 shadow-lg border-0">
-        <span class="badge badge-popular text-white">⭐ Beliebtester Plan</span>
+        <span class="badge badge-popular text-white">EMPFOHLEN</span>
         <div class="card-body p-4 d-flex flex-column pt-5">
           <h3 class="h4 mb-2 fw-bold">Pro</h3>
           <p class="text-muted mb-3">Für Power-User</p>
           <div class="mb-3">
-            <span class="price-amount">15 €</span>
+            <span class="price-amount">19,99 €</span>
             <span class="price-period">/ Monat</span>
           </div>
           <ul class="feature-list flex-grow-1">
-            <li>30 Alerts</li>
-            <li>Nahezu Echtzeit</li>
-            <li>Telegram inkl., CSV-Export</li>
+            <li>500 Alerts</li>
+            <li>1000 Produkte</li>
+            <li>API-Zugriff</li>
+            <li>Priority Support</li>
           </ul>
           <form method="post" action="/checkout" class="mt-auto">
             <input type="hidden" name="price" value="pro">
@@ -248,31 +273,51 @@
       </div>
     </div>
 
-  </div>
-
-  <!-- Team (eigene Reihe, zentriert) -->
-  <div class="row g-4 justify-content-center">
-    <div class="col-12 col-md-8 col-lg-6">
-      <div class="card pricing-card h-100 shadow border-0 border-dark border-2">
+    <!-- Enterprise -->
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card pricing-card h-100 shadow-sm border-0">
         <div class="card-body p-4 d-flex flex-column">
-          <h3 class="h4 mb-2 fw-bold">Team</h3>
-          <p class="text-muted mb-3">Für Profis & Teams</p>
+          <h3 class="h4 mb-2 fw-bold">Enterprise</h3>
+          <p class="text-muted mb-3">Für Profis</p>
           <div class="mb-3">
-            <span class="price-amount">29 €</span>
+            <span class="price-amount">49,99 €</span>
             <span class="price-period">/ Monat</span>
           </div>
           <ul class="feature-list flex-grow-1">
-            <li>100 Alerts</li>
-            <li>Priorisierte Abfragen</li>
-            <li>Mehrere Nutzer & Rollen</li>
+            <li>5000 Alerts</li>
+            <li>10000 Produkte</li>
+            <li>Advanced Analytics</li>
+            <li>Dedicated Support</li>
           </ul>
           <form method="post" action="/checkout" class="mt-auto">
-            <input type="hidden" name="price" value="team">
-            <button class="btn btn-dark btn-pricing w-100" type="submit">Team wählen</button>
+            <input type="hidden" name="price" value="enterprise">
+            <button class="btn btn-dark btn-pricing w-100" type="submit">Enterprise wählen</button>
           </form>
         </div>
       </div>
     </div>
+
+    <!-- Custom -->
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card pricing-card h-100 shadow-sm border-0">
+        <div class="card-body p-4 d-flex flex-column">
+          <h3 class="h4 mb-2 fw-bold">Custom</h3>
+          <p class="text-muted mb-3">White-Label & Reseller</p>
+          <div class="mb-3">
+            <span class="price-amount">ab 99 €</span>
+            <span class="price-period">/ Monat</span>
+          </div>
+          <ul class="feature-list flex-grow-1">
+            <li>Unlimited Alerts</li>
+            <li>Unlimited Produkte</li>
+            <li>White-Label Branding</li>
+            <li>Reseller API</li>
+          </ul>
+          <a href="mailto:info@ebay-agent-cockpit.de" class="btn btn-outline-dark btn-pricing w-100 mt-auto">Kontaktieren</a>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- ============ FEATURE COMPARISON ============ -->
@@ -284,45 +329,75 @@
           <tr>
             <th>Funktion</th>
             <th class="text-center">Free</th>
+            <th class="text-center">Starter</th>
             <th class="text-center">Basic</th>
             <th class="text-center">Pro</th>
-            <th class="text-center">Team</th>
+            <th class="text-center">Enterprise</th>
+            <th class="text-center">Custom</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td><strong>Suchagenten</strong></td>
-            <td class="text-center">3</td>
-            <td class="text-center">10</td>
-            <td class="text-center">30</td>
+            <td><strong>Max. Alerts</strong></td>
+            <td class="text-center">5</td>
+            <td class="text-center">25</td>
             <td class="text-center">100</td>
+            <td class="text-center">500</td>
+            <td class="text-center">5000</td>
+            <td class="text-center">Unlimited</td>
           </tr>
           <tr>
-            <td><strong>Intervall</strong></td>
-            <td class="text-center">Standard</td>
-            <td class="text-center"><span class="badge bg-primary">Schneller</span></td>
-            <td class="text-center"><span class="badge bg-success">Sehr schnell</span></td>
-            <td class="text-center"><span class="badge bg-dark">Priorisiert</span></td>
+            <td><strong>Max. Produkte</strong></td>
+            <td class="text-center">10</td>
+            <td class="text-center">50</td>
+            <td class="text-center">200</td>
+            <td class="text-center">1000</td>
+            <td class="text-center">10000</td>
+            <td class="text-center">Unlimited</td>
           </tr>
           <tr>
-            <td><strong>E-Mail-Benachrichtigungen</strong></td>
+            <td><strong>SMS-Alerts</strong></td>
+            <td class="text-center">—</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+          </tr>
+          <tr>
+            <td><strong>PDF-Reports</strong></td>
+            <td class="text-center">—</td>
+            <td class="text-center">—</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+            <td class="text-center">✔</td>
+          </tr>
+          <tr>
+            <td><strong>API-Zugriff</strong></td>
+            <td class="text-center">—</td>
+            <td class="text-center">—</td>
             <td class="text-center">—</td>
             <td class="text-center">✔</td>
             <td class="text-center">✔</td>
             <td class="text-center">✔</td>
           </tr>
           <tr>
-            <td><strong>Telegram Alerts</strong></td>
+            <td><strong>Priority Support</strong></td>
+            <td class="text-center">—</td>
+            <td class="text-center">—</td>
             <td class="text-center">—</td>
             <td class="text-center">✔</td>
             <td class="text-center">✔</td>
             <td class="text-center">✔</td>
           </tr>
           <tr>
-            <td><strong>CSV-Export</strong></td>
+            <td><strong>White-Label</strong></td>
             <td class="text-center">—</td>
             <td class="text-center">—</td>
-            <td class="text-center">✔</td>
+            <td class="text-center">—</td>
+            <td class="text-center">—</td>
+            <td class="text-center">—</td>
             <td class="text-center">✔</td>
           </tr>
         </tbody>

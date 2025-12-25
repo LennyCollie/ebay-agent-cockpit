@@ -1,0 +1,595 @@
+{% extends "base.html" %}
+{% block title %}SMS-Benachrichtigungen{% endblock %}
+{% block content %}
+
+<style>
+  .sms-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  .header {
+    margin-bottom: 32px;
+  }
+
+  .section-title {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #1f2937;
+  }
+
+  .section-subtitle {
+    color: #6b7280;
+    font-size: 0.95rem;
+    margin-bottom: 24px;
+  }
+
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 24px;
+  }
+
+  .info-box {
+    background: #eff6ff;
+    border-left: 4px solid #3b82f6;
+    padding: 16px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    color: #1e40af;
+  }
+
+  .form-group {
+    margin-bottom: 20px;
+  }
+
+  .form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #374151;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.95rem;
+  }
+
+  .form-group input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  }
+
+  .btn-secondary {
+    background: #e5e7eb;
+    color: #374151;
+  }
+
+  .btn-secondary:hover {
+    background: #d1d5db;
+  }
+
+  .btn-danger {
+    background: #ef4444;
+    color: white;
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .status-verified {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .status-unverified {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .verification-input {
+    max-width: 200px;
+  }
+
+  .verification-code {
+    letter-spacing: 2px;
+    font-size: 1.1rem;
+    font-weight: bold;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 20px;
+  }
+
+  .stat-box {
+    background: #f9fafb;
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+  }
+
+  .stat-label {
+    color: #6b7280;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #1f2937;
+  }
+
+  .alert-type-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .alert-checkbox {
+    display: flex;
+    align-items: center;
+  }
+
+  .alert-checkbox input[type="checkbox"] {
+    width: auto;
+    margin-right: 8px;
+  }
+
+  .logs-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+  }
+
+  .logs-table th {
+    background: #f3f4f6;
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  .logs-table td {
+    padding: 12px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .status-sent {
+    color: #16a34a;
+  }
+
+  .status-failed {
+    color: #dc2626;
+  }
+
+  .status-pending {
+    color: #ea580c;
+  }
+</style>
+
+<div class="sms-container">
+  <div class="header">
+    <h1 class="section-title">📱 SMS-Benachrichtigungen</h1>
+    <p class="section-subtitle">Erhalte Echtzeit-Alerts per SMS für deine wichtigsten Searches</p>
+  </div>
+
+  <!-- Info Box -->
+  <div class="info-box">
+    <strong>💡 Hinweis:</strong> SMS-Benachrichtigungen sind je nach Plan verfügbar. 
+    Kosten: ca. €0,05 pro SMS. Der tägliche Limit wird automatisch durchgesetzt.
+  </div>
+
+  <!-- Settings Card -->
+  <div class="card">
+    <h2 style="font-size: 1.3rem; margin-bottom: 20px;">📋 Telefoneinstellungen</h2>
+
+    <!-- Phone Setup -->
+    <div id="phoneSetup">
+      <div class="form-group">
+        <label>Telefonnummer</label>
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+          <input 
+            type="tel" 
+            id="phoneInput" 
+            placeholder="+49123456789 oder 0123456789" 
+            style="flex: 1;"
+          >
+          <button class="btn btn-primary" onclick="initiatePhoneVerification()">Code senden</button>
+        </div>
+        <small style="color: #6b7280;">Gib deine Nummer im Format +49... oder 0... ein</small>
+      </div>
+
+      <!-- Verification Code -->
+      <div id="verificationDiv" style="display: none; margin-top: 20px;">
+        <div class="form-group">
+          <label>Bestätigungscode</label>
+          <div style="display: flex; gap: 10px;">
+            <input 
+              type="text" 
+              id="verificationCode" 
+              placeholder="000000" 
+              maxlength="6" 
+              class="verification-input verification-code"
+            >
+            <button class="btn btn-primary" onclick="verifyPhoneNumber()">Bestätigen</button>
+            <button class="btn btn-secondary" onclick="cancelVerification()">Abbrechen</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Display -->
+      <div id="phoneStatus" style="margin-top: 20px; display: none;">
+        <p>Telefonnummer: <span id="phoneDisplay"></span> 
+          <span id="verifyBadge" class="status-badge"></span>
+        </p>
+        <button class="btn btn-secondary" onclick="removePhone()">Nummer ändern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Card -->
+  <div class="card">
+    <h2 style="font-size: 1.3rem; margin-bottom: 20px;">⚙️ Benachrichtigungseinstellungen</h2>
+
+    <!-- Enable/Disable Toggle -->
+    <div class="form-group">
+      <label>
+        <input type="checkbox" id="enableSMS" onchange="toggleSMSEnabled()">
+        SMS-Benachrichtigungen aktivieren
+      </label>
+    </div>
+
+    <!-- Alert Types -->
+    <div class="form-group">
+      <label>Welche Alerts möchtest du per SMS erhalten?</label>
+      <div class="alert-type-list">
+        <div class="alert-checkbox">
+          <input type="checkbox" name="alert_type" value="price_drop"> Preis-Drop
+        </div>
+        <div class="alert-checkbox">
+          <input type="checkbox" name="alert_type" value="new_item"> Neuer Artikel
+        </div>
+        <div class="alert-checkbox">
+          <input type="checkbox" name="alert_type" value="auction_ending"> Auktion endet
+        </div>
+        <div class="alert-checkbox">
+          <input type="checkbox" name="alert_type" value="bid_outbid"> Überboten
+        </div>
+        <div class="alert-checkbox">
+          <input type="checkbox" name="alert_type" value="item_sold"> Verkauft
+        </div>
+        <div class="alert-checkbox">
+          <input type="checkbox" name="alert_type" value="daily_summary"> Tägliche Zusammenfassung
+        </div>
+      </div>
+    </div>
+
+    <!-- Daily Limit -->
+    <div class="form-group">
+      <label>Max. SMS pro Tag</label>
+      <select id="maxSmsPerDay">
+        <option value="5">5 SMS</option>
+        <option value="10">10 SMS</option>
+        <option value="20">20 SMS</option>
+        <option value="50">50 SMS (Unlimited)</option>
+      </select>
+    </div>
+
+    <!-- Quiet Hours -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+      <div class="form-group">
+        <label>Stille Stunden (von)</label>
+        <input type="time" id="quietStart" value="22:00">
+      </div>
+      <div class="form-group">
+        <label>Stille Stunden (bis)</label>
+        <input type="time" id="quietEnd" value="08:00">
+      </div>
+    </div>
+
+    <!-- Save Settings -->
+    <div style="display: flex; gap: 10px; margin-top: 20px;">
+      <button class="btn btn-primary" onclick="saveSettings()">Einstellungen speichern</button>
+      <button class="btn btn-secondary" onclick="sendTestSMS()">Test-SMS senden</button>
+    </div>
+  </div>
+
+  <!-- Statistics Card -->
+  <div class="card">
+    <h2 style="font-size: 1.3rem; margin-bottom: 20px;">📊 Statistiken</h2>
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-box">
+        <div class="stat-label">SMS heute</div>
+        <div class="stat-value" id="todaySent">-</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">SMS diesen Monat</div>
+        <div class="stat-value" id="monthSent">-</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Gesamt SMS</div>
+        <div class="stat-value" id="totalSent">-</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Kosten (total)</div>
+        <div class="stat-value" id="totalCost">-</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity Log Card -->
+  <div class="card">
+    <h2 style="font-size: 1.3rem; margin-bottom: 20px;">📋 SMS-Aktivitätslog</h2>
+    <table class="logs-table">
+      <thead>
+        <tr>
+          <th>Zeit</th>
+          <th>Typ</th>
+          <th>Nachricht</th>
+          <th>Status</th>
+          <th>Kosten</th>
+        </tr>
+      </thead>
+      <tbody id="logsTableBody">
+        <tr>
+          <td colspan="5" style="text-align: center; color: #9ca3af;">Lade Logs...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Danger Zone -->
+  <div class="card" style="border: 2px solid #fee2e2; background: #fef2f2;">
+    <h2 style="font-size: 1.3rem; margin-bottom: 20px; color: #991b1b;">⚠️ SMS komplett deaktivieren</h2>
+    <p style="color: #7f1d1d; margin-bottom: 20px;">
+      Wenn du SMS-Benachrichtigungen nicht mehr möchtest, kannst du sie hier komplett deaktivieren.
+    </p>
+    <button class="btn btn-danger" onclick="disableSMSCompletely()">SMS komplett deaktivieren</button>
+  </div>
+</div>
+
+<script>
+async function loadSettings() {
+  try {
+    const [settingsRes, statsRes, logsRes, typesRes] = await Promise.all([
+      fetch('/api/sms/settings'),
+      fetch('/api/sms/statistics'),
+      fetch('/api/sms/logs'),
+      fetch('/api/sms/alert-types')
+    ]);
+
+    const settings = await settingsRes.json();
+    const stats = await statsRes.json();
+    const logs = await logsRes.json();
+    const types = await typesRes.json();
+
+    // Load settings
+    if (settings.success && settings.data) {
+      const data = settings.data;
+      document.getElementById('enableSMS').checked = data.is_enabled;
+      document.getElementById('maxSmsPerDay').value = data.max_sms_per_day;
+      document.getElementById('quietStart').value = data.quiet_hours_start;
+      document.getElementById('quietEnd').value = data.quiet_hours_end;
+
+      if (data.phone_verified) {
+        document.getElementById('phoneSetup').style.display = 'none';
+        document.getElementById('phoneStatus').style.display = 'block';
+        document.getElementById('phoneDisplay').textContent = data.phone_number || 'Unbekannt';
+        document.getElementById('verifyBadge').textContent = '✓ Verifiziert';
+        document.getElementById('verifyBadge').className = 'status-badge status-verified';
+      }
+
+      // Check alert types
+      document.querySelectorAll('input[name="alert_type"]').forEach(cb => {
+        cb.checked = data.alert_types.includes(cb.value);
+      });
+    }
+
+    // Load stats
+    if (stats.success && stats.data) {
+      const d = stats.data;
+      document.getElementById('todaySent').textContent = d.today_sent || '0';
+      document.getElementById('monthSent').textContent = d.month_sent || '0';
+      document.getElementById('totalSent').textContent = d.total_sms_sent || '0';
+      document.getElementById('totalCost').textContent = `€${d.total_cost || '0.00'}`;
+    }
+
+    // Load logs
+    if (logs.success && logs.data) {
+      const tbody = document.getElementById('logsTableBody');
+      tbody.innerHTML = '';
+      logs.data.forEach(log => {
+        const row = tbody.insertRow();
+        row.innerHTML = `
+          <td>${new Date(log.created_at).toLocaleString('de-DE')}</td>
+          <td>${log.alert_type || 'N/A'}</td>
+          <td>${log.message}</td>
+          <td><span class="status-${log.status}">${log.status.toUpperCase()}</span></td>
+          <td>${log.cost}</td>
+        `;
+      });
+      if (logs.data.length === 0) {
+        const row = tbody.insertRow();
+        row.innerHTML = '<td colspan="5" style="text-align: center; color: #9ca3af;">Keine SMS-Logs vorhanden</td>';
+      }
+    }
+  } catch (error) {
+    console.error('Error loading settings:', error);
+  }
+}
+
+async function initiatePhoneVerification() {
+  const phone = document.getElementById('phoneInput').value;
+  if (!phone) {
+    alert('Bitte Telefonnummer eingeben');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/sms/settings/initiate-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone_number: phone })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      document.getElementById('verificationDiv').style.display = 'block';
+      alert('Verificationscode gesendet!');
+    } else {
+      alert('Error: ' + data.message);
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Fehler beim Senden des Codes');
+  }
+}
+
+async function verifyPhoneNumber() {
+  const code = document.getElementById('verificationCode').value;
+  if (!code || code.length !== 6) {
+    alert('Bitte 6-stelligen Code eingeben');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/sms/settings/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      alert('Telefonnummer verifiziert!');
+      loadSettings();
+    } else {
+      alert('Error: ' + data.message);
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Verifizierungsfehler');
+  }
+}
+
+function cancelVerification() {
+  document.getElementById('verificationDiv').style.display = 'none';
+  document.getElementById('verificationCode').value = '';
+}
+
+function removePhone() {
+  document.getElementById('phoneSetup').style.display = 'block';
+  document.getElementById('phoneStatus').style.display = 'none';
+  document.getElementById('phoneInput').value = '';
+}
+
+function toggleSMSEnabled() {
+  // Will be saved with saveSettings()
+}
+
+async function saveSettings() {
+  const alert_types = Array.from(document.querySelectorAll('input[name="alert_type"]:checked'))
+    .map(cb => cb.value);
+
+  try {
+    const res = await fetch('/api/sms/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        is_enabled: document.getElementById('enableSMS').checked,
+        alert_types,
+        max_sms_per_day: parseInt(document.getElementById('maxSmsPerDay').value),
+        quiet_hours_start: document.getElementById('quietStart').value,
+        quiet_hours_end: document.getElementById('quietEnd').value
+      })
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+      alert('Einstellungen gespeichert!');
+    } else {
+      alert('Error: ' + data.message);
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Fehler beim Speichern');
+  }
+}
+
+async function sendTestSMS() {
+  try {
+    const res = await fetch('/api/sms/test', { method: 'POST' });
+    const data = await res.json();
+    alert(data.message);
+    setTimeout(loadSettings, 2000);
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Fehler beim Senden der Test-SMS');
+  }
+}
+
+async function disableSMSCompletely() {
+  if (!confirm('Bist du sicher? SMS-Benachrichtigungen werden komplett deaktiviert.')) {
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/sms/disable', { method: 'POST' });
+    const data = await res.json();
+    
+    if (data.success) {
+      alert('SMS-Benachrichtigungen deaktiviert');
+      loadSettings();
+    } else {
+      alert('Error: ' + data.message);
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Fehler beim Deaktivieren');
+  }
+}
+
+// Load settings on page load
+document.addEventListener('DOMContentLoaded', loadSettings);
+</script>
+
+{% endblock %}
