@@ -4,6 +4,11 @@
 __pycache__/
 *.pyc
 instance/
+node_modules/
+.next/
+dist/
+build/
+package-lock.json
 .env.*
 *.sqlite3
 *.log
