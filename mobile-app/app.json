@@ -22,18 +22,7 @@
     },
     "plugins": [
       "expo-router",
-      "expo-notifications",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "usesCleartextTraffic": true
-          },
-          "ios": {
-            "useFrameworks": "static"
-          }
-        }
-      ]
+      "expo-notifications"
     ],
     "schemes": [
       "ebayagent"
