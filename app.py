@@ -64,7 +64,10 @@ from routes.sms_notifications import sms_bp
 from routes.reports import reports_bp
 from routes.roles import roles_bp
 from routes.reseller import reseller_bp
-from routes.ml_analytics import ml_bp
+try:
+    from routes.ml_analytics import ml_bp
+except ImportError:
+    ml_bp = None
 from flasgger import Flasgger
 
 

@@ -9,9 +9,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <title>{{ title or "Super-Agent – eBay-Schnäppchen in Echtzeit" }}</title>
+  <title>{{ title or "Super-Agent – Professionelles eBay-Monitoring in Echtzeit" }}</title>
   <meta name="description"
-    content="{{ meta_desc or 'Erhalte E-Mails in Minuten, sobald neue eBay- oder Kleinanzeigen-Angebote erscheinen – inkl. Preis- & Zustands-Filtern.' }}" />
+    content="{{ meta_desc or 'Professionelle Echtzeit-Benachrichtigungen für neue eBay-Angebote. Mit intelligenten Filtern, Telegram-Support und CSV-Export.' }}" />
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
 
@@ -119,7 +119,7 @@
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
       <a class="navbar-brand d-flex align-items-center" href="{{ url_for('public_home') }}">
-        🚀 Super-Agent
+        Super-Agent
         <span class="badge bg-secondary ms-2" style="font-size: 0.7rem"> BETA </span>
       </a>
 
@@ -133,7 +133,7 @@
           {% if current_user.is_authenticated %} {# Admin-Link nur für Admin-User #} {% if
           current_user.is_admin %}
           <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-light btn-sm me-1">
-            🛠️ Admin
+            Admin
           </a>
           {% endif %}
 
@@ -148,12 +148,12 @@
           </a>
 
           <a href="{{ url_for('watchlist.index') }}" class="btn btn-outline-light btn-sm me-1">
-            📌 Watchlist
+            Watchlist
           </a>
 
           <a href="{{ url_for('alerts.manage_alerts') }}"
             class="btn btn-outline-light btn-sm me-1 {% if request.endpoint and request.endpoint.startswith('alerts.') %} active border-white {% endif %}">
-            🔔 Alerts
+            Alerts
           </a>
 
           <a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm"> Logout </a>
@@ -183,17 +183,16 @@
       <div class="card shadow-sm border-0 bg-light">
         <div class="card-body py-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center">
           <div class="mb-2 mb-md-0 small">
-            <strong>Feedback willkommen 💬</strong><br />
-            Fehler entdeckt oder eine Idee für ein Feature? Schreib mir kurz – das hier ist noch
-            eine Beta.
+            <strong>Feedback & Support</strong><br />
+            Haben Sie Fragen oder Anregungen? Wir freuen uns über Ihre Nachricht während unserer Beta-Phase.
           </div>
           <div class="small">
-            <a href="mailto:markus.lenny@freenet.de?subject=Feedback%20Super-Agent"
+            <a href="mailto:support@ebay-agent-cockpit.de?subject=Feedback%20Super-Agent"
               class="btn btn-sm btn-outline-secondary me-2">
-              ✉️ Feedback per E-Mail
+              E-Mail Support
             </a>
             <a href="https://wa.me/4915562753270" target="_blank" class="btn btn-sm btn-outline-success">
-              💬 Feedback per WhatsApp
+              WhatsApp Support
             </a>
           </div>
         </div>

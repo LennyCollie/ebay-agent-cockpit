@@ -5,7 +5,7 @@
       class="navbar-brand"
       href="{{ url_for('dashboard') if session.get('user_id') else url_for('public_home') }}"
     >
-      🚀 Super-Agent {% if session.get('is_admin') %}
+      Super-Agent {% if session.get('is_admin') %}
       <span class="badge bg-warning text-dark ms-2">Admin</span>
       {% endif %}
     </a>
@@ -42,7 +42,7 @@
             class="nav-link {% if request.endpoint in ['search.search_page', 'search.search_legacy'] %}active{% endif %}"
             href="{{ url_for('search.search_page') }}"
           >
-            🔍 Suche
+            Suche
           </a>
         </li>
 
@@ -51,7 +51,7 @@
             class="nav-link {% if '/alerts' in request.path %}active{% endif %}"
             href="{{ url_for('alerts_manage') }}"
           >
-            🔔 Alerts
+            Alerts
           </a>
         </li>
 
@@ -60,7 +60,7 @@
             class="nav-link {% if request.endpoint == 'watchlist' %}active{% endif %}"
             href="{{ url_for('watchlist') }}"
           >
-            ⭐ Watchlist
+            Watchlist
           </a>
         </li>
 
@@ -69,7 +69,7 @@
             class="nav-link {% if request.endpoint == 'telegram_settings' %}active{% endif %}"
             href="{{ url_for('telegram_settings') }}"
           >
-            💬 Telegram
+            Telegram
           </a>
         </li>
 
@@ -79,7 +79,7 @@
             class="nav-link {% if request.endpoint == 'admin_stats' %}active{% endif %}"
             href="{{ url_for('admin_stats') }}"
           >
-            📊 Admin
+            Admin
           </a>
         </li>
         {% endif %}

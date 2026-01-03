@@ -55,7 +55,7 @@
     </a>
   </div>
 
-  {# --- Meta-Suche auf andere Portale (Quoka, Shpock, …) ------------------ #}
+  {# --- Auto-Portale und Partner-Portale ---------------------------------- #}
   {% set q1 = request.args.get('q1', '') %}
   {% set q2 = request.args.get('q2', '') %}
   {% set q3 = request.args.get('q3', '') %}
@@ -64,33 +64,27 @@
   <div class="alert alert-light border small d-flex flex-column flex-md-row
               justify-content-between align-items-md-center mb-3">
     <div class="mb-2 mb-md-0">
-      <strong>Auch auf anderen Portalen schauen?</strong><br>
+      <strong>🚗 Auto-Portal-Suche</strong><br>
       <span class="text-muted">
-        Diese Buttons öffnen eine Google-Suche mit deinem Begriff nur auf dem jeweiligen Portal.
-        (Wenn du noch keinen Begriff eingegeben hast, siehst du einfach alle Treffer des Portals.)
+        Suchbegriff auf Auto-Portalen eingeben – neue Angebote schneller finden!
       </span>
     </div>
 
     <div class="btn-group btn-group-sm flex-wrap">
-      <a class="btn btn-outline-secondary"
-         href="https://www.google.com/search?q=site:quoka.de+{{ q_main|replace(' ', '+') }}"
+      <a class="btn btn-outline-primary"
+         href="https://www.mobile.de/?search={{ q_main|replace(' ', '+') }}"
          target="_blank" rel="noopener">
-        Quoka
+        🚗 Mobile.de
       </a>
-      <a class="btn btn-outline-secondary"
-         href="https://www.google.com/search?q=site:shpock.com+{{ q_main|replace(' ', '+') }}"
+      <a class="btn btn-outline-primary"
+         href="https://www.autoscout24.de/?search={{ q_main|replace(' ', '+') }}"
          target="_blank" rel="noopener">
-        Shpock
+        🚗 Autoscout24
       </a>
-      <a class="btn btn-outline-secondary"
-         href="https://www.google.com/search?q=site:kleinanzeigen.de+{{ q_main|replace(' ', '+') }}"
+      <a class="btn btn-outline-warning"
+         href="https://www.ebay.de/sch/i.html?_nkw={{ q_main|replace(' ', '+') }}&_sacat=6004"
          target="_blank" rel="noopener">
-        Kleinanzeigen.de (Google)
-      </a>
-      <a class="btn btn-outline-secondary"
-         href="https://www.google.com/search?q=site:facebook.com+Marketplace+{{ q_main|replace(' ', '+') }}"
-         target="_blank" rel="noopener">
-        Facebook Marketplace
+        🚗 eBay Motors
       </a>
     </div>
   </div>
