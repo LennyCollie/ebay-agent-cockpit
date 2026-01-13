@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}KI-Helfer Test{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <h1 class="h3 mb-3">🤖 KI-Helfer – Testseite</h1>
+    <p class="text-muted">
+        Tippe eine Frage ein (z.B. „Mach mir einen besseren eBay-Titel für iPhone 12 64GB“)
+        und klicke auf „Fragen“.
+    </p>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="mb-3">
+                <label for="aiQuestion" class="form-label">Frage an die KI</label>
+                <textarea id="aiQuestion" class="form-control" rows="4"
+                    placeholder="Schreibe hier deine Frage..."></textarea>
+            </div>
+
+            <button id="btnAsk" class="btn btn-primary">
+                💡 Fragen
+            </button>
+            <span id="aiStatus" class="ms-2 text-muted small"></span>
+
+            <hr>
+
+            <label class="form-label">Antwort</label>
+            <pre id="aiAnswer" class="form-control" style="min-height: 150px; white-space: pre-wrap;"></pre>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const btn = document.getElementById('btnAsk');
+        const qEl = document.getElementById('aiQuestion');
+        const aEl = document.getElementById('aiAnswer');
+        const stat = document.getElementById('aiStatus');
+
+        if (!btn || !qEl || !aEl) return;
+
+        btn.addEventListener('click', async function () {
+            const question = (qEl.value || '').trim();
+            if (!question) {
+                alert('Bitte eine Frage eingeben.');
+                return;
+            }
+
+            btn.disabled = true;
+            stat.textContent = 'Frage wird an die KI gesendet...';
+            aEl.textContent = '';
+
+            try {
+                const res = await fetch('/ai/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question })
+                });
+
+                const data = await res.json();
+
+                if (!data.ok) {
+                    aEl.textContent = 'Fehler: ' + (data.error || 'Unbekannt');
+                } else {
+                    aEl.textContent = data.answer;
+                }
+            } catch (err) {
+                console.error(err);
+                aEl.textContent = 'Netzwerkfehler beim KI-Aufruf.';
+            } finally {
+                btn.disabled = false;
+                stat.textContent = '';
+            }
+        });
+    });
+</script>
+{% endblock %}

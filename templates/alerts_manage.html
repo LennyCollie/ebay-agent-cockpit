@@ -7,6 +7,34 @@
     </a>
   </div>
 
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Meine Such-Alerts</h1>
+    <a href="{{ url_for('search.search_page') }}" class="btn btn-primary">
+      ➕ Neuen Alert anlegen
+    </a>
+  </div>
+
+  {# 🔹 NEU: KI-Tipps für Alerts -------------------------------------- #}
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>🧠 KI-Tipps für neue Alerts</span>
+      <button type="button" class="btn btn-sm btn-outline-primary" id="btnAiAlertIdeas">
+        Vorschläge von KI holen
+      </button>
+    </div>
+    <div class="card-body">
+      <p class="small text-muted">
+        Beschreibe kurz, was du beobachtest (z.&nbsp;B. „günstige iPhones zum Weiterverkauf“,
+        „Vintage-HiFi aus Deutschland“). Die KI schlägt dir passende Alert-Ideen vor.
+      </p>
+      <textarea id="aiAlertIdeasInput" class="form-control mb-2" rows="2"
+        placeholder="z.B.: &quot;Ich suche Schnäppchen bei gebrauchten iPhone 12 und 13, nur guter Zustand, max. 350€&quot;"></textarea>
+      <textarea id="aiAlertIdeasOutput" class="form-control" rows="6"
+        placeholder="Hier erscheinen konkrete Vorschläge der KI für Suchbegriffe, Preisbereiche und Filter …"></textarea>
+    </div>
+  </div>
+
+
   {# kleine Legende / Filter für Kanäle #} {% if alerts|length > 0 %}
   <div class="alert alert-light border mb-3">
     <div class="d-flex flex-wrap align-items-center gap-2">
@@ -18,21 +46,13 @@
 
       <div class="d-flex flex-wrap align-items-center gap-2">
         <span class="fw-semibold me-1">Filter:</span>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary active"
-          data-channel-filter="all"
-        >
+        <button type="button" class="btn btn-sm btn-outline-secondary active" data-channel-filter="all">
           Alle
         </button>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-channel-filter="email">
           nur 📧
         </button>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary"
-          data-channel-filter="telegram"
-        >
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-channel-filter="telegram">
           nur 💬
         </button>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-channel-filter="both">
@@ -65,10 +85,7 @@
       </thead>
       <tbody>
         {% for alert in alerts %}
-        <tr
-          data-email="{{ 1 if alert.notify_email else 0 }}"
-          data-telegram="{{ 1 if alert.notify_telegram else 0 }}"
-        >
+        <tr data-email="{{ 1 if alert.notify_email else 0 }}" data-telegram="{{ 1 if alert.notify_telegram else 0 }}">
           <td>{{ alert.id }}</td>
 
           <!-- Quelle / Source -->
@@ -127,28 +144,17 @@
           <!-- Aktionen -->
           <td class="text-nowrap">
             {% if is_admin %}
-            <a
-              href="{{ url_for('alert_results', alert_id=alert.id) }}"
-              class="btn btn-sm btn-outline-secondary me-1"
-            >
+            <a href="{{ url_for('alert_results', alert_id=alert.id) }}" class="btn btn-sm btn-outline-secondary me-1">
               🕒 Ergebnisse
             </a>
             {% endif %}
 
-            <form
-              action="{{ url_for('alert_pause', alert_id=a.id) }}"
-              method="post"
-              class="d-inline"
-            >
+            <form action="{{ url_for('alert_pause', alert_id=a.id) }}" method="post" class="d-inline">
               <button class="btn btn-sm btn-outline-secondary ms-1">⏸️ Pausieren</button>
             </form>
 
-            <form
-              action="{{ url_for('alerts.delete_alert', alert_id=a.id) }}"
-              method="post"
-              class="d-inline"
-              onsubmit="return confirm('Alert wirklich komplett löschen? Dies kann nicht rückgängig gemacht werden.');"
-            >
+            <form action="{{ url_for('alerts.delete_alert', alert_id=a.id) }}" method="post" class="d-inline"
+              onsubmit="return confirm('Alert wirklich komplett löschen? Dies kann nicht rückgängig gemacht werden.');">
               <button class="btn btn-sm btn-outline-danger ms-1">🗑️ Löschen</button>
             </form>
           </td>
@@ -160,6 +166,69 @@
 
   {% endif %}
 </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const btn = document.getElementById('btnAiAlertIdeas');
+    const input = document.getElementById('aiAlertIdeasInput');
+    const output = document.getElementById('aiAlertIdeasOutput');
+
+    if (!btn) {
+      console.warn('KI-Alert-Ideen: Button nicht gefunden.');
+      return;
+    }
+
+    btn.addEventListener('click', async function () {
+      const desc = (input.value || '').trim();
+      if (!desc) {
+        output.value = 'Bitte kurz beschreiben, welche Art von Angeboten du mit Alerts überwachen möchtest.';
+        return;
+      }
+
+      const originalText = btn.innerText;
+      btn.disabled = true;
+      btn.innerText = 'Frage KI…';
+
+      const question = `
+Du bist Experte für eBay-Suchalerts und Arbitrage.
+Der Nutzer beschreibt sein Geschäft / seine Interessen.
+Gib konkrete Vorschläge für 3–7 Alerts zurück.
+
+Form:
+- Für jeden Alert:
+  - Titel (kurz)
+  - 2–3 Suchbegriffe (Varianten)
+  - grober Preisbereich in EUR (falls sinnvoll)
+  - empfohlene Quellen (eBay, Kleinanzeigen, beides)
+  - Hinweise zu sinnvollen Zuständen / Filtern
+
+Antworte in gut lesbarem Deutsch als einfache Textliste (kein JSON).
+
+Beschreibung des Nutzers:
+${desc}
+`;
+
+      try {
+        const resp = await fetch('/ai/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question })
+        });
+
+        const data = await resp.json();
+        const text = data.answer || data.message || '(Keine Antwort erhalten)';
+        output.value = text;
+      } catch (err) {
+        console.error(err);
+        output.value = 'Technischer Fehler bei der KI-Anfrage.';
+      } finally {
+        btn.disabled = false;
+        btn.innerText = originalText;
+      }
+    });
+  });
+</script>
+
 
 <script>
   document.addEventListener("DOMContentLoaded", function () {

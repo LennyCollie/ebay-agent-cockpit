@@ -1,363 +1,943 @@
+{# This file intentionally duplicates templates/search.html so the server can render either
+templates/search.html (initial) or templates/search_results.html (when backend passes results)
+and the user sees the unified single-page UI. #}
 {% extends "base.html" %}
-{% block title %}Suche{% endblock %}
 
 {% block content %}
-<div class="container my-4">
+{% set base_qs = base_qs|default({}) %}
+{% set filters = filters|default({}) %}
+{% set pagination = pagination|default({'page': 1, 'has_prev': False, 'has_next': False, 'total_estimated': None,
+'total_pages': None}) %}
+{% set terms = terms|default([]) %}
+{% set results = results|default([]) %}
+{% set source = request.args.get('source', base_qs.get('source', 'ebay')) %}
 
+<div class="container py-4">
   <div class="text-center mb-4">
-    <h1 class="fw-bold">🔍 Super-Agent Suche</h1>
-    <p class="text-muted mb-0">
-      Gib 1–3 Begriffe an, setze optionale Filter – unten erscheinen die Treffer.
-    </p>
+    <h1 class="h3">Suche</h1>
+    <p class="text-muted mb-0">Gib 1–3 Begriffe an, setze optional Filter — unten erscheinen die Treffer.</p>
   </div>
 
-  {# --- Plan-Hinweis -------------------------------------------------------- #}
-  {% if current_user.is_authenticated and plan_info %}
-    <div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-      <div>
-        <strong>Aktiver Plan: {{ plan_info.label }}</strong><br>
-        <span class="small">
-          Deine Alerts laufen ungefähr alle {{ plan_info.interval_min }} Minuten.
-        </span>
+  {# ---------- Toolbar: Alert speichern + Kanäle ---------- #}
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+    <form action="{{ url_for('alerts.alerts_subscribe') }}" method="post" class="m-0">
+
+      {# Suchbegriffe, werden aus 'terms' übernommen #}
+      <input type="hidden" name="q1" value="{{ (terms[0] if terms is defined and terms else '') }}">
+      {% if terms|length > 1 %}
+      <input type="hidden" name="q2" value="{{ terms[1] }}">
+      {% endif %}
+      {% if terms|length > 2 %}
+      <input type="hidden" name="q3" value="{{ terms[2] }}">
+      {% endif %}
+
+      {# Filter – falls definiert #}
+      {% if filters %}
+      <input type="hidden" name="price_min" value="{{ filters.get('price_min','') }}">
+      <input type="hidden" name="price_max" value="{{ filters.get('price_max','') }}">
+      <input type="hidden" name="sort" value="{{ filters.get('sort','best') }}">
+      <input type="hidden" name="location_country" value="{{ filters.get('location_country','DE') }}">
+      <input type="hidden" name="listing_type" value="{{ filters.get('listing_type','') }}">
+
+      {% for c in filters.get('conditions', []) %}
+      <input type="hidden" name="condition" value="{{ c }}">
+      {% endfor %}
+
+      {% if filters.get('free_shipping') %}
+      <input type="hidden" name="free_shipping" value="1">
+      {% endif %}
+      {% if filters.get('returns_accepted') %}
+      <input type="hidden" name="returns_accepted" value="1">
+      {% endif %}
+      {% if filters.get('top_rated_only') %}
+      <input type="hidden" name="top_rated_only" value="1">
+      {% endif %}
+      {% if filters.get('only_main_product') %}
+      <input type="hidden" name="only_main_product" value="1">
+      {% endif %}
+      {% endif %}
+
+      {# Quelle (ebay / kleinanzeigen / both) #}
+      <input type="hidden" name="source" value="{{ source|default(request.args.get('source', 'ebay')) }}">
+
+      <div class="d-flex flex-wrap align-items-center gap-3 mt-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span class="small text-muted">Benachrichtigung per:</span>
+
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input" type="checkbox" id="notify_email" name="notify_email" value="1" {% if
+              current_user.is_authenticated %}checked{% endif %}>
+            <label class="form-check-label small" for="notify_email">
+              E-Mail
+            </label>
+          </div>
+
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input" type="checkbox" id="notify_telegram" name="notify_telegram" value="1" {% if
+              current_user.is_authenticated and current_user.telegram_verified %}checked{% endif %}>
+            <label class="form-check-label small" for="notify_telegram">
+              Telegram
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-outline-primary">
+          🔔 Alarm speichern
+        </button>
       </div>
 
-      <div class="d-flex align-items-center gap-2">
-        <span class="badge bg-primary rounded-pill">
-          ⏱️ Plan-gesteuertes Alert-Intervall
-        </span>
+    </form>
+  </div>
 
-        {% if plan_info.label == "FREE" %}
-          <a href="#"
-             class="btn btn-sm btn-outline-primary disabled"
-             title="Später: Upgrade auf PRO">
-            Upgrade auf PRO
-          </a>
-        {% endif %}
+  {# ---------- KI-Alert-Generator (macht aus Beschreibung einen fertigen Alert) ---------- #}
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>🧠 KI-Alert-Generator</span>
+      <button type="button" class="btn btn-sm btn-outline-primary" id="btnAiAlertGen">
+        Alert von KI vorschlagen
+      </button>
+    </div>
+    <div class="card-body">
+      <p class="small text-muted">
+        Beschreibe kurz, welche Art von Angeboten du überwachen möchtest
+        (z.&nbsp;B. „Schnäppchen-iPhones 12/13 bis 350€“,
+        „Vintage-HiFi nur aus Deutschland“).
+        Die KI schlägt dir automatisch Suchbegriffe, Preisbereich, Zustand,
+        Land, Quelle (eBay / Kleinanzeigen) und Kanäle (E-Mail / Telegram) vor.
+      </p>
+
+      <textarea id="aiAlertInput" class="form-control mb-2" rows="2"
+        placeholder="z.B.: &quot;Günstige iPhone 12 und 13 in gutem Zustand, max. 350€, gerne aus DE oder AT&quot;"></textarea>
+
+      <textarea id="aiAlertOutput" class="form-control" rows="4"
+        placeholder="Hier fasst die KI den vorgeschlagenen Alert zusammen (Suchbegriffe, Preisbereich, Zustand, Quelle, Kanäle …)"></textarea>
+
+      <div class="form-text mt-2">
+        Die KI befüllt automatisch:
+        <strong>Begriff 1–3, Preis-Min/Max, Zustand, Angebotsformat, Land, Quelle</strong>
+        und die Alert-Kanäle (<strong>E-Mail / Telegram</strong>) oben in der Leiste.
+        Du kannst alles danach noch manuell anpassen.
       </div>
     </div>
+  </div>
+  {# ---------- Ende KI-Alert-Generator ---------- #}
+
+  {# ---------- Suchformular ---------- #}
+  <form id="searchForm" action="{{ url_for('search.search_page') }}" method="post" class="card mb-4">
+    <div class="card-body">
+      <div class="row g-3">
+
+        {# --- Begriffe 1–3 -------------------------------------------------- #}
+        <div class="col-md-4">
+          <label class="form-label">Begriff 1</label>
+          <input type="text" class="form-control" name="q1" placeholder="z. B. iPhone 11"
+            value="{{ base_qs.get('q1', request.args.get('q1','')) }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Begriff 2</label>
+          <input type="text" class="form-control" name="q2" placeholder="optional"
+            value="{{ base_qs.get('q2', request.args.get('q2','')) }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Begriff 3</label>
+          <input type="text" class="form-control" name="q3" placeholder="optional"
+            value="{{ base_qs.get('q3', request.args.get('q3','')) }}">
+        </div>
+
+        {# --- KI-Helfer 1: bessere Suchbegriffe ----------------------------- #}
+        <div class="col-12">
+          <div class="border rounded p-3 bg-light-subtle">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <span class="small fw-semibold">🤖 KI-Helfer für Suchbegriffe</span>
+              <button type="button" class="btn btn-sm btn-outline-primary" id="btnAiSearch">
+                KI-Vorschläge holen
+              </button>
+            </div>
+            <div class="small text-muted mb-2">
+              Optional: Beschreibe kurz, was du suchst. Wenn du hier nichts einträgst,
+              benutzt die KI „Begriff 1“ als Ausgangspunkt.
+            </div>
+            <textarea id="aiSearchInput" class="form-control form-control-sm mb-2" rows="2"
+              placeholder="z.B. &quot;Gebrauchtes iPhone 12, guter Zustand, mindestens 64GB&quot;"></textarea>
+            <textarea id="aiSearchOutput" class="form-control form-control-sm" rows="2" placeholder="Hier erscheinen Vorschläge wie z.B.:
+iPhone 12 64GB gebraucht
+iPhone 12 guter Zustand
+Apple iPhone 12 Smartphone"></textarea>
+            <div class="form-text">
+              Die ersten drei Vorschläge werden automatisch auf <strong>Begriff 1–3</strong> verteilt.
+              Du kannst sie danach noch anpassen.
+            </div>
+          </div>
+        </div>
+        {# --- Ende KI-Helfer 1 --------------------------------------------- #}
+
+        {# --- KI-Helfer 2: komplette Suchstrategie ------------------------- #}
+        <div class="col-12">
+          <div class="border rounded p-3 mt-3 bg-white">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <span class="small fw-semibold">🧠 KI-Suchstrategie (Filter &amp; Begriffe)</span>
+              <button type="button" class="btn btn-sm btn-outline-success" id="btnAiStrategy">
+                Suchstrategie vorschlagen
+              </button>
+            </div>
+            <div class="small text-muted mb-2">
+              Die KI liest deine Begriffe und Beschreibung und schlägt passende Filter vor
+              (Preisbereich, Zustand, Angebotsformat, Land). Diese werden automatisch ins Formular übernommen.
+            </div>
+            <textarea id="aiStrategyOutput" class="form-control form-control-sm" rows="3"
+              placeholder="Hier fasst die KI die empfohlene Strategie zusammen (Preisbereich, Zustand, Format, Land …)"></textarea>
+          </div>
+        </div>
+        {# --- Ende KI-Helfer 2 --------------------------------------------- #}
+
+        {# --- Preis / Sortierung / Anzahl ---------------------------------- #}
+        <div class="col-md-3">
+          <label class="form-label">Preis min</label>
+          <input type="number" step="0.01" class="form-control" name="price_min" placeholder="z. B. 50"
+            value="{{ base_qs.get('price_min', request.args.get('price_min','')) }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Preis max</label>
+          <input type="number" step="0.01" class="form-control" name="price_max" placeholder="z. B. 250"
+            value="{{ base_qs.get('price_max', request.args.get('price_max','')) }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Sortierung</label>
+          {% set _sort = base_qs.get('sort', request.args.get('sort','best')) %}
+          <select class="form-select" name="sort">
+            <option value="best" {% if _sort=='best' %}selected{% endif %}>Beste Treffer</option>
+            <option value="price_asc" {% if _sort=='price_asc' %}selected{% endif %}>Preis ↑</option>
+            <option value="price_desc" {% if _sort=='price_desc' %}selected{% endif %}>Preis ↓</option>
+            <option value="newly" {% if _sort=='newly' %}selected{% endif %}>Neu eingestellt</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Ergebnisse pro Seite</label>
+          {% set _pp = base_qs.get('per_page', request.args.get('per_page','20')) %}
+          <select class="form-select" name="per_page">
+            <option value="20" {% if _pp=='20' %}selected{% endif %}>20</option>
+            <option value="40" {% if _pp=='40' %}selected{% endif %}>40</option>
+            <option value="60" {% if _pp=='60' %}selected{% endif %}>60</option>
+            <option value="100" {% if _pp=='100' %}selected{% endif %}>100</option>
+          </select>
+        </div>
+
+        {# --- Zustand ------------------------------------------------------- #}
+        <div class="col-12">
+          <label class="form-label d-block mb-1">Zustand</label>
+          {% set chosen = base_qs.get('condition', request.args.getlist('condition')) %}
+          <div class="d-flex flex-wrap gap-3">
+            <label class="form-check">
+              <input class="form-check-input" type="checkbox" name="condition" value="NEW" {% if 'NEW' in chosen
+                %}checked{% endif %}>
+              <span class="form-check-label">Neu</span>
+            </label>
+            <label class="form-check">
+              <input class="form-check-input" type="checkbox" name="condition" value="USED" {% if 'USED' in chosen
+                %}checked{% endif %}>
+              <span class="form-check-label">Gebraucht</span>
+            </label>
+            <label class="form-check">
+              <input class="form-check-input" type="checkbox" name="condition" value="CERTIFIED_REFURBISHED" {%
+                if 'CERTIFIED_REFURBISHED' in chosen %}checked{% endif %}>
+              <span class="form-check-label">Refurbished (zert.)</span>
+            </label>
+          </div>
+          <div class="form-text">Mehrfachauswahl möglich.</div>
+        </div>
+
+        {# --- Weitere Filter ------------------------------------------------ #}
+        <div class="col-md-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="freeShipping2" name="free_shipping" value="1" {% if
+              base_qs.get('free_shipping')=='1' or request.args.get('free_shipping')=='1' %}checked{% endif %}>
+            <label class="form-check-label" for="freeShipping2">Nur kostenloser Versand</label>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="returns2" name="returns_accepted" value="1" {% if
+              base_qs.get('returns_accepted')=='1' or request.args.get('returns_accepted')=='1' %}checked{% endif %}>
+            <label class="form-check-label" for="returns2">Nur mit Rückgaberecht</label>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="topRated2" name="top_rated_only" value="1" {% if
+              base_qs.get('top_rated_only')=='1' or request.args.get('top_rated_only')=='1' %}checked{% endif %}>
+            <label class="form-check-label" for="topRated2">Nur Top-bewertete Verkäufer</label>
+          </div>
+        </div>
+
+        {# --- Smart-Filter: Nur Hauptprodukte ------------------------------- #}
+        <div class="col-md-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="onlyMainProduct" name="only_main_product" value="1" {%
+              if base_qs.get('only_main_product')=='1' or request.args.get('only_main_product')=='1' %}checked{% endif
+              %}>
+            <label class="form-check-label" for="onlyMainProduct">
+              Nur Hauptprodukte (Zubehör/Reparatur ausblenden)
+            </label>
+          </div>
+          <div class="form-text">
+            Blendet typische Begriffe wie „Hülle“, „Panzerglas“, „Backcover“, „Reparatur“, „defekt“, „Bastlerware“ aus.
+          </div>
+        </div>
+
+        {# --- Angebotsformat ----------------------------------------------- #}
+        <div class="col-md-3">
+          <label class="form-label">Angebotsformat</label>
+          {% set _lt = base_qs.get('listing_type', request.args.get('listing_type', '')) %}
+          <select class="form-select" name="listing_type">
+            <option value="" {% if not _lt %}selected{% endif %}>Alle</option>
+            <option value="buy_it_now" {% if _lt=='buy_it_now' %}selected{% endif %}>Sofortkauf</option>
+            <option value="auction" {% if _lt=='auction' %}selected{% endif %}>Auktion</option>
+          </select>
+        </div>
+
+        {# --- Land ---------------------------------------------------------- #}
+        <div class="col-md-3">
+          <label class="form-label">Land</label>
+          <select class="form-select" name="location_country">
+            {% set _lc = base_qs.get('location_country', request.args.get('location_country', 'DE')) %}
+            <option value="DE" {% if _lc=='DE' %}selected{% endif %}>🇩🇪 Deutschland</option>
+            <option value="AT" {% if _lc=='AT' %}selected{% endif %}>🇦🇹 Österreich</option>
+            <option value="CH" {% if _lc=='CH' %}selected{% endif %}>🇨🇭 Schweiz</option>
+            <option value="GB" {% if _lc=='GB' %}selected{% endif %}>🇬🇧 Großbritannien</option>
+            <option value="US" {% if _lc=='US' %}selected{% endif %}>🇺🇸 USA</option>
+          </select>
+        </div>
+
+        {# --- Quelle -------------------------------------------------------- #}
+        <div class="col-md-3">
+          <label class="form-label d-block">Quelle</label>
+          {% set _source = source or 'ebay' %}
+          <div class="btn-group" role="group" aria-label="Quelle auswählen">
+            <input type="radio" class="btn-check" name="source" id="srcEbay" value="ebay" {% if _source=='ebay'
+              %}checked{% endif %}>
+            <label class="btn btn-outline-primary btn-sm" for="srcEbay">eBay</label>
+
+            <input type="radio" class="btn-check" name="source" id="srcKA" value="kleinanzeigen" {% if
+              _source=='kleinanzeigen' %}checked{% endif %}>
+            <label class="btn btn-outline-success btn-sm" for="srcKA">Kleinanzeigen</label>
+
+            <input type="radio" class="btn-check" name="source" id="srcBoth" value="both" {% if _source=='both'
+              %}checked{% endif %}>
+            <label class="btn btn-outline-secondary btn-sm" for="srcBoth">Beides</label>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="d-flex gap-2 mt-4">
+        <button type="submit" class="btn btn-primary">🔎 Suchen</button>
+        <button type="reset" class="btn btn-outline-secondary" id="btnReset2">Zurücksetzen</button>
+      </div>
+    </div>
+  </form>
+
+  {# ---------- Ergebnisse ---------- #}
+  {% if results and results|length %}
+
+  {# Info-Box, wenn Smart-Filter aktiv ist #}
+  {% if filters.get('only_main_product') %}
+  <div class="alert alert-light border small mb-2">
+    🧠 <strong>Intelligenter Filter aktiv:</strong>
+    Typische Zubehör- und Reparatur-Angebote
+    (z.&nbsp;B. <em>Hülle</em>, <em>Panzerglas</em>, <em>Backcover</em>, <em>Reparatur</em>, <em>defekt</em>,
+    <em>Bastlerware</em>)
+    werden ausgeblendet, damit du vor allem die <strong>Hauptprodukte</strong> siehst.
+    <br>
+    <span class="text-muted">
+      Du kannst den Filter im Formular oben mit
+      <strong>„Nur Hauptprodukte (Zubehör/Reparatur ausblenden)“</strong> ein- oder ausschalten.
+    </span>
+  </div>
   {% endif %}
 
-  {# --- Mini-Legende: So wird aus einer Suche ein Alert ------------------- #}
-  <div class="alert alert-secondary small d-flex flex-column flex-md-row
-              justify-content-between align-items-md-center mb-3">
-    <div class="mb-2 mb-md-0">
-      <strong>So machst du aus einer Suche einen Alert:</strong>
-      <ol class="mb-0 ps-3">
-        <li>Oben Suchbegriffe &amp; Filter einstellen.</li>
-        <li>Auf <strong>„Ergebnisse anzeigen“</strong> klicken und die Treffer prüfen.</li>
-        <li>Wenn die Suche passt: <strong>„🔔 Als Alert speichern“</strong> drücken.</li>
-      </ol>
-    </div>
-
-    <a href="{{ url_for('alerts.manage_alerts') }}"
-       class="btn btn-sm btn-outline-dark mt-2 mt-md-0">
-      🔔 Meine Alerts verwalten
-    </a>
+  <div class="mb-3 text-muted small">
+    {% if pagination.total_estimated %}
+    ~{{ pagination.total_estimated }} Treffer geschätzt
+    {% if pagination.total_pages %}
+    · Seite {{ pagination.page }} von {{ pagination.total_pages }}
+    {% endif %}
+    {% else %}
+    Seite {{ pagination.page }}
+    {% endif %}
   </div>
 
-  {# --- Auto-Portale und Partner-Portale ---------------------------------- #}
-  {% set q1 = request.args.get('q1', '') %}
-  {% set q2 = request.args.get('q2', '') %}
-  {% set q3 = request.args.get('q3', '') %}
-  {% set q_main = (q1 ~ ' ' ~ q2 ~ ' ' ~ q3).strip() %}
-
-  <div class="alert alert-light border small d-flex flex-column flex-md-row
-              justify-content-between align-items-md-center mb-3">
-    <div class="mb-2 mb-md-0">
-      <strong>🚗 Auto-Portal-Suche</strong><br>
-      <span class="text-muted">
-        Suchbegriff auf Auto-Portalen eingeben – neue Angebote schneller finden!
-      </span>
-    </div>
-
-    <div class="btn-group btn-group-sm flex-wrap">
-      <a class="btn btn-outline-primary"
-         href="https://www.mobile.de/?search={{ q_main|replace(' ', '+') }}"
-         target="_blank" rel="noopener">
-        🚗 Mobile.de
-      </a>
-      <a class="btn btn-outline-primary"
-         href="https://www.autoscout24.de/?search={{ q_main|replace(' ', '+') }}"
-         target="_blank" rel="noopener">
-        🚗 Autoscout24
-      </a>
-      <a class="btn btn-outline-warning"
-         href="https://www.ebay.de/sch/i.html?_nkw={{ q_main|replace(' ', '+') }}&_sacat=6004"
-         target="_blank" rel="noopener">
-        🚗 eBay Motors
-      </a>
-    </div>
+  {% if source == 'kleinanzeigen' %}
+  <div class="alert alert-warning py-2 small">
+    Aktuell werden Kleinanzeigen-Treffer als Live-Daten angezeigt.
   </div>
+  {% elif source == 'both' %}
+  <div class="alert alert-info py-2 small">
+    Es werden sowohl eBay als auch eBay-Kleinanzeigen-Daten angezeigt.
+    Kleinanzeigen-Treffer sind Live-Daten.
+  </div>
+  {% endif %}
 
-  <div class="card shadow-sm border-0">
-
-    <div class="card shadow-sm border-0">
-      <div class="card-header bg-gradient"
-           style="background: linear-gradient(135deg, #0d6efd, #6610f2); color: #fff;">
-        <div class="d-flex justify-content-between align-items-center">
-          <div>
-            <strong>Vorlagen:</strong>
-            <button type="button" class="btn btn-sm btn-light ms-2 me-1"
-                    onclick="fillPreset('iphone 12', '100', '900')">Allround-Suche</button>
-            <button type="button" class="btn btn-sm btn-outline-light me-1"
-                    onclick="fillPreset('Schnäppchen', '0', '100')">Schnäppchen</button>
-            <button type="button" class="btn btn-sm btn-outline-light"
-                    onclick="fillPreset('wie neu', '', '')">Wie neu</button>
+  <div class="row g-3">
+    {% for item in results %}
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm">
+        <div class="row g-0 h-100">
+          <div class="col-4 d-flex align-items-center justify-content-center p-2">
+            {% set img = item.img or 'https://via.placeholder.com/160x120?text=%20' %}
+            <img src="{{ img }}" class="img-fluid rounded" alt="Bild" loading="lazy" style="max-height:120px">
           </div>
-          <button type="button" class="btn btn-sm btn-outline-light" onclick="resetSearchForm()">
-            Zurücksetzen
-          </button>
+          <div class="col-8">
+            <div class="card-body d-flex flex-column">
+              <div class="d-flex align-items-center gap-1 mb-1">
+                {% set src = (item.src or '')|lower %}
+                {% if src == 'amazon' %}
+                <span class="badge rounded-pill text-bg-warning text-dark">Amazon</span>
+                {% elif src == 'ebay' %}
+                <span class="badge rounded-pill text-bg-primary">eBay</span>
+                {% elif src == 'kleinanzeigen' %}
+                <span class="badge rounded-pill text-bg-success">Kleinanzeigen</span>
+                {% elif src == 'quoka' %}
+                <span class="badge rounded-pill text-bg-warning text-dark">Quoka</span>
+                {% elif src == 'shpock' %}
+                <span class="badge rounded-pill text-bg-info text-dark">Shpock</span>
+                {% elif src == 'marktde' %}
+                <span class="badge rounded-pill text-bg-danger">Markt.de</span>
+                {% elif src == 'demo' %}
+                <span class="badge rounded-pill text-bg-secondary">Demo</span>
+                {% elif src %}
+                <span class="badge rounded-pill text-bg-secondary">{{ src }}</span>
+                {% endif %}
+
+                {% if item.term %}
+                <span class="badge text-bg-light">{{ item.term }}</span>
+                {% endif %}
+              </div>
+
+              <h2 class="h6 card-title mb-1 text-truncate" title="{{ item.title }}">{{ item.title }}</h2>
+              <div class="mb-2 fw-semibold">{{ item.price or '–' }}</div>
+
+              <div class="mt-auto">
+                <div class="d-flex gap-1">
+                  <a href="{{ item.url }}" target="_blank" rel="nofollow noopener"
+                    class="btn btn-sm btn-outline-dark flex-fill">
+                    Zum Angebot
+                  </a>
+
+                  <form method="post" action="{{ url_for('watchlist.add') }}" class="flex-fill m-0 watchlist-form">
+                    <input type="hidden" name="item_id" value="{{ item.id or item.url }}">
+                    <input type="hidden" name="title" value="{{ item.title }}">
+                    <input type="hidden" name="price" value="{{ item.price }}">
+                    <input type="hidden" name="url" value="{{ item.url }}">
+                    <input type="hidden" name="image_url" value="{{ item.img }}">
+                    <input type="hidden" name="source" value="search">
+                    <button type="submit" class="btn btn-sm btn-warning w-100" title="Zur Watchlist hinzufügen" {% if
+                      not item.id and not item.url %}disabled{% endif %}>
+                      ⭐ Watchlist
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+            </div>
+          </div>
         </div>
       </div>
-
-      <div class="card-body">
-
-        {# FORMULAR START #}
-        <form method="GET" action="{{ url_for('search.search_page') }}" id="search-form">
-
-          {# --- Begriffe --------------------------------------------------- #}
-          <div class="row g-3 mb-3">
-            <div class="col-md-4">
-              <label class="form-label">Begriff 1</label>
-              <input type="text" name="q1" class="form-control"
-                     placeholder="z.B. iPhone 12"
-                     value="{{ request.args.get('q1','') }}">
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Begriff 2</label>
-              <input type="text" name="q2" class="form-control"
-                     placeholder="optional"
-                     value="{{ request.args.get('q2','') }}">
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Begriff 3</label>
-              <input type="text" name="q3" class="form-control"
-                     placeholder="optional"
-                     value="{{ request.args.get('q3','') }}">
-            </div>
-          </div>
-
-          {# --- Preis / Sortierung / Anzahl -------------------------------- #}
-          <div class="row g-3 mb-3">
-            <div class="col-md-3">
-              <label class="form-label">Preis min</label>
-              <div class="input-group">
-                <input type="number" min="0" step="1" name="price_min" class="form-control"
-                       value="{{ request.args.get('price_min','') }}">
-                <span class="input-group-text">€</span>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Preis max</label>
-              <div class="input-group">
-                <input type="number" min="0" step="1" name="price_max" class="form-control"
-                       value="{{ request.args.get('price_max','') }}">
-                <span class="input-group-text">€</span>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Sortierung</label>
-              {% set current_sort = request.args.get('sort','best') %}
-              <select name="sort" class="form-select">
-                <option value="best"       {{ 'selected' if current_sort == 'best' else '' }}>Beste Treffer</option>
-                <option value="price_asc"  {{ 'selected' if current_sort == 'price_asc' else '' }}>Preis aufsteigend</option>
-                <option value="price_desc" {{ 'selected' if current_sort == 'price_desc' else '' }}>Preis absteigend</option>
-                <option value="newly"      {{ 'selected' if current_sort == 'newly' else '' }}>Neu eingestellt</option>
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Ergebnisse pro Seite</label>
-              <select name="per_page" class="form-select">
-                {% set per_page = request.args.get('per_page','20') %}
-                {% for n in [10, 16, 20, 32, 48] %}
-                  <option value="{{ n }}" {{ 'selected' if per_page == n|string else '' }}>{{ n }}</option>
-                {% endfor %}
-              </select>
-            </div>
-          </div>
-
-          <hr>
-
-          {# --- Filterblöcke ----------------------------------------------- #}
-          <div class="row g-3 mb-3">
-            <div class="col-md-4">
-              <label class="form-label d-block">Zustand</label>
-              {% set conds = request.args.getlist('condition') %}
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="cond_new"
-                       name="condition" value="NEW" {% if 'NEW' in conds %}checked{% endif %}>
-                <label class="form-check-label" for="cond_new">Neu</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="cond_used"
-                       name="condition" value="USED" {% if 'USED' in conds %}checked{% endif %}>
-                <label class="form-check-label" for="cond_used">Gebraucht</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="cond_refurb"
-                       name="condition" value="CERTIFIED_REFURBISHED" {% if 'CERTIFIED_REFURBISHED' in conds %}checked{% endif %}>
-                <label class="form-check-label" for="cond_refurb">Refurbished (zert.)</label>
-              </div>
-              <small class="text-muted">Mehrfachauswahl möglich.</small>
-            </div>
-
-            <div class="col-md-4">
-              <label class="form-label d-block">Versand &amp; Verkäufer</label>
-              {% set fs = request.args.get('free_shipping','') %}
-              {% set ra = request.args.get('returns_accepted','') %}
-              {% set tr = request.args.get('top_rated_only','') %}
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="fs_only"
-                       name="free_shipping" value="1" {% if fs %}checked{% endif %}>
-                <label class="form-check-label" for="fs_only">Nur kostenloser Versand</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="ra_only"
-                       name="returns_accepted" value="1" {% if ra %}checked{% endif %}>
-                <label class="form-check-label" for="ra_only">Nur mit Rückgaberecht</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="tr_only"
-                       name="top_rated_only" value="1" {% if tr %}checked{% endif %}>
-                <label class="form-check-label" for="tr_only">Nur Top-bewertete Verkäufer</label>
-              </div>
-            </div>
-
-            <div class="col-md-4">
-              <label class="form-label">Land</label>
-              {% set lc = request.args.get('location_country','DE') %}
-              <select name="location_country" class="form-select mb-2">
-                <option value="DE" {{ 'selected' if lc == 'DE' else '' }}>🇩🇪 Deutschland</option>
-                <option value="AT" {{ 'selected' if lc == 'AT' else '' }}>🇦🇹 Österreich</option>
-                <option value="CH" {{ 'selected' if lc == 'CH' else '' }}>🇨🇭 Schweiz</option>
-                <option value="EU" {{ 'selected' if lc == 'EU' else '' }}>🇪🇺 EU-weit</option>
-                <option value="GB" {{ 'selected' if lc == 'GB' else '' }}>🇬🇧 Großbritannien</option>
-                <option value="US" {{ 'selected' if lc == 'US' else '' }}>🇺🇸 USA</option>
-              </select>
-
-              <label class="form-label mt-2 d-block">Angebotsart</label>
-              {% set lt = request.args.get('listing_type','all') %}
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="listing_type"
-                       id="lt_all" value="all" {% if lt == 'all' %}checked{% endif %}>
-                <label class="form-check-label" for="lt_all">Alle</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="listing_type"
-                       id="lt_fix" value="buy_it_now" {% if lt == 'buy_it_now' %}checked{% endif %}>
-                <label class="form-check-label" for="lt_fix">Sofort-Kaufen</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="listing_type"
-                       id="lt_auc" value="auction" {% if lt == 'auction' %}checked{% endif %}>
-                <label class="form-check-label" for="lt_auc">Auktion</label>
-              </div>
-            </div>
-          </div>
-
-          <hr>
-
-          {# --- Portale + Buttons ---------------------------------------- #}
-          <div class="row mb-3 align-items-end">
-            <div class="col-md-6">
-              <label class="form-label d-block">Portale</label>
-              {% set src = request.args.get('source', source|default('both')) %}
-              <div class="btn-group flex-wrap" role="group" aria-label="Portale wählen">
-                <input type="radio" class="btn-check" name="source" id="src_ebay"
-                       value="ebay" autocomplete="off"
-                       {% if src == 'ebay' %}checked{% endif %}>
-                <label class="btn btn-outline-primary btn-sm" for="src_ebay">eBay</label>
-
-                <input type="radio" class="btn-check" name="source" id="src_ka"
-                       value="kleinanzeigen" autocomplete="off"
-                       {% if src == 'kleinanzeigen' %}checked{% endif %}>
-                <label class="btn btn-outline-success btn-sm" for="src_ka">Kleinanzeigen</label>
-
-                <input type="radio" class="btn-check" name="source" id="src_quoka"
-                       value="quoka" autocomplete="off"
-                       {% if src == 'quoka' %}checked{% endif %}>
-                <label class="btn btn-outline-warning btn-sm text-dark" for="src_quoka">Quoka</label>
-
-                <input type="radio" class="btn-check" name="source" id="src_shpock"
-                       value="shpock" autocomplete="off"
-                       {% if src == 'shpock' %}checked{% endif %}>
-                <label class="btn btn-outline-info btn-sm text-dark" for="src_shpock">Shpock</label>
-
-                <input type="radio" class="btn-check" name="source" id="src_marktde"
-                       value="marktde" autocomplete="off"
-                       {% if src == 'marktde' %}checked{% endif %}>
-                <label class="btn btn-outline-danger btn-sm" for="src_marktde">Markt.de</label>
-
-                <input type="radio" class="btn-check" name="source" id="src_all"
-                       value="both" autocomplete="off"
-                       {% if src == 'both' %}checked{% endif %}>
-                <label class="btn btn-outline-secondary btn-sm" for="src_all">Alle Portale</label>
-              </div>
-
-              <small class="text-muted d-block mt-1">
-                „Alle Portale“ nutzt eBay + Kleinanzeigen + Quoka + Shpock + Markt.de gleichzeitig.
-              </small>
-            </div>
-
-            <div class="col-md-6 d-flex justify-content-md-end justify-content-center mt-3 mt-md-0 gap-2">
-              <!-- Normale Suche (GET auf /search) -->
-              <button type="submit" class="btn btn-lg btn-search-main">
-                Ergebnisse anzeigen
-              </button>
-
-              <!-- Alert anlegen (POST auf /alerts/subscribe) -->
-              <button
-                type="submit"
-                class="btn btn-outline-secondary btn-lg"
-                formmethod="post"
-                formaction="{{ url_for('alerts.alerts_subscribe') }}"
-              >
-                🔔 Als Alert speichern
-              </button>
-            </div>
-          </div>
-
-        </form>
-      </div>
     </div>
+    {% endfor %}
   </div>
+
+  {# Pagination #}
+  {% set prev_url = '#' %}
+  {% set next_url = '#' %}
+  {% set b = base_qs if base_qs else {} %}
+
+  {% if pagination.has_prev %}
+  {% if qs is defined %}
+  {% set prev_url = url_for('search.search_page') ~ '?' ~ qs(b, page=pagination.page-1) %}
+  {% else %}
+  {% set prev_url = url_for('search.search_page') %}
+  {% endif %}
+  {% endif %}
+
+  {% if pagination.has_next %}
+  {% if qs is defined %}
+  {% set next_url = url_for('search.search_page') ~ '?' ~ qs(b, page=pagination.page+1) %}
+  {% else %}
+  {% set next_url = url_for('search.search_page') %}
+  {% endif %}
+  {% endif %}
+
+  <nav class="mt-4" aria-label="Seiten">
+    <ul class="pagination justify-content-center">
+      <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+        <a class="page-link" href="{{ prev_url }}">‹ Zurück</a>
+      </li>
+      <li class="page-item active">
+        <span class="page-link">{{ pagination.page }}</span>
+      </li>
+      <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+        <a class="page-link" href="{{ next_url }}">Weiter ›</a>
+      </li>
+    </ul>
+  </nav>
+
+  {% else %}
+  <div class="alert alert-info mt-3">
+    Noch keine Treffer – bitte Begriffe eingeben und Suchen klicken.
+  </div>
+  {% endif %}
+
 </div>
 
-<style>
-  .btn-search-main {
-    background: linear-gradient(135deg, #22c55e, #16a34a);
-    border: none;
-    color: #fff;
-    padding-inline: 2.5rem;
-    font-weight: 600;
-    transition: all 0.15s ease;
-  }
-  .btn-search-main:hover {
-    background: linear-gradient(135deg, #16a34a, #15803d);
-    color: #fff;
-    transform: translateY(-1px);
-  }
-</style>
-
 <script>
-  function fillPreset(term, minPrice, maxPrice) {
-    const f = document.getElementById('search-form');
-    if (!f) return;
-    if (term !== undefined) {
-      f.q1.value = term;
-      if (f.q2) f.q2.value = '';
-      if (f.q3) f.q3.value = '';
-    }
-    if (minPrice !== undefined) f.price_min.value = minPrice;
-    if (maxPrice !== undefined) f.price_max.value = maxPrice;
-    f.submit();
-  }
+  document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('searchForm');
+    const share = document.getElementById('shareUrl'); // optional, falls im Layout vorhanden
 
-  function resetSearchForm() {
-    const f = document.getElementById('search-form');
-    if (!f) return;
-    f.reset();
-    window.location.href = '{{ url_for("search.search_page") }}';
-  }
+    function updateShareUrl() {
+      if (!form || !share) return;
+      const params = new URLSearchParams();
+
+      const q1 = (form.q1.value || '').trim();
+      const q2 = (form.q2.value || '').trim();
+      const q3 = (form.q3.value || '').trim();
+      if (q1) params.set('q1', q1);
+      if (q2) params.set('q2', q2);
+      if (q3) params.set('q3', q3);
+
+      const pmin = (form.price_min.value || '').trim();
+      const pmax = (form.price_max.value || '').trim();
+      if (pmin) params.set('price_min', pmin);
+      if (pmax) params.set('price_max', pmax);
+
+      const sort = (form.sort.value || 'best').trim();
+      if (sort) params.set('sort', sort);
+
+      const per = (form.per_page.value || '').trim();
+      if (per) params.set('per_page', per);
+
+      form.querySelectorAll('input[name="condition"]:checked')
+        .forEach(cb => params.append('condition', cb.value));
+
+      const lc = (form.location_country && form.location_country.value)
+        ? form.location_country.value
+        : '';
+      if (lc) params.set('location_country', lc);
+
+      if (form.free_shipping && form.free_shipping.checked) {
+        params.set('free_shipping', '1');
+      }
+      if (form.returns_accepted && form.returns_accepted.checked) {
+        params.set('returns_accepted', '1');
+      }
+      if (form.top_rated_only && form.top_rated_only.checked) {
+        params.set('top_rated_only', '1');
+      }
+      if (form.only_main_product && form.only_main_product.checked) {
+        params.set('only_main_product', '1');
+      }
+
+      const lt = (form.listing_type && form.listing_type.value) ? form.listing_type.value : '';
+      if (lt) params.set('listing_type', lt);
+
+      // Quelle (source) aus Radio-Buttons
+      const srcInput = form.querySelector('input[name="source"]:checked');
+      if (srcInput) {
+        params.set('source', srcInput.value);
+      }
+
+      share.value = '{{ url_for("search.search_page") }}' +
+        (params.toString() ? '?' + params.toString() : '');
+    }
+
+    if (form) {
+      form.addEventListener('input', updateShareUrl);
+      form.addEventListener('change', updateShareUrl);
+      updateShareUrl();
+    }
+
+    // Defensive submit: Form immer per GET navigieren
+    window.addEventListener('submit', function (e) {
+      try {
+        const tgt = e.target;
+        if (!tgt || tgt.tagName !== 'FORM') return;
+        if (tgt.id === 'searchForm') {
+          e.preventDefault();
+          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          if (e.stopPropagation) e.stopPropagation();
+          try {
+            const fd = new FormData(tgt);
+            const params = new URLSearchParams();
+            for (const pair of fd.entries()) {
+              params.append(pair[0], pair[1]);
+            }
+            const action = tgt.getAttribute('action') || window.location.pathname;
+            const qs = params.toString();
+            window.location.href = action + (qs ? ('?' + qs) : '');
+          } catch (err) {
+            console.error('search navigation failed, fallback', err);
+            tgt.submit();
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }, true);
+
+    // Watchlist AJAX
+    try {
+      document.querySelectorAll('form.watchlist-form').forEach(function (f) {
+        f.addEventListener('submit', async function (e) {
+          e.preventDefault();
+          const btn = f.querySelector('button[type="submit"]');
+          if (!btn) return;
+          const orig = btn.innerText;
+          btn.disabled = true;
+          btn.innerText = '...';
+          try {
+            const res = await fetch(f.action, {
+              method: 'POST',
+              body: new FormData(f),
+              credentials: 'same-origin',
+              headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            if (res.ok) {
+              btn.innerText = '✓';
+            } else {
+              btn.innerText = 'Fehler';
+              console.error('watchlist failed', res.status);
+            }
+          } catch (err) {
+            console.error(err);
+            btn.innerText = 'Fehler';
+          }
+          setTimeout(() => {
+            btn.innerText = orig;
+            btn.disabled = false;
+          }, 1000);
+        });
+      });
+    } catch (err) {
+      console.error('watchlist init failed', err);
+    }
+
+    // ---------------------------------------------------------
+    // 🤖 KI-Helfer 1: bessere Suchbegriffe
+    // ---------------------------------------------------------
+    try {
+      const btnAi = document.getElementById('btnAiSearch');
+      const aiInput = document.getElementById('aiSearchInput');
+      const aiOutput = document.getElementById('aiSearchOutput');
+
+      async function callAiForSearch() {
+        if (!form || !btnAi) return;
+
+        const baseTerm = (form.q1.value || '').trim();
+        const desc = (aiInput && aiInput.value ? aiInput.value : '').trim();
+
+        if (!baseTerm && !desc) {
+          if (aiOutput) {
+            aiOutput.value = 'Bitte entweder Begriff 1 ausfüllen oder kurz beschreiben, was du suchst.';
+          }
+          return;
+        }
+
+        const originalText = btnAi.innerText;
+        btnAi.disabled = true;
+        btnAi.innerText = 'Frage KI…';
+
+        try {
+          const resp = await fetch('/ai/suggest-terms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ base_term: baseTerm, description: desc })
+          });
+
+          const data = await resp.json();
+          if (!data.ok) throw new Error(data.error);
+
+          const suggestions = data.suggestions || [];
+
+          if (aiOutput) {
+            aiOutput.value = suggestions.join('\n');
+          }
+
+          if (suggestions[0] && form.q1) form.q1.value = suggestions[0];
+          if (suggestions[1] && form.q2) form.q2.value = suggestions[1];
+          if (suggestions[2] && form.q3) form.q3.value = suggestions[2];
+
+          updateShareUrl();
+        } catch (err) {
+          console.error(err);
+          if (aiOutput) aiOutput.value = 'Technischer Fehler bei der KI-Anfrage: ' + err.message;
+        } finally {
+          btnAi.disabled = false;
+          btnAi.innerText = originalText;
+        }
+      }
+
+      if (btnAi) {
+        btnAi.addEventListener('click', callAiForSearch);
+      }
+    } catch (err) {
+      console.error('AI search helper init failed', err);
+    }
+
+    // ---------------------------------------------------------
+    // 🧠 KI-Helfer 2: komplette Suchstrategie
+    // ---------------------------------------------------------
+    try {
+      const btnStrat = document.getElementById('btnAiStrategy');
+      const stratOutput = document.getElementById('aiStrategyOutput');
+      const aiInput2 = document.getElementById('aiSearchInput');
+
+      async function callAiStrategy() {
+        if (!form || !btnStrat) return;
+
+        const terms = [
+          (form.q1.value || '').trim(),
+          (form.q2.value || '').trim(),
+          (form.q3.value || '').trim()
+        ].filter(Boolean);
+        const desc = (aiInput2 && aiInput2.value ? aiInput2.value : '').trim();
+
+        if (!terms.length && !desc) {
+          if (stratOutput) {
+            stratOutput.value = 'Bitte zuerst Begriffe eintragen oder eine Beschreibung im KI-Feld oben angeben.';
+          }
+          return;
+        }
+
+        const originalText = btnStrat.innerText;
+        btnStrat.disabled = true;
+        btnStrat.innerText = 'Frage KI…';
+
+        try {
+          const resp = await fetch('/ai/suggest-strategy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ terms, description: desc })
+          });
+
+          const data = await resp.json();
+          if (!data.ok) throw new Error(data.error);
+
+          const strat = data.strategy || {};
+
+          // Keywords
+          if (Array.isArray(strat.keywords)) {
+            const kw = strat.keywords.map(x => String(x || '').trim()).filter(Boolean);
+            if (kw[0] && form.q1) form.q1.value = kw[0];
+            if (kw[1] && form.q2) form.q2.value = kw[1];
+            if (kw[2] && form.q3) form.q3.value = kw[2];
+          }
+
+          // Preisbereich
+          if (strat.price_min !== undefined && strat.price_min !== null && form.price_min) {
+            form.price_min.value = strat.price_min;
+          }
+          if (strat.price_max !== undefined && strat.price_max !== null && form.price_max) {
+            form.price_max.value = strat.price_max;
+          }
+
+          // Zustände
+          if (Array.isArray(strat.conditions)) {
+            const condSet = new Set(strat.conditions.map(c => String(c).toUpperCase()));
+            form.querySelectorAll('input[name="condition"]').forEach(function (cb) {
+              cb.checked = condSet.has(String(cb.value).toUpperCase());
+            });
+          }
+
+          // Angebotsformat
+          if (strat.listing_type && form.listing_type) {
+            const lt = String(strat.listing_type).toLowerCase();
+            form.listing_type.value = (lt === 'all') ? '' : lt;
+          }
+
+          // Land
+          if (strat.country && form.location_country) {
+            form.location_country.value = String(strat.country).toUpperCase();
+          }
+
+          updateShareUrl();
+
+          // Menschliche Zusammenfassung
+          const lines = [];
+          if (Array.isArray(strat.keywords) && strat.keywords.length) {
+            lines.push('Suchbegriffe: ' + strat.keywords.join(', '));
+          }
+          const pm = strat.price_min;
+          const px = strat.price_max;
+          if (pm || px) {
+            if (pm && px) lines.push('Preisbereich: ' + pm + '–' + px + ' €');
+            else if (pm) lines.push('Preis: mindestens ' + pm + ' €');
+            else if (px) lines.push('Preis: höchstens ' + px + ' €');
+          }
+          if (Array.isArray(strat.conditions) && strat.conditions.length) {
+            lines.push('Zustände: ' + strat.conditions.join(', '));
+          }
+          if (strat.listing_type) {
+            let ltText = (strat.listing_type === 'buy_it_now') ? 'Sofortkauf' : (strat.listing_type === 'auction' ? 'Auktionen' : 'Alle Formate');
+            lines.push('Angebotsformat: ' + ltText);
+          }
+          if (strat.country) lines.push('Land: ' + strat.country);
+
+          if (stratOutput) {
+            stratOutput.value = lines.length ? lines.join('\n') : 'Die KI hat eine Strategie geliefert, aber keine Details konnten gelesen werden.';
+          }
+        } catch (err) {
+          console.error(err);
+          if (stratOutput) stratOutput.value = 'Technischer Fehler bei der KI-Anfrage: ' + err.message;
+        } finally {
+          btnStrat.disabled = false;
+          btnStrat.innerText = originalText;
+        }
+      }
+
+      if (btnStrat) {
+        btnStrat.addEventListener('click', callAiStrategy);
+      }
+    } catch (err) {
+      console.error('AI strategy helper init failed', err);
+    }
+
+    // ---------------------------------------------------------
+    // 🧠 KI-Alert-Generator: Hauptprodukt-fokussierte Alerts
+    // ---------------------------------------------------------
+    try {
+      const btnAlert = document.getElementById('btnAiAlertGen');
+      const alertInput = document.getElementById('aiAlertInput');
+      const alertOutput = document.getElementById('aiAlertOutput');
+      const chkEmail = document.getElementById('notify_email');
+      const chkTelegram = document.getElementById('notify_telegram');
+
+      async function callAiAlertGen() {
+        if (!form || !btnAlert) return;
+
+        const desc = (alertInput && alertInput.value ? alertInput.value : '').trim();
+        const baseTerm = (form.q1.value || '').trim();
+
+        if (!desc && !baseTerm) {
+          if (alertOutput) {
+            alertOutput.value = 'Bitte kurz beschreiben, welche Art von Angeboten du überwachen möchtest (z.B. „Schnäppchen-iPhones bis 350€“).';
+          }
+          return;
+        }
+
+        const originalText = btnAlert.innerText;
+        btnAlert.disabled = true;
+        btnAlert.innerText = 'Frage KI…';
+
+        try {
+          const resp = await fetch('/ai/generate-alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description: desc, base_term: baseTerm })
+          });
+
+          const data = await resp.json();
+          if (!data.ok) throw new Error(data.error);
+
+          const alert = data.alert || {};
+
+          // Keywords -> Begriffe 1–3
+          if (Array.isArray(alert.keywords)) {
+            const kw = alert.keywords.map(x => String(x || '').trim()).filter(Boolean);
+            if (kw[0] && form.q1) form.q1.value = kw[0];
+            if (kw[1] && form.q2) form.q2.value = kw[1];
+            if (kw[2] && form.q3) form.q3.value = kw[2];
+          }
+
+          // Preisbereich
+          if (alert.price_min !== undefined && alert.price_min !== null && form.price_min) {
+            form.price_min.value = alert.price_min;
+          }
+          if (alert.price_max !== undefined && alert.price_max !== null && form.price_max) {
+            form.price_max.value = alert.price_max;
+          }
+
+          // Zustände
+          if (Array.isArray(alert.conditions)) {
+            const condSet = new Set(alert.conditions.map(c => String(c).toUpperCase()));
+            form.querySelectorAll('input[name="condition"]').forEach(function (cb) {
+              cb.checked = condSet.has(String(cb.value).toUpperCase());
+            });
+          }
+
+          // Angebotsformat
+          if (alert.listing_type && form.listing_type) {
+            const lt = String(alert.listing_type).toLowerCase();
+            form.listing_type.value = (lt === 'all') ? '' : lt;
+          }
+
+          // Land
+          if (alert.country && form.location_country) {
+            form.location_country.value = String(alert.country).toUpperCase();
+          }
+
+          // Quelle
+          if (alert.source) {
+            const srcVal = String(alert.source).toLowerCase();
+            const radio = form.querySelector('input[name="source"][value="' + srcVal + '"]');
+            if (radio) radio.checked = true;
+          }
+
+          // Kanäle
+          if (Array.isArray(alert.channels)) {
+            const chSet = new Set(alert.channels.map(c => String(c).toLowerCase()));
+            if (chkEmail) chkEmail.checked = chSet.has('email');
+            if (chkTelegram) chkTelegram.checked = chSet.has('telegram');
+          }
+
+          updateShareUrl();
+
+          // Menschliche Zusammenfassung
+          const lines = [];
+          if (Array.isArray(alert.keywords) && alert.keywords.length) {
+            lines.push('Suchbegriffe: ' + alert.keywords.join(', '));
+          }
+          const pm = alert.price_min;
+          const px = alert.price_max;
+          if (pm || px) {
+            if (pm && px) lines.push('Preisbereich: ' + pm + '–' + px + ' €');
+            else if (pm) lines.push('Preis: mindestens ' + pm + ' €');
+            else if (px) lines.push('Preis: höchstens ' + px + ' €');
+          }
+          if (Array.isArray(alert.conditions) && alert.conditions.length) {
+            lines.push('Zustände: ' + alert.conditions.join(', '));
+          }
+          if (alert.listing_type) {
+            let ltText = (alert.listing_type === 'buy_it_now') ? 'Sofortkauf' : (alert.listing_type === 'auction' ? 'Auktionen' : 'Alle Formate');
+            lines.push('Angebotsformat: ' + ltText);
+          }
+          if (alert.country) lines.push('Land: ' + alert.country);
+          if (alert.source) lines.push('Quelle: ' + alert.source);
+          if (Array.isArray(alert.channels) && alert.channels.length) {
+            lines.push('Kanäle: ' + alert.channels.join(', '));
+          }
+
+          if (alertOutput) {
+            alertOutput.value = lines.length ? lines.join('\n') : 'Die KI hat einen Alert geliefert, aber keine Details konnten gelesen werden.';
+          }
+        } catch (err) {
+          console.error(err);
+          if (alertOutput) alertOutput.value = 'Technischer Fehler bei der KI-Anfrage: ' + err.message;
+        } finally {
+          btnAlert.disabled = false;
+          btnAlert.innerText = originalText;
+        }
+      }
+
+      if (btnAlert) {
+        btnAlert.addEventListener('click', callAiAlertGen);
+      }
+    } catch (err) {
+      console.error('AI alert generator init failed', err);
+    }
+
+  });
 </script>
+
 {% endblock %}

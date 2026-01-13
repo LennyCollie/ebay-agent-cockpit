@@ -83,7 +83,7 @@ def verify(token):
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = db.query(User).filter(User.id == user_id).first()
         if not user:
             flash("Benutzer nicht gefunden.", "danger")
             return redirect(url_for("public"))

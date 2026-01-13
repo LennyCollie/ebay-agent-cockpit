@@ -1,4 +1,5 @@
-{% extends "base.html" %} {% block content %}
+{% extends "base.html" %}
+{% block content %}
 
 <style>
   .watchlist-card {
@@ -28,7 +29,9 @@
 <div class="container py-5">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="h3 mb-0">📌 Meine Watchlist</h1>
-    <a href="{{ url_for('search.search_page') }}" class="btn btn-primary"> Neuen Alert erstellen </a>
+    <a href="{{ url_for('search.search_page') }}" class="btn btn-primary">
+      Neuen Alert erstellen
+    </a>
   </div>
 
   {% if not items %}
@@ -51,12 +54,8 @@
     <div class="col-12 col-md-6 col-lg-4">
       <div class="card watchlist-card h-100 shadow-sm">
         {% if item.image_url %}
-        <img
-          src="{{ item.image_url }}"
-          class="card-img-top"
-          alt="{{ item.item_title }}"
-          style="height: 200px; object-fit: cover"
-        />
+        <img src="{{ item.image_url }}" class="card-img-top" alt="{{ item.item_title }}"
+          style="height: 200px; object-fit: cover" />
         {% endif %}
 
         <div class="card-body">
@@ -69,18 +68,26 @@
           <div class="mb-3">
             <span class="price-badge">{{ item.current_price }} {{ item.currency }}</span>
 
-            {% if item.initial_price != item.current_price %} {% if item.current_price|float <
-            item.initial_price|float %}
-            <span class="badge bg-success price-drop ms-2">
-              ↓ {{ ((item.initial_price|float - item.current_price|float) / item.initial_price|float
-              * 100)|round(1) }}%
-            </span>
-            {% else %}
-            <span class="badge bg-danger price-rise ms-2">
-              ↑ {{ ((item.current_price|float - item.initial_price|float) / item.initial_price|float
-              * 100)|round(1) }}%
-            </span>
-            {% endif %} {% endif %}
+            {% if item.initial_price != item.current_price %}
+            {% if item.current_price|float < item.initial_price|float %} <span class="badge bg-success price-drop ms-2">
+              ↓ {{
+              (
+              (item.initial_price|float - item.current_price|float)
+              / item.initial_price|float * 100
+              )|round(1)
+              }}%
+              </span>
+              {% else %}
+              <span class="badge bg-danger price-rise ms-2">
+                ↑ {{
+                (
+                (item.current_price|float - item.initial_price|float)
+                / item.initial_price|float * 100
+                )|round(1)
+                }}%
+              </span>
+              {% endif %}
+              {% endif %}
           </div>
 
           <div class="small text-muted mb-3">
@@ -90,30 +97,47 @@
           </div>
 
           <div class="d-flex gap-2">
-            <a
-              href="{{ item.item_url }}"
-              target="_blank"
-              class="btn btn-sm btn-primary flex-grow-1"
-            >
+            <a href="{{ item.item_url }}" target="_blank" class="btn btn-sm btn-primary flex-grow-1">
               Zu eBay
             </a>
-            <a
-              href="{{ url_for('watchlist.settings', item_id=item.id) }}"
-              class="btn btn-sm btn-outline-secondary"
-            >
+            <a href="{{ url_for('watchlist.settings', item_id=item.id) }}" class="btn btn-sm btn-outline-secondary">
               ⚙️
             </a>
             <button class="btn btn-sm btn-outline-danger" onclick="removeItem({{ item.id }})">
               🗑️
             </button>
           </div>
+
+          {# --- KI-Helfer: besseren eBay-Titel vorschlagen ---------------- #}
+          <hr class="mt-3 mb-2" />
+          <div class="mt-1 p-2 border rounded bg-light-subtle small">
+            <div class="fw-semibold mb-1">
+              🤖 KI-Helfer: besseren eBay-Titel vorschlagen
+            </div>
+
+            <div class="d-flex flex-column gap-1">
+              <button type="button" class="btn btn-sm btn-outline-primary ai-title-btn align-self-start"
+                data-title="{{ item.item_title }}">
+                KI-Titel vorschlagen
+              </button>
+
+              <textarea class="form-control form-control-sm ai-title-output" rows="2"
+                placeholder="Hier erscheint der Vorschlag der KI…"></textarea>
+
+              <div class="form-text">
+                Tipp: Text markieren &amp; kopieren, dann bei eBay einfügen.
+              </div>
+            </div>
+          </div>
+          {# --- Ende KI-Helfer ------------------------------------------- #}
         </div>
 
         {% if item.notify_price_drop or item.notify_auction_ending %}
         <div class="card-footer bg-light small">
           {% if item.notify_price_drop %}
           <span class="badge bg-info me-1">💰 Preis-Alert</span>
-          {% endif %} {% if item.notify_auction_ending %}
+          {% endif %}
+          {% if item.notify_auction_ending %}
           <span class="badge bg-warning">⏰ Auktions-Alert</span>
           {% endif %}
         </div>
@@ -150,6 +174,67 @@
         alert("Verbindungsfehler");
       });
   }
+</script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+
+    async function askAI(prompt, outputElem, buttonElem) {
+      if (!prompt) {
+        outputElem.value = "Bitte zuerst einen Titel auswählen.";
+        return;
+      }
+
+      const originalText = buttonElem.innerText;
+      buttonElem.disabled = true;
+      buttonElem.innerText = 'Frage KI…';
+
+      try {
+        const resp = await fetch('/ai/ask', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ question: prompt })
+        });
+
+        const data = await resp.json();
+
+        if (data.ok) {
+          // aus deinem /ai/ask-Endpoint: answer oder message
+          outputElem.value = data.answer || data.message || '(Keine Antwort erhalten)';
+        } else {
+          outputElem.value = data.error || 'Fehler bei der KI-Anfrage.';
+        }
+      } catch (err) {
+        console.error(err);
+        outputElem.value = 'Technischer Fehler bei der KI-Anfrage.';
+      } finally {
+        buttonElem.disabled = false;
+        buttonElem.innerText = originalText;
+      }
+    }
+
+    // Alle KI-Buttons in der Watchlist verkabeln
+    document.querySelectorAll('.ai-title-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const card = btn.closest('.card');
+        if (!card) return;
+
+        const output = card.querySelector('.ai-title-output');
+        if (!output) return;
+
+        const originalTitle = btn.dataset.title || '';
+
+        const prompt = `Formuliere einen professionellen eBay-Titel auf Deutsch. `
+          + `Produkt: "${originalTitle}". `
+          + `Maximal 80 Zeichen, keine Emojis, klar und verkaufsstark.`;
+
+        askAI(prompt, output, btn);
+      });
+    });
+
+  });
 </script>
 
 {% endblock %}
