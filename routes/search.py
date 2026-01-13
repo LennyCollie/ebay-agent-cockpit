@@ -1,7 +1,7 @@
 # routes/search.py
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from flask_login import current_user
 from alert_checker import ALERT_INTERVAL_FREE, ALERT_INTERVAL_PREMIUM
@@ -15,6 +15,7 @@ from flask import (
     request,
     url_for,
     jsonify,
+    make_response,
 )
 
 from services.ebay_api import ebay_search
@@ -26,6 +27,9 @@ from utils.ebay_normalize import normalize_browse, normalize_finding
 # Live-Kleinanzeigen + Meta-Suche über mehrere Marktplätze
 from services.kleinanzeigen import search_kleinanzeigen
 from services.search_integration import merge_all_marketplaces
+from services.csv_exporter import export_search_results_to_csv
+from smart_filters import SmartFilter
+from services.ai_price_analyzer import analyze_prices_with_ai
 
 
 bp_search = Blueprint("search", __name__)
@@ -48,6 +52,7 @@ def _to_view_items(payload: Dict) -> List[Dict]:
             {
                 "title": it.get("title", "Ohne Titel"),
                 "price": price_txt,
+                "price_raw": float(it["price"].get("value")) if it.get("price") and it["price"].get("value") is not None else 0.0,
                 "url": it.get("itemWebUrl") or "#",
                 "img": img_url,
                 "images": [img_url] if img_url else [],
@@ -149,6 +154,9 @@ def _parse_args() -> Dict[str, Any]:
     returns_accepted = bool(src.get("returns_accepted"))
     top_rated_only = bool(src.get("top_rated_only"))
 
+    # Nur Hauptprodukt / Zubehör ausblenden
+    only_main_product = bool(src.get("only_main_product"))
+
     # Quelle / Portal (ebay, kleinanzeigen, quoka, shpock, marktde, both, all, …)
     source = (src.get("source") or "both").strip().lower()
 
@@ -168,6 +176,7 @@ def _parse_args() -> Dict[str, Any]:
         "free_shipping": free_shipping,
         "returns_accepted": returns_accepted,
         "top_rated_only": top_rated_only,
+        "only_main_product": only_main_product,
         "source": source,
     }
 
@@ -200,6 +209,83 @@ def _get_plan_info():
         "plan_type": plan_type or "free",
         "is_premium": is_premium_flag,
     }
+
+
+def filter_main_products(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Versucht Zubehör / Reparatur-Angebote rauszufiltern.
+    Wir schauen in den Titel – reicht oft schon gut.
+    """
+    blacklist = [
+        # Zubehör
+        "hülle",
+        "schutzhülle",
+        "case",
+        "tasche",
+        "panzerglas",
+        "schutzglas",
+        "schutzfolie",
+        "displayfolie",
+        "folie",
+        "backcover",
+        "cover",
+        "bumper",
+        "ladekabel",
+        "kabel",
+        "netzteil",
+        "ladegerät",
+        "adapter",
+        "halterung",
+        "dockingstation",
+        "dock",
+        "lade-dock",
+        "etui",
+        # Reparatur / Service
+        "reparatur",
+        "displaytausch",
+        "tausch",
+        "service",
+        "reparieren",
+        # Teile / Schrott
+        "ersatzteil",
+        "ersatzteile",
+        "nur teile",
+        "nur für teile",
+        "nur zum ausschlachten",
+        "defekt",
+        "defekte",
+        "funktioniert nicht",
+        "ohne funktion",
+        "bastler",
+        "bastlerware",
+        "displaybruch",
+        "display defekt",
+        "wasserschaden",
+        "wasser schaden",
+    ]
+
+    filtered: List[Dict[str, Any]] = []
+
+    for it in items:
+        # Titel holen – Dict oder Objekt
+        if isinstance(it, dict):
+            title = (it.get("title") or it.get("name") or "").lower()
+        else:
+            title = (
+                (getattr(it, "title", "") or getattr(it, "name", "") or "")
+            ).lower()
+
+        if not title:
+            filtered.append(it)
+            continue
+
+        # Wenn ein Blacklist-Wort im Titel ist → wir nehmen an: kein Hauptprodukt
+        if any(word in title for word in blacklist):
+            continue
+
+        filtered.append(it)
+
+    return filtered
 
 
 # =============================================================================
@@ -314,6 +400,19 @@ def search_page():
             exc_info=True,
         )
 
+    # 🧠 Smart-Filter: Zubehör/Reparatur/Schrott raus, wenn aktiviert
+    if args.get("only_main_product"):
+        before = len(items)
+        sf = SmartFilter()
+        res = sf.filter_items(items, search_terms=args["terms"])
+        items = res["filtered_items"]
+        current_app.logger.debug(
+            "Smart-Filter aktiviert (only_main_product=1): %d -> %d Items",
+            before,
+            len(items),
+        )
+
+    # Preise verfolgen
     for item in items:
         try:
             track_item_price(item)
@@ -337,6 +436,7 @@ def search_page():
         "location_country": args["location_country"] or "",
         "listing_type": args["listing_type"] or "",
         "source": source,
+        "only_main_product": "1" if args.get("only_main_product") else "",
     }
 
     filters = {
@@ -349,6 +449,7 @@ def search_page():
         "free_shipping": args["free_shipping"],
         "returns_accepted": args["returns_accepted"],
         "top_rated_only": args["top_rated_only"],
+        "only_main_product": args["only_main_product"],
     }
 
     # (Pagination kannst du später richtig bauen)
@@ -374,13 +475,12 @@ def search_page():
     )
 
 
-from services.csv_exporter import export_search_results_to_csv
-from flask import make_response
-
+# =============================================================================
+# CSV-Export
+# =============================================================================
 @bp_search.route("/export-csv", methods=["POST"])
 def export_csv():
     """Exportiert aktuelle Suchergebnisse als CSV"""
-
     items = request.json.get("items", [])
 
     if not items:
@@ -395,7 +495,6 @@ def export_csv():
     return response
 
 
-
 # =============================================================================
 # 2) LEGACY-ROUTE: /search-legacy -> nutzt jetzt dieselbe Logik
 # =============================================================================
@@ -405,4 +504,4 @@ def search_legacy():
     Alte Links /search-legacy verwenden jetzt exakt die gleiche Logik wie /search.
     Dadurch ist es egal, ob irgendwo noch /search-legacy verlinkt ist.
     """
-    return search()
+    return search_page()

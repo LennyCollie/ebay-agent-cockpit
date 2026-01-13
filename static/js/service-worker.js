@@ -1,5 +1,5 @@
 const CACHE_NAME = "super-agent-v1";
-const urlsToCache = ["/", "/static/css/bootstrap.min.css", "/static/js/bootstrap.bundle.min.js"];
+const urlsToCache = ["/"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

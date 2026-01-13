@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from telegram_bot import send_new_item_alert
 from database import dict_cursor, get_placeholder, get_db
 from agent import get_mail_settings, send_mail
+from smart_filters import SmartFilter
 
 load_dotenv()
 
@@ -258,6 +259,14 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
         else:
             items = search_ebay_for_alert(terms, filters)
             stats["ebay_alerts"] += 1
+
+        # 🧠 Smart-Filter: Zubehör/Reparatur/Schrott raus, wenn aktiviert
+        if filters.get("only_main_product") or filters.get("smart_filter"):
+            before = len(items)
+            sf = SmartFilter()
+            res = sf.filter_items(items, search_terms=terms)
+            items = res["filtered_items"]
+            print(f"      🧠 Smart-Filter: {before} -> {len(items)} Items")
 
         print(f"   [+] Gefunden: {len(items)} Items")
 

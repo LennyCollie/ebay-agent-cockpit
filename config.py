@@ -9,6 +9,13 @@ STRIPE_PRICE_ENTERPRISE = os.getenv("STRIPE_PRICE_ENTERPRISE", "")
 STRIPE_PRICE_CUSTOM = os.getenv("STRIPE_PRICE_CUSTOM", "")
 PLAUSIBLE_DOMAIN = os.getenv("PLAUSIBLE_DOMAIN", "")
 
+# Preis-Beträge aus ENV (optional)
+PRICE_STARTER_AMOUNT = float(os.getenv("PRICE_STARTER_AMOUNT", "4.99"))
+PRICE_BASIC_AMOUNT = float(os.getenv("PRICE_BASIC_AMOUNT", "9.99"))
+PRICE_PRO_AMOUNT = float(os.getenv("PRICE_PRO_AMOUNT", "19.99"))
+PRICE_ENTERPRISE_AMOUNT = float(os.getenv("PRICE_ENTERPRISE_AMOUNT", "49.99"))
+PRICE_CUSTOM_AMOUNT = float(os.getenv("PRICE_CUSTOM_AMOUNT", "99.0"))
+
 STRIPE_PRICE = {
     "starter": STRIPE_PRICE_STARTER,
     "basic": STRIPE_PRICE_BASIC,
@@ -32,7 +39,7 @@ PLAN_FEATURES = {
         "description": "Kostenlos - Perfekt zum Starten"
     },
     "starter": {
-        "price": 4.99,
+        "price": PRICE_STARTER_AMOUNT,
         "currency": "EUR",
         "max_alerts": 25,
         "max_products": 50,
@@ -41,10 +48,10 @@ PLAN_FEATURES = {
         "api_access": False,
         "priority_support": False,
         "white_label": False,
-        "description": "€4.99/Monat - Für Hobby-Nutzer"
+        "description": f"€{PRICE_STARTER_AMOUNT}/Monat - Für Hobby-Nutzer"
     },
     "basic": {
-        "price": 9.99,
+        "price": PRICE_BASIC_AMOUNT,
         "currency": "EUR",
         "max_alerts": 100,
         "max_products": 200,
@@ -53,10 +60,10 @@ PLAN_FEATURES = {
         "api_access": False,
         "priority_support": False,
         "white_label": False,
-        "description": "€9.99/Monat - Für regelmäßige Nutzer"
+        "description": f"€{PRICE_BASIC_AMOUNT}/Monat - Für regelmäßige Nutzer"
     },
     "pro": {
-        "price": 19.99,
+        "price": PRICE_PRO_AMOUNT,
         "currency": "EUR",
         "max_alerts": 500,
         "max_products": 1000,
@@ -65,10 +72,10 @@ PLAN_FEATURES = {
         "api_access": True,
         "priority_support": True,
         "white_label": False,
-        "description": "€19.99/Monat - Für Power-User"
+        "description": f"€{PRICE_PRO_AMOUNT}/Monat - Für Power-User"
     },
     "enterprise": {
-        "price": 49.99,
+        "price": PRICE_ENTERPRISE_AMOUNT,
         "currency": "EUR",
         "max_alerts": 5000,
         "max_products": 10000,
@@ -77,10 +84,10 @@ PLAN_FEATURES = {
         "api_access": True,
         "priority_support": True,
         "white_label": False,
-        "description": "€49.99/Monat - Für Profis"
+        "description": f"€{PRICE_ENTERPRISE_AMOUNT}/Monat - Für Profis"
     },
     "custom": {
-        "price": 99.0,
+        "price": PRICE_CUSTOM_AMOUNT,
         "currency": "EUR",
         "max_alerts": -1,
         "max_products": -1,
@@ -89,7 +96,7 @@ PLAN_FEATURES = {
         "api_access": True,
         "priority_support": True,
         "white_label": True,
-        "description": "Ab €99/Monat - White-Label & Custom"
+        "description": f"Ab €{PRICE_CUSTOM_AMOUNT}/Monat - White-Label & Custom"
     }
 }
 

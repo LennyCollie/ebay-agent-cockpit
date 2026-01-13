@@ -186,14 +186,14 @@
       <div class="card pricing-card h-100 shadow-sm border-0">
         <div class="card-body p-4 d-flex flex-column">
           <h3 class="h4 mb-2 fw-bold">Free</h3>
-          <p class="text-muted mb-3">Kostenlos testen</p>
+          <p class="text-muted mb-3">{{ PLAN_FEATURES['free']['description'] }}</p>
           <div class="mb-3">
-            <span class="price-amount">0 €</span>
+            <span class="price-amount">{{ "%.0f"|format(PLAN_FEATURES['free']['price']) }} €</span>
             <span class="price-period">/ immer</span>
           </div>
           <ul class="feature-list flex-grow-1">
-            <li>5 Alerts</li>
-            <li>10 Produkte</li>
+            <li>{{ PLAN_FEATURES['free']['max_alerts'] }} Alerts</li>
+            <li>{{ PLAN_FEATURES['free']['max_products'] }} Produkte</li>
             <li>Basisfunktionen</li>
           </ul>
           <a href="{{ url_for('search.search_page') }}" class="btn btn-outline-primary btn-pricing w-100 mt-auto">Kostenlos starten</a>
@@ -208,12 +208,12 @@
           <h3 class="h4 mb-2 fw-bold">Starter</h3>
           <p class="text-muted mb-3">Mit SMS-Alerts</p>
           <div class="mb-3">
-            <span class="price-amount">4,99 €</span>
+            <span class="price-amount">{{ "%.2f"|format(PLAN_FEATURES['starter']['price'])|replace('.', ',') }} €</span>
             <span class="price-period">/ Monat</span>
           </div>
           <ul class="feature-list flex-grow-1">
-            <li>25 Alerts</li>
-            <li>50 Produkte</li>
+            <li>{{ PLAN_FEATURES['starter']['max_alerts'] }} Alerts</li>
+            <li>{{ PLAN_FEATURES['starter']['max_products'] }} Produkte</li>
             <li>SMS-Benachrichtigungen</li>
           </ul>
           <form method="post" action="/checkout" class="mt-auto">
@@ -231,12 +231,12 @@
           <h3 class="h4 mb-2 fw-bold">Basic</h3>
           <p class="text-muted mb-3">Mit PDF-Reports</p>
           <div class="mb-3">
-            <span class="price-amount">9,99 €</span>
+            <span class="price-amount">{{ "%.2f"|format(PLAN_FEATURES['basic']['price'])|replace('.', ',') }} €</span>
             <span class="price-period">/ Monat</span>
           </div>
           <ul class="feature-list flex-grow-1">
-            <li>100 Alerts</li>
-            <li>200 Produkte</li>
+            <li>{{ PLAN_FEATURES['basic']['max_alerts'] }} Alerts</li>
+            <li>{{ PLAN_FEATURES['basic']['max_products'] }} Produkte</li>
             <li>PDF-Reports</li>
             <li>SMS-Alerts</li>
           </ul>
@@ -256,12 +256,12 @@
           <h3 class="h4 mb-2 fw-bold">Pro</h3>
           <p class="text-muted mb-3">Für Power-User</p>
           <div class="mb-3">
-            <span class="price-amount">19,99 €</span>
+            <span class="price-amount">{{ "%.2f"|format(PLAN_FEATURES['pro']['price'])|replace('.', ',') }} €</span>
             <span class="price-period">/ Monat</span>
           </div>
           <ul class="feature-list flex-grow-1">
-            <li>500 Alerts</li>
-            <li>1000 Produkte</li>
+            <li>{{ PLAN_FEATURES['pro']['max_alerts'] }} Alerts</li>
+            <li>{{ PLAN_FEATURES['pro']['max_products'] }} Produkte</li>
             <li>API-Zugriff</li>
             <li>Priority Support</li>
           </ul>
@@ -280,12 +280,12 @@
           <h3 class="h4 mb-2 fw-bold">Enterprise</h3>
           <p class="text-muted mb-3">Für Profis</p>
           <div class="mb-3">
-            <span class="price-amount">49,99 €</span>
+            <span class="price-amount">{{ "%.2f"|format(PLAN_FEATURES['enterprise']['price'])|replace('.', ',') }} €</span>
             <span class="price-period">/ Monat</span>
           </div>
           <ul class="feature-list flex-grow-1">
-            <li>5000 Alerts</li>
-            <li>10000 Produkte</li>
+            <li>{{ PLAN_FEATURES['enterprise']['max_alerts'] }} Alerts</li>
+            <li>{{ PLAN_FEATURES['enterprise']['max_products'] }} Produkte</li>
             <li>Advanced Analytics</li>
             <li>Dedicated Support</li>
           </ul>
@@ -304,7 +304,7 @@
           <h3 class="h4 mb-2 fw-bold">Custom</h3>
           <p class="text-muted mb-3">White-Label & Reseller</p>
           <div class="mb-3">
-            <span class="price-amount">ab 99 €</span>
+            <span class="price-amount">ab {{ "%.0f"|format(PLAN_FEATURES['custom']['price']) }} €</span>
             <span class="price-period">/ Monat</span>
           </div>
           <ul class="feature-list flex-grow-1">
@@ -339,66 +339,66 @@
         <tbody>
           <tr>
             <td><strong>Max. Alerts</strong></td>
-            <td class="text-center">5</td>
-            <td class="text-center">25</td>
-            <td class="text-center">100</td>
-            <td class="text-center">500</td>
-            <td class="text-center">5000</td>
+            <td class="text-center">{{ PLAN_FEATURES['free']['max_alerts'] }}</td>
+            <td class="text-center">{{ PLAN_FEATURES['starter']['max_alerts'] }}</td>
+            <td class="text-center">{{ PLAN_FEATURES['basic']['max_alerts'] }}</td>
+            <td class="text-center">{{ PLAN_FEATURES['pro']['max_alerts'] }}</td>
+            <td class="text-center">{{ PLAN_FEATURES['enterprise']['max_alerts'] }}</td>
             <td class="text-center">Unlimited</td>
           </tr>
           <tr>
             <td><strong>Max. Produkte</strong></td>
-            <td class="text-center">10</td>
-            <td class="text-center">50</td>
-            <td class="text-center">200</td>
-            <td class="text-center">1000</td>
-            <td class="text-center">10000</td>
+            <td class="text-center">{{ PLAN_FEATURES['free']['max_products'] }}</td>
+            <td class="text-center">{{ PLAN_FEATURES['starter']['max_products'] }}</td>
+            <td class="text-center">{{ PLAN_FEATURES['basic']['max_products'] }}</td>
+            <td class="text-center">{{ PLAN_FEATURES['pro']['max_products'] }}</td>
+            <td class="text-center">{{ PLAN_FEATURES['enterprise']['max_products'] }}</td>
             <td class="text-center">Unlimited</td>
           </tr>
           <tr>
             <td><strong>SMS-Alerts</strong></td>
-            <td class="text-center">—</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['free']['sms_alerts'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['starter']['sms_alerts'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['basic']['sms_alerts'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['pro']['sms_alerts'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['enterprise']['sms_alerts'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['custom']['sms_alerts'] else '—' }}</td>
           </tr>
           <tr>
             <td><strong>PDF-Reports</strong></td>
-            <td class="text-center">—</td>
-            <td class="text-center">—</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['free']['pdf_reports'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['starter']['pdf_reports'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['basic']['pdf_reports'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['pro']['pdf_reports'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['enterprise']['pdf_reports'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['custom']['pdf_reports'] else '—' }}</td>
           </tr>
           <tr>
             <td><strong>API-Zugriff</strong></td>
-            <td class="text-center">—</td>
-            <td class="text-center">—</td>
-            <td class="text-center">—</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['free']['api_access'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['starter']['api_access'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['basic']['api_access'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['pro']['api_access'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['enterprise']['api_access'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['custom']['api_access'] else '—' }}</td>
           </tr>
           <tr>
             <td><strong>Priority Support</strong></td>
-            <td class="text-center">—</td>
-            <td class="text-center">—</td>
-            <td class="text-center">—</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
-            <td class="text-center">✔</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['free']['priority_support'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['starter']['priority_support'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['basic']['priority_support'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['pro']['priority_support'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['enterprise']['priority_support'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['custom']['priority_support'] else '—' }}</td>
           </tr>
           <tr>
             <td><strong>White-Label</strong></td>
-            <td class="text-center">—</td>
-            <td class="text-center">—</td>
-            <td class="text-center">—</td>
-            <td class="text-center">—</td>
-            <td class="text-center">—</td>
-            <td class="text-center">✔</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['free']['white_label'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['starter']['white_label'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['basic']['white_label'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['pro']['white_label'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['enterprise']['white_label'] else '—' }}</td>
+            <td class="text-center">{{ '✔' if PLAN_FEATURES['custom']['white_label'] else '—' }}</td>
           </tr>
         </tbody>
       </table>
