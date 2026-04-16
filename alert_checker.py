@@ -690,9 +690,19 @@ def run_alert_check():
     """
     Entry-Point für Cron-Job.
     Prüft ALLE Alerts (eBay + Kleinanzeigen) und loggt den Lauf in alert_runs.
+    Zusätzlich: Importiert E-Mail-Alerts (mobile.de / autoscout24).
     """
     start_ts = int(time.time())
 
+    # 1. E-Mail-Alerts importieren (mobile.de / autoscout24)
+    try:
+        from services.email_alert_importer import check_and_import_email_alerts
+        print("🔎 Prüfe auf neue E-Mail-Alerts (mobile.de / autoscout24)...")
+        check_and_import_email_alerts()
+    except Exception as e:
+        print(f"[!] Fehler beim E-Mail-Import: {e}")
+
+    # 2. Reguläre Alert-Prüfung (eBay / Kleinanzeigen)
     try:
         conn = get_db()
         stats = check_all_alerts(conn)

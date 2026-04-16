@@ -15,7 +15,9 @@ and the user sees the unified single-page UI. #}
 <div class="container py-4">
   <div class="text-center mb-4">
     <h1 class="h3">Suche</h1>
-    <p class="text-muted mb-0">Gib 1–3 Begriffe an, setze optional Filter — unten erscheinen die Treffer.</p>
+    {% set _max_terms = plan_info.max_terms if plan_info else 3 %}
+    <p class="text-muted mb-0">Gib 1–{{ _max_terms }} Begriffe an, setze optional Filter — unten erscheinen die Treffer.
+    </p>
   </div>
 
   {# ---------- Toolbar: Alert speichern + Kanäle ---------- #}
@@ -29,6 +31,15 @@ and the user sees the unified single-page UI. #}
       {% endif %}
       {% if terms|length > 2 %}
       <input type="hidden" name="q3" value="{{ terms[2] }}">
+      {% endif %}
+      {% if terms|length > 3 %}
+      <input type="hidden" name="q4" value="{{ terms[3] }}">
+      {% endif %}
+      {% if terms|length > 4 %}
+      <input type="hidden" name="q5" value="{{ terms[4] }}">
+      {% endif %}
+      {% if terms|length > 5 %}
+      <input type="hidden" name="q6" value="{{ terms[5] }}">
       {% endif %}
 
       {# Filter – falls definiert #}
@@ -125,6 +136,17 @@ and the user sees the unified single-page UI. #}
   {# ---------- Suchformular ---------- #}
   <form id="searchForm" action="{{ url_for('search.search_page') }}" method="post" class="card mb-4">
     <div class="card-body">
+
+      {% if terms_trimmed %}
+      <div class="alert alert-info d-flex justify-content-between align-items-center py-2 px-3 mb-3">
+        <div>
+          <span class="badge text-bg-info me-2">Limit erreicht</span>
+          Es wurden nur die ersten {{ plan_info.max_terms if plan_info else 3 }} Suchbegriffe berücksichtigt.
+        </div>
+        <a href="{{ url_for('public_pricing') }}" class="btn btn-sm btn-primary">Upgrade</a>
+      </div>
+      {% endif %}
+
       <div class="row g-3">
 
         {# --- Begriffe 1–3 -------------------------------------------------- #}
@@ -143,6 +165,31 @@ and the user sees the unified single-page UI. #}
           <input type="text" class="form-control" name="q3" placeholder="optional"
             value="{{ base_qs.get('q3', request.args.get('q3','')) }}">
         </div>
+
+        {# --- Begriffe 4–6 (nur Premium) ------------------------------------ #}
+        {% if plan_info and plan_info.is_premium %}
+        <div class="col-md-4">
+          <label class="form-label">Begriff 4 (Premium)</label>
+          <input type="text" class="form-control" name="q4" placeholder="optional"
+            value="{{ base_qs.get('q4', request.args.get('q4','')) }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Begriff 5 (Premium)</label>
+          <input type="text" class="form-control" name="q5" placeholder="optional"
+            value="{{ base_qs.get('q5', request.args.get('q5','')) }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Begriff 6 (Premium)</label>
+          <input type="text" class="form-control" name="q6" placeholder="optional"
+            value="{{ base_qs.get('q6', request.args.get('q6','')) }}">
+        </div>
+        {% else %}
+        <div class="col-12 d-flex justify-content-between align-items-center">
+          <div class="form-text">Tipp: Mit Premium kannst du bis zu {{ plan_info.max_terms_premium if plan_info else 6
+            }} Suchbegriffe eingeben.</div>
+          <a href="{{ url_for('public_pricing') }}" class="btn btn-sm btn-outline-primary">Upgrade</a>
+        </div>
+        {% endif %}
 
         {# --- KI-Helfer 1: bessere Suchbegriffe ----------------------------- #}
         <div class="col-12">
@@ -503,9 +550,15 @@ Apple iPhone 12 Smartphone"></textarea>
       const q1 = (form.q1.value || '').trim();
       const q2 = (form.q2.value || '').trim();
       const q3 = (form.q3.value || '').trim();
+      const q4 = (form.q4 && form.q4.value ? form.q4.value : '').trim();
+      const q5 = (form.q5 && form.q5.value ? form.q5.value : '').trim();
+      const q6 = (form.q6 && form.q6.value ? form.q6.value : '').trim();
       if (q1) params.set('q1', q1);
       if (q2) params.set('q2', q2);
       if (q3) params.set('q3', q3);
+      if (q4) params.set('q4', q4);
+      if (q5) params.set('q5', q5);
+      if (q6) params.set('q6', q6);
 
       const pmin = (form.price_min.value || '').trim();
       const pmax = (form.price_max.value || '').trim();

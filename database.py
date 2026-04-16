@@ -144,9 +144,14 @@ def init_db() -> None:
                 user_email TEXT NOT NULL,
                 terms_json TEXT NOT NULL,
                 filters_json TEXT NOT NULL,
+                source TEXT DEFAULT 'ebay',
                 per_page INTEGER NOT NULL DEFAULT 20,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 last_run_ts INTEGER NOT NULL DEFAULT 0,
+                notify_email INTEGER NOT NULL DEFAULT 0,
+                notify_telegram INTEGER NOT NULL DEFAULT 0,
+                notify_mobilede INTEGER NOT NULL DEFAULT 0,
+                notify_autoscout INTEGER NOT NULL DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -252,9 +257,14 @@ def init_db() -> None:
                 user_email TEXT NOT NULL,
                 terms_json TEXT NOT NULL,
                 filters_json TEXT NOT NULL,
+                source TEXT DEFAULT 'ebay',
                 per_page INTEGER NOT NULL DEFAULT 20,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 last_run_ts INTEGER NOT NULL DEFAULT 0,
+                notify_email INTEGER NOT NULL DEFAULT 0,
+                notify_telegram INTEGER NOT NULL DEFAULT 0,
+                notify_mobilede INTEGER NOT NULL DEFAULT 0,
+                notify_autoscout INTEGER NOT NULL DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)

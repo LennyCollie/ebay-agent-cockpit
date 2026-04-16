@@ -34,6 +34,10 @@ from services.ai_price_analyzer import analyze_prices_with_ai
 
 bp_search = Blueprint("search", __name__)
 
+# Maximale Anzahl Suchbegriffe je nach Plan
+MAX_TERMS_FREE = 3
+MAX_TERMS_PREMIUM = 6
+
 
 # =============================================================================
 # HELFER: eBay-API -> View-Items
@@ -107,11 +111,14 @@ def _normalize_kleinanzeigen(ka_results: List[Dict]) -> List[Dict]:
 def _parse_args() -> Dict[str, Any]:
     src = request.args if request.method == "GET" else request.form
 
-    # 1–3 Suchbegriffe
+    # 1–6 Suchbegriffe
     q1 = (src.get("q") or src.get("q1") or "").strip()
     q2 = (src.get("q2") or "").strip()
     q3 = (src.get("q3") or "").strip()
-    terms = [t for t in (q1, q2, q3) if t]
+    q4 = (src.get("q4") or "").strip()
+    q5 = (src.get("q5") or "").strip()
+    q6 = (src.get("q6") or "").strip()
+    terms = [t for t in (q1, q2, q3, q4, q5, q6) if t]
     q = " ".join(terms)
 
     # Sortierung (UI -> eBay)
@@ -193,8 +200,10 @@ def _get_plan_info():
 
     if plan_type in ("pro", "premium") or is_premium_flag:
         interval_min = ALERT_INTERVAL_PREMIUM
+        max_terms = MAX_TERMS_PREMIUM
     else:
         interval_min = ALERT_INTERVAL_FREE
+        max_terms = MAX_TERMS_FREE
 
     if plan_type in ("pro", "premium"):
         label = plan_type.upper()
@@ -208,6 +217,8 @@ def _get_plan_info():
         "interval_min": interval_min,
         "plan_type": plan_type or "free",
         "is_premium": is_premium_flag,
+        "max_terms": max_terms,
+        "max_terms_premium": MAX_TERMS_PREMIUM,
     }
 
 
@@ -301,6 +312,20 @@ def search_page():
     args = _parse_args()
     plan_info = _get_plan_info()
 
+    # Serverseitige Begrenzung der Anzahl Suchbegriffe je nach Plan
+    max_terms = plan_info.get("max_terms") if plan_info else MAX_TERMS_FREE
+    orig_terms_len = len(args.get("terms", []))
+    terms_trimmed = False
+    if orig_terms_len > max_terms:
+        args["terms"] = args["terms"][:max_terms]
+        args["q"] = " ".join(args["terms"])  # für eBay-Zusammenfassung
+        terms_trimmed = True
+        current_app.logger.debug("Terms begrenzt auf %d aufgrund des Plans", max_terms)
+        try:
+            flash(f"Hinweis: In deinem aktuellen Tarif werden nur die ersten {max_terms} Suchbegriffe berücksichtigt.", "info")
+        except Exception:
+            pass
+
     source = (args.get("source") or request.args.get("source") or "both").strip().lower()
     args["source"] = source
     current_app.logger.debug("Parsed search args: %r", args)
@@ -317,7 +342,7 @@ def search_page():
     # 1. Nur Formular anzeigen (erste Aufrufe ohne Suchbegriff)
     if request.method == "GET" and not has_search_term:
         current_app.logger.debug("No search term detected - showing empty form")
-        return render_template("search.html", plan_info=plan_info, source=source)
+        return render_template("search.html", plan_info=plan_info, source=source, terms_trimmed=False)
 
     # 2. Kein Suchbegriff -> Hinweis & zurück
     if not args["q"]:
@@ -378,16 +403,57 @@ def search_page():
                 "Calling merge_all_marketplaces with active_sources=%s",
                 active_sources,
             )
-            items = merge_all_marketplaces(
-                term=args["q"],
-                current_results=items,
-                price_min=price_min_f,
-                price_max=price_max_f,
-                location=None,  # später ggf. PLZ übergeben
-                max_per_source=20,
-                verbose=True,
-                active_sources=active_sources,
-            )
+            merged_items = []
+            # Für Kleinanzeigen einzeln, andere wie gewohnt
+            if "kleinanzeigen" in active_sources:
+                for term in args["terms"]:
+                    res = merge_all_marketplaces(
+                        term=term,
+                        current_results=[],
+                        price_min=price_min_f,
+                        price_max=price_max_f,
+                        location=None,
+                        max_per_source=20,
+                        verbose=True,
+                        active_sources=["kleinanzeigen"],
+                    )
+                    merged_items.extend(res)
+                # Optional: Doppelte entfernen (z.B. über die URL oder eine eindeutige ID)
+                seen = set()
+                unique_items = []
+                for item in merged_items:
+                    key = item.get("url") or item.get("item_id")
+                    if key and key not in seen:
+                        seen.add(key)
+                        unique_items.append(item)
+                merged_items = unique_items
+                # Andere Marktplätze ggf. noch abfragen und dazugeben:
+                other_sources = [src for src in active_sources if src != "kleinanzeigen"]
+                if other_sources:
+                    other_items = merge_all_marketplaces(
+                        term=args["q"],
+                        current_results=[],
+                        price_min=price_min_f,
+                        price_max=price_max_f,
+                        location=None,
+                        max_per_source=20,
+                        verbose=True,
+                        active_sources=other_sources,
+                    )
+                    merged_items.extend(other_items)
+                items = merged_items
+            else:
+                # Kein Kleinanzeigen, normal verarbeiten
+                items = merge_all_marketplaces(
+                    term=args["q"],
+                    current_results=items,
+                    price_min=price_min_f,
+                    price_max=price_max_f,
+                    location=None,
+                    max_per_source=20,
+                    verbose=True,
+                    active_sources=active_sources,
+                )
             current_app.logger.info("After merge: %d total items", len(items))
         else:
             current_app.logger.debug(
@@ -429,6 +495,9 @@ def search_page():
         "q1": terms[0] if len(terms) > 0 else "",
         "q2": terms[1] if len(terms) > 1 else "",
         "q3": terms[2] if len(terms) > 2 else "",
+        "q4": terms[3] if len(terms) > 3 else "",
+        "q5": terms[4] if len(terms) > 4 else "",
+        "q6": terms[5] if len(terms) > 5 else "",
         "price_min": args["price_min"] or "",
         "price_max": args["price_max"] or "",
         "sort": args["sort_ui"],
@@ -472,6 +541,7 @@ def search_page():
         filters=filters,
         pagination=pagination,
         source=source,
+        terms_trimmed=terms_trimmed,
     )
 
 
