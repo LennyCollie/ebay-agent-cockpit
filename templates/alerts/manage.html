@@ -74,13 +74,17 @@
               {% endif %}
             </td>
 
-            {# --- Kanäle (Mail / Telegram) #}
+            {# --- Kanäle (Mail / Telegram / Mobile / AutoScout) #}
             <td>
               {% if a.notify_email %}
               <span class="badge rounded-pill bg-primary mb-1"> ✉️ E-Mail </span><br />
               {% endif %} {% if a.notify_telegram %}
-              <span class="badge rounded-pill bg-info text-dark"> 💬 Telegram </span>
-              {% endif %} {% if not a.notify_email and not a.notify_telegram %}
+              <span class="badge rounded-pill bg-info text-dark mb-1"> 💬 Telegram </span><br />
+              {% endif %} {% if a.notify_mobilede %}
+              <span class="badge rounded-pill bg-warning text-dark mb-1"> 🚗 Mobile.de </span><br />
+              {% endif %} {% if a.notify_autoscout %}
+              <span class="badge rounded-pill bg-danger mb-1"> 🚙 AutoScout24 </span>
+              {% endif %} {% if not a.notify_email and not a.notify_telegram and not a.notify_mobilede and not a.notify_autoscout %}
               <span class="text-muted small">Keine</span>
               {% endif %}
             </td>

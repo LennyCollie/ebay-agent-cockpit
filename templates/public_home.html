@@ -1,921 +1,308 @@
-{% extends "base.html" %} {% block content %}
+{% extends "base.html" %}
+{% block content %}
 
-<!-- Small styles just for this page -->
 <style>
-  .hero-gradient {
-    background: radial-gradient(120% 120% at 50% 0%, #0d6efd 0%, #0a58ca 35%, #0b2239 100%);
-  }
-  .card-hover {
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-  }
-  .card-hover:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
-  }
+    .hero-gradient {
+        background: radial-gradient(120% 120% at 50% 0%, #0d6efd 0%, #0a58ca 35%, #0b2239 100%);
+    }
+
+    .card-hover {
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .card-hover:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+
+    .soft-section {
+        background: #f8f9fa;
+    }
 </style>
 
-<!-- =================== HERO =================== -->
-
 <div class="container">
-  <div class="alert alert-warning shadow-sm small mt-3 mb-4">
-    <strong>Hinweis:</strong>
-    Du nutzt gerade die <strong>Beta-Version</strong> des Super-Agenten. Es kann noch zu Fehlern
-    kommen – Feedback hilft mir sehr!
-  </div>
+    <div class="alert alert-warning shadow-sm small mt-3 mb-4">
+        <strong>Hinweis:</strong>
+        Du nutzt gerade die <strong>Beta-Version</strong>. Feedback hilft uns, Super-Agent noch besser zu machen.
+    </div>
 </div>
 
-<section class="py-5 hero-gradient text-white text-center border-bottom">
-  <div class="container py-4">
-    <div class="mb-4">
-      <span class="badge bg-white text-dark fw-semibold" style="font-size: 1.1rem; padding: 0.5rem 1rem;">
-        Super-Agent Cockpit
-      </span>
-    </div>
-    
-    <span class="badge text-bg-success mb-3">3 Suchen gratis – keine Kreditkarte nötig</span>
-    
-    <h1 class="display-6 fw-bold mb-3" style="max-width: 900px; margin-left: auto; margin-right: auto;">
-      Präzises eBay-Monitoring.<br />
-      <span style="color: #ffd700; text-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 1.8rem;">Entdecken Sie Angebote vor der Konkurrenz.</span>
-    </h1>
-    
-    <p class="lead mx-auto text-white" style="max-width: 800px; font-weight: 500;">
-      Professionelle <strong>Echtzeit-Benachrichtigungen</strong> für neue eBay-Inserate – 
-      signifikant schneller als Standard-Alerts. Mit intelligenten Filtern & Telegram-Integration.
-    </p>
+<section class="py-5 hero-gradient text-white text-center">
+    <div class="container py-4">
+        <span class="badge bg-white text-dark fw-semibold mb-3 px-3 py-2">
+            Super-Agent Cockpit
+        </span>
 
-    <p class="text-white-50 mb-4" style="font-size: 0.95rem;">
-      In drei Schritten zum Ziel: <strong>① Suche definieren</strong> · <strong>② Filter anpassen</strong> · 
-      <strong>③ Monitoring starten</strong>
-    </p>
-
-    <div class="d-flex justify-content-center gap-3 flex-wrap mt-5 mb-4">
-      <a href="{{ url_for('search.search_page') }}" class="btn btn-light btn-lg px-5 fw-semibold"
-        >Jetzt kostenlos starten</a
-      >
-      <a href="#popular-searches" class="btn btn-outline-light btn-lg px-5 fw-semibold">Beispiel-Agenten</a>
-      <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-light btn-lg px-5 fw-semibold">Preise & Pläne</a>
-    </div>
-
-    <p class="small text-white-50 mb-0">
-      <a href="{{ url_for('howto') }}" class="link-light text-decoration-underline">
-        Dokumentation & Anleitung
-      </a>
-      &nbsp; · &nbsp;
-      <a href="{{ url_for('public_pricing') }}" class="link-light text-decoration-underline">
-        Feature-Übersicht
-      </a>
-    </p>
-
-    <!-- Trust-Signals unter dem CTA -->
-    <div class="mt-5 pt-3 border-top border-white-50">
-      <div class="row g-3 justify-content-center">
-        <div class="col-auto">
-          <small class="text-white-50">
-            Minuten-Taktung<br />
-            <small style="font-size: 0.8rem;">Echtzeit-Überwachung</small>
-          </small>
+        <div class="mb-3">
+            <span class="badge text-bg-success">3 Suchen gratis – keine Kreditkarte nötig</span>
         </div>
-        <div class="col-auto">
-          <small class="text-white-50">
-            Profi-Filter<br />
-            <small style="font-size: 0.8rem;">Preis, Zustand, Standort</small>
-          </small>
-        </div>
-        <div class="col-auto">
-          <small class="text-white-50">
-            Multi-Channel<br />
-            <small style="font-size: 0.8rem;">Telegram, E-Mail & SMS</small>
-          </small>
-        </div>
-        <div class="col-auto">
-          <small class="text-white-50">
-            Datensicherheit<br />
-            <small style="font-size: 0.8rem;">SSL-verschlüsselt</small>
-          </small>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
 
-<section class="py-5 bg-light border-top" id="popular-searches">
-  <div class="container">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-      <div>
-        <h2 class="h4 mb-1">Beliebte Agenten</h2>
-        <p class="text-muted mb-0">
-          Ein Klick – fertige Suche mit Preislimit. Auf der Ergebnisseite kannst du daraus sofort
-          einen 🔔 Alert machen.
+        <h1 class="display-5 fw-bold mb-3" style="max-width: 900px; margin: 0 auto;">
+            Sei schneller als andere Käufer auf
+            <span style="color:#ffd700;">eBay & Kleinanzeigen</span>
+        </h1>
+
+        <p class="lead mx-auto mb-4" style="max-width: 820px;">
+            Erhalte Benachrichtigungen in Sekunden per <strong>E-Mail</strong> oder <strong>Telegram</strong>,
+            sobald ein gesuchter Artikel neu eingestellt wird – bevor gute Angebote weg sind.
         </p>
-      </div>
-      {% if current_user.is_authenticated %}
-      <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold">
-        ✅ Eingeloggt – Alerts direkt verfügbar
-      </span>
-      {% else %}
-      <span class="badge bg-warning-subtle text-warning border border-warning-subtle fw-semibold">
-        👋 Tipp: Registriere dich, um aus diesen Suchen Alerts zu machen
-      </span>
-      {% endif %}
-    </div>
 
-    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
-      {# 1: Bosch Akku-Bohrschrauber #}
-      <div class="col">
-        <div class="card h-100 shadow-sm">
-          <div class="card-body d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-              <span class="badge bg-primary">Werkzeug</span>
-              <span class="badge bg-light text-muted border">eBay</span>
-            </div>
-            <h3 class="h6 fw-semibold mb-1">Bosch GSR 18V-55</h3>
-            <p class="small text-muted mb-3">
-              Profi-Akkuschrauber, Preisdeckel bei ca. 120&nbsp;€ – ideal zum Agent-Monitoring.
-            </p>
-            <dl class="row small mb-3">
-              <dt class="col-5 text-muted">Preis max.</dt>
-              <dd class="col-7 mb-0">120&nbsp;€</dd>
-              <dt class="col-5 text-muted">Quelle</dt>
-              <dd class="col-7 mb-0">eBay (Sofort-Kauf bevorzugt)</dd>
-            </dl>
-            <div class="mt-auto d-flex gap-2">
-              <a
-                href="{{ url_for('search.search_page',
-                                  q1='Bosch GSR 18V-55',
-                                  price_max=120,
-                                  source='ebay') }}"
-                class="btn btn-sm btn-primary flex-grow-1"
-              >
-                🔍 Suche öffnen
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {# 2: AirPods Pro 2 #}
-      <div class="col">
-        <div class="card h-100 shadow-sm">
-          <div class="card-body d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-              <span class="badge bg-info">Audio</span>
-              <span class="badge bg-light text-muted border">eBay</span>
-            </div>
-            <h3 class="h6 fw-semibold mb-1">AirPods Pro (2. Gen)</h3>
-            <p class="small text-muted mb-3">
-              Gefragte Kopfhörer – Agent hält Ausschau nach guten Preisen &amp; gutem Zustand.
-            </p>
-            <dl class="row small mb-3">
-              <dt class="col-5 text-muted">Preis max.</dt>
-              <dd class="col-7 mb-0">200&nbsp;€</dd>
-              <dt class="col-5 text-muted">Zustand</dt>
-              <dd class="col-7 mb-0">Neu oder wie neu</dd>
-            </dl>
-            <div class="mt-auto d-flex gap-2">
-              <a
-                href="{{ url_for('search.search_page',
-                                  q1='AirPods Pro 2',
-                                  price_max=200,
-                                  source='ebay',
-                                  condition='NEW') }}"
-                class="btn btn-sm btn-primary flex-grow-1"
-              >
-                🔍 Suche öffnen
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {# 3: Nintendo Switch OLED #}
-      <div class="col">
-        <div class="card h-100 shadow-sm">
-          <div class="card-body d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-              <span class="badge bg-danger">Konsolen</span>
-              <span class="badge bg-light text-muted border">eBay &amp; Kleinanzeigen</span>
-            </div>
-            <h3 class="h6 fw-semibold mb-1">Nintendo Switch OLED</h3>
-            <p class="small text-muted mb-3">
-              Für Deals unter 260&nbsp;€ – kombiniert eBay &amp; Kleinanzeigen über Agenten.
-            </p>
-            <dl class="row small mb-3">
-              <dt class="col-5 text-muted">Preis max.</dt>
-              <dd class="col-7 mb-0">260&nbsp;€</dd>
-              <dt class="col-5 text-muted">Quelle</dt>
-              <dd class="col-7 mb-0">Beides (Agent)</dd>
-            </dl>
-            <div class="mt-auto d-flex gap-2">
-              <a
-                href="{{ url_for('search.search_page',
-                                  q1='Nintendo Switch OLED',
-                                  price_max=260,
-                                  source='both') }}"
-                class="btn btn-sm btn-primary flex-grow-1"
-              >
-                🔍 Suche öffnen
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {# 4: Revox A700 (dein Klassiker 😉) #}
-      <div class="col">
-        <div class="card h-100 shadow-sm">
-          <div class="card-body d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-              <span class="badge bg-secondary">Vintage&nbsp;HiFi</span>
-              <span class="badge bg-light text-muted border">Kleinanzeigen</span>
-            </div>
-            <h3 class="h6 fw-semibold mb-1">Revox A700</h3>
-            <p class="small text-muted mb-3">
-              Bandmaschine für Sammler – hier lohnt sich ein Agent besonders.
-            </p>
-            <dl class="row small mb-3">
-              <dt class="col-5 text-muted">Preis max.</dt>
-              <dd class="col-7 mb-0">offen (VB)</dd>
-              <dt class="col-5 text-muted">Quelle</dt>
-              <dd class="col-7 mb-0">Kleinanzeigen</dd>
-            </dl>
-            <div class="mt-auto d-flex gap-2">
-              <a
-                href="{{ url_for('search.search_page',
-                                  q1='Revox A700',
-                                  source='kleinanzeigen') }}"
-                class="btn btn-sm btn-primary flex-grow-1"
-              >
-                🔍 Suche öffnen
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {# 5: LEGO Technic – Lamborghini Sian #}
-      <div class="col">
-        <div class="card h-100 shadow-sm">
-          <div class="card-body d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-              <span class="badge bg-warning text-dark">LEGO</span>
-              <span class="badge bg-light text-muted border">eBay</span>
-            </div>
-            <h3 class="h6 fw-semibold mb-1">LEGO Technic 42115 Lamborghini Sián</h3>
-            <p class="small text-muted mb-3">
-              Beliebtes Set – Agent sucht nach Angeboten unter 280&nbsp;€.
-            </p>
-            <dl class="row small mb-3">
-              <dt class="col-5 text-muted">Preis max.</dt>
-              <dd class="col-7 mb-0">280&nbsp;€</dd>
-              <dt class="col-5 text-muted">Zustand</dt>
-              <dd class="col-7 mb-0">Neu bevorzugt</dd>
-            </dl>
-            <div class="mt-auto d-flex gap-2">
-              <a
-                href="{{ url_for('search.search_page',
-                                  q1='LEGO Technic 42115 Lamborghini',
-                                  price_max=280,
-                                  source='ebay',
-                                  condition='NEW') }}"
-                class="btn btn-sm btn-primary flex-grow-1"
-              >
-                🔍 Suche öffnen
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {# 6: Sonos One Lautsprecher #}
-      <div class="col">
-        <div class="card h-100 shadow-sm">
-          <div class="card-body d-flex flex-column">
-            <div class="d-flex justify-content-between align-items-start mb-2">
-              <span class="badge bg-dark">Smart Audio</span>
-              <span class="badge bg-light text-muted border">Kleinanzeigen</span>
-            </div>
-            <h3 class="h6 fw-semibold mb-1">Sonos One SL</h3>
-            <p class="small text-muted mb-3">
-              Multiroom-Lautsprecher, typische Schnäppchen unter 150&nbsp;€.
-            </p>
-            <dl class="row small mb-3">
-              <dt class="col-5 text-muted">Preis max.</dt>
-              <dd class="col-7 mb-0">150&nbsp;€</dd>
-              <dt class="col-5 text-muted">Quelle</dt>
-              <dd class="col-7 mb-0">Kleinanzeigen</dd>
-            </dl>
-            <div class="mt-auto d-flex gap-2">
-              <a
-                href="{{ url_for('search.search_page',
-                                  q1='Sonos One SL',
-                                  price_max=150,
-                                  source='kleinanzeigen') }}"
-                class="btn btn-sm btn-primary flex-grow-1"
-              >
-                🔍 Suche öffnen
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <p class="small text-muted mt-3">
-      Du kannst jede dieser Suchen auf der Ergebnisseite feinjustieren (Preis, Zustand, Quelle) und
-      dann als eigenen Agenten speichern.
-    </p>
-  </div>
-</section>
-
-<!-- =================== CORE FEATURES =================== -->
-<section class="py-5 bg-white border-top">
-  <div class="container">
-    <div class="text-center mb-5">
-      <h2 class="h2 fw-bold">Warum Super-Agent?</h2>
-      <p class="text-muted">Professionelle Werkzeuge für Händler und Sammler</p>
-    </div>
-
-    <div class="row g-4 row-cols-1 row-cols-md-3">
-      <!-- Feature 1 -->
-      <div class="col">
-        <div class="card h-100 shadow-sm border-0 bg-light">
-          <div class="card-body">
-            <div class="mb-3 text-primary">
-              <svg width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.5-13v4.158L11.2 9.3l-.706.708L7 7.462V3h1z"/>
-              </svg>
-            </div>
-            <h3 class="h5 fw-bold">Echtzeit-Monitoring</h3>
-            <p class="card-text text-muted">
-              Unsere Agenten scannen Marktplätze im Minuten-Takt. Erhalten Sie Benachrichtigungen, sobald ein passendes Angebot veröffentlicht wird – oft Stunden vor der Konkurrenz.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Feature 2 -->
-      <div class="col">
-        <div class="card h-100 shadow-sm border-0 bg-light">
-          <div class="card-body">
-            <div class="mb-3 text-primary">
-              <svg width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.342.474l-3 1A.5.5 0 0 1 6 14.5V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5v-2z"/>
-              </svg>
-            </div>
-            <h3 class="h5 fw-bold">Intelligente Filter</h3>
-            <p class="card-text text-muted">
-              Vermeiden Sie Falschmeldungen durch präzise Filterregeln. Nutzen Sie Include- und Exclude-Keywords, Preislimits und Zustandsfilter für optimale Ergebnisse.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Feature 3 -->
-      <div class="col">
-        <div class="card h-100 shadow-sm border-0 bg-light">
-          <div class="card-body">
-            <div class="mb-3 text-primary">
-              <svg width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM8.287 5.906c-.778.023-1.508.302-2.184.733l-.349-2.103c.847-.309 1.812-.477 2.733-.477 3.308 0 5 1.511 5 4.197 0 2.263-1.545 4-3.951 4-.74 0-1.446-.102-2.1-.286l.348-2.1c.526.105 1.05.156 1.446.156 1.116 0 1.812-.539 1.812-1.488 0-.949-.696-1.463-1.756-1.463-.233 0-.53.024-.744.072L8.287 5.906z"/>
-              </svg>
-            </div>
-            <h3 class="h5 fw-bold">Multi-Channel Alerts</h3>
-            <p class="card-text text-muted">
-              Wählen Sie Ihren bevorzugten Kanal: Telegram-Push, E-Mail-Zusammenfassungen oder SMS-Benachrichtigungen. Alles zentral gesteuert in Ihrem Cockpit.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-    <div class="text-center mt-5">
-      <p class="text-muted mb-3">
-        Noch unsicher? Super-Agent ist kostenlos – keine Kreditkarte nötig.
-      </p>
-      <a href="{{ url_for('search.search_page') }}" class="btn btn-primary btn-lg mb-4">
-        Jetzt 3 Suchen testen
-      </a>
-      
-      <!-- Social Share Buttons -->
-      <div class="pt-4 border-top">
-        <p class="text-muted small mb-3">
-          Empfehlen Sie Super-Agent weiter
-        </p>
-        <div class="d-flex justify-content-center gap-2 flex-wrap">
-          <a href="https://www.facebook.com/sharer/sharer.php?u={{ request.url_root }}&quote=Super-Agent:%20Professionelles%20eBay-Monitoring%20in%20Echtzeit" target="_blank" class="btn btn-outline-primary btn-sm">
-            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" style="margin-right: 6px; display: inline-block;">
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-            </svg>
-            Facebook
-          </a>
-          
-          <a href="https://twitter.com/intent/tweet?url={{ request.url_root }}&text=Super-Agent:%20Professionelles%20eBay-Monitoring%20in%20Echtzeit" target="_blank" class="btn btn-outline-info btn-sm">
-            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" style="margin-right: 6px; display: inline-block;">
-              <path d="M23.953 4.57a10 10 0 002.856-9.57a10 10 0 00-8.757 6.08a10 10 0 003.9 5.87a9.95 9.95 0 01-2.8-.8a11 11 0 00.015.5a10.5 10.5 0 00-18.47-6.59a10.5 10.5 0 006.35 2.46a10 10 0 00-1.19 5.5a10.5 10.5 0 00-2.12 2.24z"/>
-            </svg>
-            Twitter
-          </a>
-          
-          <a href="https://t.me/share/url?url={{ request.url_root }}&text=Super-Agent:%20Echtzeit%20eBay-Alerts" target="_blank" class="btn btn-outline-success btn-sm">
-            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" style="margin-right: 6px; display: inline-block;">
-              <path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0011.944 0zM8.02 15.364l-2.096-6.696a.537.537 0 01.674-.675l6.696 2.096a1.074 1.074 0 010 2.032l-5.13 1.61a.537.537 0 00-.337.674l1.3 4.136a.537.537 0 00.674.337l3.55-1.116a2.15 2.15 0 000-4.068l-5.13-1.61z"/>
-            </svg>
-            Telegram
-          </a>
-          
-          <a href="https://wa.me/?text=Super-Agent:%20Professionelles%20eBay-Monitoring%20in%20Echtzeit%20{{ request.url_root }}" target="_blank" class="btn btn-outline-success btn-sm">
-            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" style="margin-right: 6px; display: inline-block;">
-              <path d="M17.6 6.3c-1.8-1.8-4.3-2.8-6.9-2.8-5.4 0-9.7 4.3-9.7 9.7 0 1.7.4 3.4 1.3 4.9L.9 23.1l5.1-1.3c1.4.8 3 1.2 4.6 1.2h.0c5.4 0 9.7-4.3 9.7-9.7-.0-2.6-1.0-5.1-2.8-6.9zM11.8 20.5c-1.4 0-2.8-.4-4-1.1l-.3-.2-3.1.8.8-3.1-.2-.3c-.8-1.3-1.2-2.8-1.2-4.3 0-4.5 3.6-8.1 8.1-8.1 2.2 0 4.2.8 5.8 2.4 1.6 1.6 2.4 3.7 2.4 5.8.0 4.5-3.6 8.1-8.1 8.1zm4.5-6.1c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.6.1-.2.2-.7.9-.9 1.1-.2.2-.3.2-.5.1-.2-.1-.8-.3-1.5-.9-.6-.5-1-1.2-1.1-1.4-.1-.2 0-.3.1-.4.1-.1.2-.3.4-.4.1-.1.2-.3.3-.4.1-.2.1-.3 0-.5-.1-.2-.6-1.4-.8-2-.2-.5-.4-.5-.6-.5-.1 0-.3 0-.5 0-.2 0-.5.1-.8.4-.3.3-.9 1-.9 2.4 0 1.4.6 2.7 1.7 3.8 1.1 1.1 2.6 1.8 4.1 1.8 1.5 0 2.9-.6 4-1.7 1.1-1.1 1.7-2.5 1.7-4 0-1.5-.6-2.9-1.7-4-.2-.1-.5-.2-.8-.2z"/>
-            </svg>
-            WhatsApp
-          </a>
-          
-          <a href="https://www.linkedin.com/sharing/share-offsite/?url={{ request.url_root }}" target="_blank" class="btn btn-outline-secondary btn-sm">
-            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" style="margin-right: 6px; display: inline-block;">
-              <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"/>
-            </svg>
-            LinkedIn
-          </a>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ===== WHY NOT JUST EBAY ALERTS? / FAQ BLOCK ===== -->
-<section class="container py-5" id="why-not-ebay">
-  <div class="text-center mb-4">
-    <h2 class="h2 fw-bold">Warum nicht einfach eBay‑Alerts?</h2>
-    <p class="text-muted">
-      Super‑Agent richtet sich an Power‑User – schneller & präziser als Standard‑Benachrichtigungen.
-    </p>
-  </div>
-  <div class="row g-3">
-    <div class="col-12 col-md-6">
-      <div class="border rounded p-3 h-100">
-        <div class="fw-semibold mb-2">Geschwindigkeit</div>
-        <p class="mb-0 text-muted small">
-          Echtzeit-Monitoring im Minuten-Takt. Fokus auf neue Inserate und sofortige Benachrichtigung.
-        </p>
-      </div>
-    </div>
-    <div class="col-12 col-md-6">
-      <div class="border rounded p-3 h-100">
-        <div class="fw-semibold mb-2">Präzision</div>
-        <p class="mb-0 text-muted small">
-          Erweiterte Filteroptionen: Keyword-Ausschluss, Verkäufer-Monitoring und Zustandsfilter.
-        </p>
-      </div>
-    </div>
-    <div class="col-12 col-md-6">
-      <div class="border rounded p-3 h-100">
-        <div class="fw-semibold mb-2">Skalierbarkeit</div>
-        <p class="mb-0 text-muted small">
-          Verwalten Sie hunderte Agenten gleichzeitig. Ideal für gewerbliche Händler und Sammler.
-        </p>
-      </div>
-    </div>
-    <div class="col-12 col-md-6">
-      <div class="border rounded p-3 h-100">
-        <div class="fw-semibold mb-2">Workflow-Tools</div>
-        <p class="mb-0 text-muted small">
-          CSV-Export für Marktanalysen, Telegram-Integration und automatisierte PDF-Reports.
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <div class="mt-5" id="faq">
-    <h3 class="h4 mb-3">Häufige Fragen</h3>
-    <div class="accordion" id="faqAccPublic">
-      <div class="accordion-item">
-        <h2 class="accordion-header" id="fq1">
-          <button
-            class="accordion-button"
-            type="button"
-            data-bs-toggle="collapse"
-            data-bs-target="#fa1"
-            aria-expanded="true"
-            aria-controls="fa1"
-          >
-            Gibt's das nicht schon bei eBay?
-          </button>
-        </h2>
-        <div
-          id="fa1"
-          class="accordion-collapse collapse show"
-          aria-labelledby="fq1"
-          data-bs-parent="#faqAccPublic"
-        >
-          <div class="accordion-body">
-            Ja, eBay bietet gespeicherte Suchen. Super‑Agent ist für Power‑User: **schneller**,
-            **genauer** und mit **mehr Kontrolle** (Include/Exclude, Verkäufer‑Filter, CSV‑Import,
-            Telegram u. a.).
-          </div>
-        </div>
-      </div>
-      <div class="accordion-item">
-        <h2 class="accordion-header" id="fq2">
-          <button
-            class="accordion-button collapsed"
-            type="button"
-            data-bs-toggle="collapse"
-            data-bs-target="#fa2"
-            aria-expanded="false"
-            aria-controls="fa2"
-          >
-            Wie lege ich gute Agenten an?
-          </button>
-        </h2>
-        <div
-          id="fa2"
-          class="accordion-collapse collapse"
-          aria-labelledby="fq2"
-          data-bs-parent="#faqAccPublic"
-        >
-          <div class="accordion-body">
-            Nutze präzise Begriffe (Marke+Modell), setze realistische Preisgrenzen und wähle den
-            passenden Zustand. Lege 2–3 Varianten mit unterschiedlichen Winkeln an.
-          </div>
-        </div>
-      </div>
-      <div class="accordion-item">
-        <h2 class="accordion-header" id="fq3">
-          <button
-            class="accordion-button collapsed"
-            type="button"
-            data-bs-toggle="collapse"
-            data-bs-target="#fa3"
-            aria-expanded="false"
-            aria-controls="fa3"
-          >
-            Wie schnell sind die E‑Mails?
-          </button>
-        </h2>
-        <div
-          id="fa3"
-          class="accordion-collapse collapse"
-          aria-labelledby="fq3"
-          data-bs-parent="#faqAccPublic"
-        >
-          <div class="accordion-body">
-            In der Regel in Minuten, abhängig von deinen Intervall‑Einstellungen und
-            Plattform‑Limits. Ziel ist, **so früh wie möglich** zu informieren.
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- =================== COMMUNITY LINKS =================== -->
-<section class="py-5 bg-light border-top" id="community">
-  <div class="container">
-    <h2 class="h3 fw-bold mb-1">Community & Ressourcen</h2>
-    <p class="text-muted mb-5">
-      Blogs, Tools, Tutorials & externe Ressourcen für professionelles eBay-Monitoring
-    </p>
-    
-    <div class="row" id="communityLinksContainer">
-      <div class="col-12 text-center">
-        <div class="spinner-border text-primary" role="status">
-          <span class="visually-hidden">Wird geladen...</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- =================== NEWSLETTER SIGNUP =================== -->
-<section class="py-5 bg-primary text-white" id="newsletter">
-  <div class="container">
-    <div class="row align-items-center">
-      <div class="col-lg-6 mb-4 mb-lg-0">
-        <h2 class="h3 fw-bold mb-3">Newsletter: Experten-Tipps & Updates</h2>
-        <p class="lead mb-3">
-          Erhalten Sie wöchentlich Tipps für professionelles Monitoring und neue Funktionen.
-        </p>
-        <ul class="list-unstyled text-white-50 small">
-          <li class="mb-2">✓ Fachwissen für professionelle Händler</li>
-          <li class="mb-2">✓ Keine Werbeflut – Fokus auf Nutzwert</li>
-          <li class="mb-2">✓ Jederzeit abbestellbar</li>
-        </ul>
-      </div>
-      
-      <div class="col-lg-6">
-        <form id="newsletterForm" class="d-flex flex-column gap-2">
-          <div class="input-group input-group-lg">
-            <input 
-              type="email" 
-              class="form-control" 
-              id="newsletterEmail" 
-              placeholder="deine@email.de" 
-              required
-            />
-            <button class="btn btn-light btn-lg fw-semibold" type="submit">
-              Abonnieren
-            </button>
-          </div>
-          <small class="text-white-50">
-            Wir respektieren deine Privatsphäre. Siehe unsere <a href="#" class="link-light">Datenschutzerklärung</a>.
-          </small>
-          <div id="newsletterMessage"></div>
-        </form>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- =================== PRICING (SUMMARY) =================== -->
-<section class="py-5 bg-body-tertiary border-top" id="pricing">
-  <div class="container">
-    <div class="text-center mb-4">
-      <h2 class="h2 fw-bold">Preise</h2>
-      <p class="text-muted mb-0">Starte kostenlos – upgrade, wenn du mehr Power brauchst.</p>
-    </div>
-
-    <div class="row g-4 row-cols-1 row-cols-lg-2">
-      <!-- Free Plan -->
-      <div class="col">
-        <div class="card h-100 shadow-sm card-hover">
-          <div class="card-body p-4">
-            <h3 class="h5 mb-1">Free</h3>
-            <p class="text-muted mb-3">Ideal zum Ausprobieren</p>
-            <ul class="list-unstyled small mb-4">
-              <li class="mb-1">3 Suchen gratis</li>
-              <li class="mb-1">Basisfunktionen</li>
-              <li class="mb-1">Teilen-Links</li>
-            </ul>
-            <a href="{{ url_for('search.search_page') }}" class="btn btn-outline-primary"
-              >Kostenlos starten</a
-            >
-          </div>
-        </div>
-      </div>
-
-      <!-- Premium Pläne (Teaser) -->
-      <div class="col">
-        <div
-          class="card h-100 shadow-sm border-0 card-hover"
-          style="background: linear-gradient(135deg, #0d6efd, #6610f2)"
-        >
-          <div class="card-body p-4 text-white">
-            <div class="d-flex justify-content-between align-items-start">
-              <h3 class="h5 mb-1">Premium Pläne</h3>
-              <span class="badge text-bg-light text-dark">6 Tiers</span>
-            </div>
-
-            <div class="display-6 fw-bold">
-              ab 4,99 € <span class="fs-6 fw-normal text-white-50">/ Monat</span>
-            </div>
-            <p class="text-white-50 small mb-3">Starter · Basic · Pro · Enterprise · Custom</p>
-
-            <ul class="list-unstyled small my-3">
-              <li class="mb-1">Bis zu 5000+ Alerts</li>
-              <li class="mb-1">SMS-Benachrichtigungen & PDF-Reports</li>
-              <li class="mb-1">API-Zugriff & Priority Support</li>
-            </ul>
-
-            <div class="d-flex gap-2">
-              <a href="{{ url_for('public_pricing') }}" class="btn btn-light">Zu den Preisen</a>
-              <a href="{{ url_for('public_pricing') }}#faq" class="btn btn-outline-light">Vergleich</a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <p class="text-center text-muted small mt-3 mb-0">
-      Tipp: Jahresplan mit Rabatt anbieten – spart Gebühren & Support.
-    </p>
-  </div>
-</section>
-
-<!-- =================== FINAL CTA =================== -->
-<section
-  class="py-5 text-center border-top"
-  style="background: linear-gradient(135deg, #f8f9fa, #e9efff)"
->
-  <div class="container">
-    <p class="text-muted mb-3">
-      Ohne Registrierung sind 3 Suchen gratis. Mit Konto kannst du später jederzeit upgraden.
-    </p>
-    <a href="{{ url_for('search.search_page') }}" class="btn btn-primary btn-lg"
-      >Kostenlos starten</a
-    >
-    <a href="{{ url_for('public_pricing') }}" class="btn btn-outline-primary btn-lg ms-2"
-      >Zu den Preisen</a
-    >
-  </div>
-</section>
-
-<!-- =================== FEATURES =================== -->
-<section class="container py-5">
-  <h2 class="text-center mb-4">Ihre Vorteile</h2>
-  <div class="row g-4 row-cols-1 row-cols-md-3">
-    <div class="col">
-      <div class="card h-100 shadow-sm card-hover">
-        <div class="card-body text-center">
-          <div
-            class="rounded-circle bg-primary-subtle d-inline-flex align-items-center justify-content-center mb-3"
-            style="width: 64px; height: 64px"
-          >
-            <svg width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1H5.5z"/>
-              <path d="M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
-            </svg>
-          </div>
-          <h5 class="card-title mb-2">Effizienz</h5>
-          <p class="card-text text-muted mb-0">
-            Automatisieren Sie Ihre Suche und sparen Sie wertvolle Zeit bei der Marktanalyse.
-          </p>
-        </div>
-      </div>
-    </div>
-    <div class="col">
-      <div class="card h-100 shadow-sm card-hover">
-        <div class="card-body text-center">
-          <div
-            class="rounded-circle bg-success-subtle d-inline-flex align-items-center justify-content-center mb-3"
-            style="width: 64px; height: 64px"
-          >
-            <svg width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
-            </svg>
-          </div>
-          <h5 class="card-title mb-2">Sicherheit</h5>
-          <p class="card-text text-muted mb-0">
-            Moderne Verschlüsselung und sichere Authentifizierung schützen Ihre Daten und Suchen.
-          </p>
-        </div>
-      </div>
-    </div>
-    <div class="col">
-      <div class="card h-100 shadow-sm card-hover">
-        <div class="card-body text-center">
-          <div
-            class="rounded-circle bg-warning-subtle d-inline-flex align-items-center justify-content-center mb-3"
-            style="width: 64px; height: 64px"
-          >
-            <svg width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M0 11.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-2zm4-3a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-5zm4-3a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-8zm4-3a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v11a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-11z"/>
-            </svg>
-          </div>
-          <h5 class="card-title mb-2">Analyse</h5>
-          <p class="card-text text-muted mb-0">
-            Erhalten Sie detaillierte Einblicke und Reports über die Preisentwicklung Ihrer Zielobjekte.
-          </p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- =================== TRUST ELEMENTS =================== -->
-<section class="py-5 bg-light border-top">
-  <div class="container">
-    <div class="text-center mb-5">
-      <h2 class="h3 fw-bold">Sicherheit & Datenschutz</h2>
-      <p class="text-muted">Ihre Daten sind bei uns in sicheren Händen</p>
-    </div>
-
-    <div class="row g-4 row-cols-1 row-cols-sm-2 row-cols-lg-4 justify-content-center mb-5">
-      <!-- SSL -->
-      <div class="col text-center">
-        <h5 class="mb-2">SSL-Verschlüsselung</h5>
-        <p class="small text-muted mb-0">Sichere Datenübertragung nach aktuellem Standard.</p>
-      </div>
-
-      <!-- Backup -->
-      <div class="col text-center">
-        <h5 class="mb-2">Automatisierte Backups</h5>
-        <p class="small text-muted mb-0">Tägliche Sicherung Ihrer konfigurierten Agenten.</p>
-      </div>
-
-      <!-- Compliance -->
-      <div class="col text-center">
-        <h5 class="mb-2">DSGVO-Konform</h5>
-        <p class="small text-muted mb-0">Hosting und Datenverarbeitung in der EU.</p>
-      </div>
-
-      <!-- Uptime -->
-      <div class="col text-center">
-        <h5 class="mb-2">Hochverfügbar</h5>
-        <p class="small text-muted mb-0">Optimierte Infrastruktur für zuverlässiges Monitoring.</p>
-      </div>
-    </div>
-
-    <!-- Additional Info -->
-    <div class="row g-3">
-      <div class="col-12 col-md-6">
-        <div class="p-3 rounded bg-white border">
-          <strong class="d-block mb-2">Transparente Entwicklung</strong>
-          <small class="text-muted">
-            Super-Agent wird kontinuierlich weiterentwickelt, um Ihnen stets die besten Werkzeuge für Ihr Business zu bieten.
-          </small>
-        </div>
-      </div>
-      <div class="col-12 col-md-6">
-        <div class="p-3 rounded bg-white border">
-          <strong class="d-block mb-2">Persönlicher Support</strong>
-          <small class="text-muted">
-            Unser Team steht Ihnen bei Fragen zur Konfiguration Ihrer Agenten jederzeit zur Verfügung.
-          </small>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<script>
-async function loadCommunityLinks() {
-  try {
-    const response = await fetch('/api/community/links');
-    const data = await response.json();
-    const container = document.getElementById('communityLinksContainer');
-    
-    if (!data.links || data.links.length === 0) {
-      container.innerHTML = '<div class="col-12"><p class="text-center text-muted">Keine Links vorhanden. Komm bald zurück!</p></div>';
-      return;
-    }
-    
-    const categoryGroups = {};
-    data.links.forEach(link => {
-      if (!categoryGroups[link.category]) {
-        categoryGroups[link.category] = [];
-      }
-      categoryGroups[link.category].push(link);
-    });
-    
-    let html = '';
-    Object.entries(categoryGroups).forEach(([category, links]) => {
-      html += `<div class="col-12"><h5 class="fw-bold mt-4 mb-3">${category}</h5></div>`;
-      links.forEach(link => {
-        const icon = link.icon || '🔗';
-        html += `
-          <div class="col-md-6 col-lg-4 mb-3">
-            <a href="${link.url}" target="_blank" class="card h-100 text-decoration-none text-dark border-0 shadow-sm hover" style="cursor: pointer;">
-              <div class="card-body">
-                <h6 class="card-title fw-bold">${icon} ${link.title}</h6>
-                <p class="card-text small text-muted">${link.description || 'Externe Ressource'}</p>
-              </div>
-              <div class="card-footer bg-transparent border-0 pt-0">
-                <small class="text-primary">Besuchen →</small>
-              </div>
+        <div class="d-flex justify-content-center gap-3 flex-wrap mb-4">
+            <a href="{{ url_for('search.search_page') }}" class="btn btn-light btn-lg px-5 fw-semibold">
+                Jetzt kostenlos starten
             </a>
-          </div>
-        `;
-      });
-    });
-    
-    container.innerHTML = html;
-  } catch (error) {
-    document.getElementById('communityLinksContainer').innerHTML = '<div class="col-12"><p class="text-center text-danger">Fehler beim Laden der Links</p></div>';
-  }
-}
+            <a href="#how-it-works" class="btn btn-outline-light btn-lg px-5 fw-semibold">
+                So funktioniert's
+            </a>
+        </div>
 
-loadCommunityLinks();
-</script>
+        <div class="row g-3 justify-content-center mt-4">
+            <div class="col-auto">
+                <small class="text-white-50">⚡ Schnelle Alerts</small>
+            </div>
+            <div class="col-auto">
+                <small class="text-white-50">🔔 Per Telegram oder E-Mail</small>
+            </div>
+            <div class="col-auto">
+                <small class="text-white-50">🎯 Preis-, Zustands- und Keyword-Filter</small>
+            </div>
+            <div class="col-auto">
+                <small class="text-white-50">🆓 3 Suchen kostenlos testen</small>
+            </div>
+        </div>
+    </div>
+</section>
 
-<script>
-document.getElementById('newsletterForm').addEventListener('submit', async function(e) {
-  e.preventDefault();
-  
-  const email = document.getElementById('newsletterEmail').value;
-  const messageDiv = document.getElementById('newsletterMessage');
-  const button = this.querySelector('button');
-  
-  button.disabled = true;
-  button.textContent = 'Wird angemeldet...';
-  messageDiv.innerHTML = '';
-  
-  try {
-    const response = await fetch('/api/newsletter/subscribe', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email: email })
-    });
-    
-    const data = await response.json();
-    
-    if (response.ok) {
-      messageDiv.innerHTML = '<div class="alert alert-success mt-2" role="alert">✓ Bestätigung sent! Bitte E-Mail überprüfen.</div>';
-      document.getElementById('newsletterEmail').value = '';
-    } else {
-      messageDiv.innerHTML = `<div class="alert alert-danger mt-2" role="alert">${data.error || 'Fehler bei der Anmeldung'}</div>`;
-    }
-  } catch (error) {
-    messageDiv.innerHTML = '<div class="alert alert-danger mt-2" role="alert">Verbindungsfehler. Bitte später versuchen.</div>';
-  } finally {
-    button.disabled = false;
-    button.textContent = 'Abonnieren';
-  }
-});
-</script>
+<section class="py-5 bg-white border-top">
+    <div class="container">
+        <div class="text-center mb-5">
+            <h2 class="h2 fw-bold">Warum Nutzer gute Deals verpassen</h2>
+            <p class="text-muted mb-0">
+                Gute Angebote sind oft nach wenigen Minuten weg.
+            </p>
+        </div>
+
+        <div class="row g-4 row-cols-1 row-cols-md-3">
+            <div class="col">
+                <div class="card h-100 shadow-sm border-0 soft-section">
+                    <div class="card-body">
+                        <h3 class="h5 fw-bold">Zu späte Plattform-Alerts</h3>
+                        <p class="text-muted mb-0">
+                            Standard-Benachrichtigungen kommen oft verspätet. Dann ist das beste Angebot meist schon
+                            weg.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card h-100 shadow-sm border-0 soft-section">
+                    <div class="card-body">
+                        <h3 class="h5 fw-bold">Seltene Artikel sind sofort vergriffen</h3>
+                        <p class="text-muted mb-0">
+                            Besonders bei Sammlerstücken, Technik und Schnäppchen zählt oft jede Minute.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card h-100 shadow-sm border-0 soft-section">
+                    <div class="card-body">
+                        <h3 class="h5 fw-bold">Wer zuerst schreibt, gewinnt oft</h3>
+                        <p class="text-muted mb-0">
+                            Der Geschwindigkeitsvorteil entscheidet häufig darüber, wer den Zuschlag bekommt.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="py-5 bg-light border-top" id="how-it-works">
+    <div class="container">
+        <div class="text-center mb-5">
+            <h2 class="h2 fw-bold">So funktioniert Super-Agent</h2>
+            <p class="text-muted">In wenigen Schritten zum schnelleren Alert</p>
+        </div>
+
+        <div class="row g-4 row-cols-1 row-cols-md-3">
+            <div class="col">
+                <div class="card h-100 shadow-sm card-hover">
+                    <div class="card-body text-center">
+                        <div class="display-6 fw-bold text-primary mb-3">1</div>
+                        <h3 class="h5 fw-bold">Suchbegriff anlegen</h3>
+                        <p class="text-muted mb-0">
+                            Zum Beispiel Marke, Modell oder seltenen Artikel eingeben und auf Wunsch Preisgrenzen
+                            setzen.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card h-100 shadow-sm card-hover">
+                    <div class="card-body text-center">
+                        <div class="display-6 fw-bold text-primary mb-3">2</div>
+                        <h3 class="h5 fw-bold">Filter festlegen</h3>
+                        <p class="text-muted mb-0">
+                            Preise, Zustand, Keywords und Quelle anpassen, damit nur passende Treffer gemeldet werden.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card h-100 shadow-sm card-hover">
+                    <div class="card-body text-center">
+                        <div class="display-6 fw-bold text-primary mb-3">3</div>
+                        <h3 class="h5 fw-bold">Sofort benachrichtigt werden</h3>
+                        <p class="text-muted mb-0">
+                            Sobald ein neuer Treffer erscheint, bekommst du direkt eine Benachrichtigung per E-Mail oder
+                            Telegram.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="py-5 bg-white border-top">
+    <div class="container">
+        <div class="text-center mb-5">
+            <h2 class="h2 fw-bold">Warum Super-Agent besser ist als normale Alerts</h2>
+            <p class="text-muted">
+                Mehr Tempo, mehr Kontrolle, mehr Chancen auf den Zuschlag.
+            </p>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-6">
+                <div class="p-4 border rounded h-100">
+                    <h3 class="h5 fw-bold mb-3">Mit Super-Agent</h3>
+                    <ul class="mb-0">
+                        <li class="mb-2">Schnelle Benachrichtigungen bei neuen Inseraten</li>
+                        <li class="mb-2">Alerts per Telegram oder E-Mail</li>
+                        <li class="mb-2">Preis-, Zustands- und Keyword-Filter</li>
+                        <li class="mb-2">eBay und Kleinanzeigen in einem Workflow</li>
+                        <li class="mb-2">Ideal für Sammler, Reseller und Schnäppchenjäger</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="p-4 border rounded h-100 bg-light">
+                    <h3 class="h5 fw-bold mb-3">Normale Plattform-Alerts</h3>
+                    <ul class="mb-0 text-muted">
+                        <li class="mb-2">Oft verspätet</li>
+                        <li class="mb-2">Weniger flexibel</li>
+                        <li class="mb-2">Weniger präzise Filter</li>
+                        <li class="mb-2">Top-Angebote oft schon weg</li>
+                        <li class="mb-2">Kein klarer Geschwindigkeitsvorteil</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="py-5 bg-light border-top">
+    <div class="container">
+        <div class="row align-items-center g-4">
+            <div class="col-lg-6">
+                <h2 class="h2 fw-bold mb-3">Aus der Praxis entstanden</h2>
+                <p class="text-muted">
+                    Ich habe Super-Agent gebaut, weil ich selbst seltene Artikel verpasst habe.
+                    Seitdem ich mein eigenes Tool nutze, war ich bereits mehrfach der Erste, der sich auf neue Angebote
+                    melden konnte.
+                </p>
+                <p class="text-muted mb-0">
+                    Genau dafür ist Super-Agent gemacht: damit gute Angebote nicht bei anderen landen, nur weil die
+                    Benachrichtigung zu spät kam.
+                </p>
+            </div>
+            <div class="col-lg-6">
+                <div class="card shadow-sm border-0">
+                    <div class="card-body">
+                        <h3 class="h5 fw-bold">Perfekt für:</h3>
+                        <ul class="mb-0">
+                            <li class="mb-2">Sammler seltener Artikel</li>
+                            <li class="mb-2">Reseller und Flipper</li>
+                            <li class="mb-2">Schnäppchenjäger</li>
+                            <li class="mb-2">Alle, die schneller sein wollen als andere Käufer</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="py-5 bg-body-tertiary border-top" id="pricing">
+    <div class="container">
+        <div class="text-center mb-4">
+            <h2 class="h2 fw-bold">Preise</h2>
+            <p class="text-muted mb-0">Kostenlos testen und später upgraden, wenn du mehr brauchst.</p>
+        </div>
+
+        <div class="row g-4 row-cols-1 row-cols-lg-2">
+            <div class="col">
+                <div class="card h-100 shadow-sm card-hover">
+                    <div class="card-body p-4">
+                        <h3 class="h5 mb-1">Kostenlos</h3>
+                        <p class="text-muted mb-3">Ideal zum Testen</p>
+                        <ul class="list-unstyled small mb-4">
+                            <li class="mb-1">3 Suchen gratis</li>
+                            <li class="mb-1">Sofort loslegen</li>
+                            <li class="mb-1">Keine Kreditkarte nötig</li>
+                        </ul>
+                        <a href="{{ url_for('search.search_page') }}" class="btn btn-outline-primary">
+                            Kostenlos starten
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col">
+                <div class="card h-100 shadow-sm border-0 text-white"
+                    style="background: linear-gradient(135deg, #0d6efd, #6610f2)">
+                    <div class="card-body p-4">
+                        <h3 class="h5 mb-1">Premium</h3>
+                        <div class="display-6 fw-bold">
+                            ab 4,99 € <span class="fs-6 fw-normal text-white-50">/ Monat</span>
+                        </div>
+                        <p class="text-white-50 small mb-3">
+                            Für alle, die mehr Suchen und mehr Alerts brauchen
+                        </p>
+
+                        <ul class="list-unstyled small my-3">
+                            <li class="mb-1">Mehr aktive Suchen</li>
+                            <li class="mb-1">Mehr Benachrichtigungen</li>
+                            <li class="mb-1">Mehr Kontrolle für Power-Nutzer</li>
+                        </ul>
+
+                        <a href="{{ url_for('public_pricing') }}" class="btn btn-light">
+                            Zu den Preisen
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="py-5 text-center border-top" style="background: linear-gradient(135deg, #f8f9fa, #e9efff)">
+    <div class="container">
+        <h2 class="h2 fw-bold mb-3">Verpasse nie wieder ein gutes Angebot</h2>
+        <p class="text-muted mb-4">
+            Starte jetzt kostenlos und teste Super-Agent mit 3 Suchen.
+        </p>
+        <a href="{{ url_for('search.search_page') }}" class="btn btn-primary btn-lg px-5">
+            Jetzt kostenlos starten
+        </a>
+    </div>
+</section>
 
 {% endblock %}

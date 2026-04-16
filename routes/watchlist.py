@@ -14,8 +14,10 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 
 # WICHTIG: aus models importieren – nicht aus routes
-from models import SessionLocal, WatchedItem
+from models import SessionLocal, WatchedItem, ItemPriceTracking
 from database import get_db, get_placeholder
+from datetime import datetime
+from urllib.parse import urlparse
 
 
 bp = Blueprint("watchlist", __name__, url_prefix="/watchlist")
@@ -79,7 +81,7 @@ def add():
 
         if not item_id or not title:
             flash("Fehlende Artikeldaten.", "danger")
-            return redirect(request.referrer or url_for('search.index'))
+            return redirect(request.referrer or url_for('search.search_page'))
 
         # Prüfe auf Duplikat
         existing = db.query(WatchedItem).filter_by(
@@ -134,7 +136,7 @@ def add():
         db.rollback()
         current_app.logger.error(f"[watchlist.add] Error: {e}", exc_info=True)
         flash("Fehler beim Hinzufügen.", "danger")
-        return redirect(request.referrer or url_for('search.index'))
+        return redirect(request.referrer or url_for('search.search_page'))
     finally:
         db.close()
 
@@ -147,10 +149,51 @@ def remove(item_id):
         # 1. Watchlist-Eintrag per ORM suchen
         item = db.query(WatchedItem).filter_by(id=item_id, user_id=current_user.id).first()
 
+        def wants_json() -> bool:
+            # JSON, Fetch/AJAX-Erkennung: is_json oder Content-Type oder X-Requested-With
+            try:
+                if request.is_json:
+                    return True
+            except Exception:
+                pass
+            ct = (request.headers.get('Content-Type') or '').lower()
+            xrw = (request.headers.get('X-Requested-With') or '').lower()
+            return ('application/json' in ct) or (xrw == 'xmlhttprequest')
+
+        # Optionales Ziel bestimmen (next-Parameter bevorzugt)
+        def _safe_next_url(val: str | None) -> str | None:
+            if not val:
+                return None
+            try:
+                p = urlparse(val)
+                # Nur relative Pfade zulassen (keine externe Domain)
+                if (not p.netloc) and (p.scheme in ("", "http", "https")) and val.startswith("/") and not val.startswith("//"):
+                    return val
+            except Exception:
+                pass
+            return None
+
+        next_param = request.args.get('next') or request.form.get('next')
+        next_target = _safe_next_url(next_param)
+        # Referrer prüfen (nur gleiche Origin)
+        ref = request.referrer or ""
+        ref_target = None
+        try:
+            rp = urlparse(ref)
+            if rp.netloc == request.host and rp.path.startswith("/"):
+                ref_target = rp.path + (f"?{rp.query}" if rp.query else "")
+        except Exception:
+            ref_target = None
+
         if item:
             item.is_active = False
             db.commit()
-            return jsonify({'success': True, 'message': f"'{item.item_title[:40]}...' entfernt"})
+            if wants_json():
+                return jsonify({'success': True, 'message': f"'{item.item_title[:40]}...' entfernt"})
+            else:
+                flash(f"'{item.item_title[:40]}...' entfernt", 'success')
+                target = next_target or ref_target or url_for('watchlist.index') or url_for('search.search_page')
+                return redirect(target)
 
         # 2. Fallback: Alert aus search_alerts (DB-Layer mit get_db)
         conn = get_db()
@@ -164,10 +207,20 @@ def remove(item_id):
         conn.commit()
         conn.close()
 
-        return jsonify({'success': True, 'message': 'Alert gelöscht'})
+        if wants_json():
+            return jsonify({'success': True, 'message': 'Alert gelöscht'})
+        else:
+            flash('Alert gelöscht', 'success')
+            target = next_target or ref_target or url_for('watchlist.index') or url_for('search.search_page')
+            return redirect(target)
+
     except Exception as e:
         db.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        if (request.headers.get('X-Requested-With') or '').lower() == 'xmlhttprequest' or request.is_json:
+            return jsonify({'success': False, 'error': str(e)}), 500
+        else:
+            flash(f"Fehler beim Entfernen: {e}", 'danger')
+            return redirect(request.referrer or url_for('watchlist.index'))
     finally:
         db.close()
 

@@ -27,6 +27,10 @@ from database import get_db, get_placeholder
 
 bp = Blueprint("alerts", __name__)
 
+# Maximale Anzahl Suchbegriffe je nach Plan (für Alerts)
+MAX_TERMS_FREE = 3
+MAX_TERMS_PREMIUM = 6
+
 def _compute_plan_info(plan_type_raw, is_premium, last_run_ts: int):
     plan_type = (plan_type_raw or "").strip().lower()
     is_premium_flag = bool(is_premium)
@@ -145,6 +149,8 @@ def manage_alerts():
             a.is_active,
             COALESCE(a.notify_email, 0)   AS notify_email,
             COALESCE(a.notify_telegram, 0) AS notify_telegram,
+            COALESCE(a.notify_mobilede, 0) AS notify_mobilede,
+            COALESCE(a.notify_autoscout, 0) AS notify_autoscout,
             u.plan_type,
             u.is_premium
         FROM search_alerts a
@@ -170,6 +176,8 @@ def manage_alerts():
             is_active,
             notify_email,
             notify_telegram,
+            notify_mobilede,
+            notify_autoscout,
             plan_type,
             is_premium,
         ) = row
@@ -219,6 +227,8 @@ def manage_alerts():
                 "is_active": bool(is_active),
                 "notify_email": bool(notify_email),
                 "notify_telegram": bool(notify_telegram),
+                "notify_mobilede": bool(notify_mobilede),
+                "notify_autoscout": bool(notify_autoscout),
                 "plan_type": plan_type or "free",
                 "is_premium": is_premium_flag,
                 "interval_min": interval_min,
@@ -252,6 +262,8 @@ def alert_results(alert_id: int):
             a.is_active,
             COALESCE(a.notify_email, 0)   AS notify_email,
             COALESCE(a.notify_telegram, 0) AS notify_telegram,
+            COALESCE(a.notify_mobilede, 0) AS notify_mobilede,
+            COALESCE(a.notify_autoscout, 0) AS notify_autoscout,
             u.plan_type,
             u.is_premium
         FROM search_alerts a
@@ -276,6 +288,8 @@ def alert_results(alert_id: int):
         is_active,
         notify_email,
         notify_telegram,
+        notify_mobilede,
+        notify_autoscout,
         plan_type,
         is_premium,
     ) = row
@@ -373,6 +387,8 @@ def alert_results(alert_id: int):
         "is_active": bool(is_active),
         "notify_email": bool(notify_email),
         "notify_telegram": bool(notify_telegram),
+        "notify_mobilede": bool(notify_mobilede),
+        "notify_autoscout": bool(notify_autoscout),
         "last_run_dt": last_run_dt,
         **plan_info,
     }
@@ -446,12 +462,30 @@ def alerts_subscribe():
     """
     src = request.form
 
-    # Suchbegriffe
+    # Suchbegriffe (bis zu 6)
     q1 = (src.get("q1") or src.get("q") or "").strip()
     q2 = (src.get("q2") or "").strip()
     q3 = (src.get("q3") or "").strip()
+    q4 = (src.get("q4") or "").strip()
+    q5 = (src.get("q5") or "").strip()
+    q6 = (src.get("q6") or "").strip()
 
-    terms: List[str] = [q for q in (q1, q2, q3) if q]
+    terms: List[str] = [q for q in (q1, q2, q3, q4, q5, q6) if q]
+
+    # Serverseitige Begrenzung der Anzahl Suchbegriffe je nach Plan
+    try:
+        plan_type = (getattr(current_user, "plan_type", "") or "").strip().lower()
+        is_premium_flag = bool(getattr(current_user, "is_premium", False))
+    except Exception:
+        plan_type = ""
+        is_premium_flag = False
+    max_terms = MAX_TERMS_PREMIUM if (plan_type in ("pro", "premium") or is_premium_flag) else MAX_TERMS_FREE
+    if len(terms) > max_terms:
+        terms = terms[:max_terms]
+        try:
+            flash(f"Hinweis: In deinem aktuellen Tarif werden nur die ersten {max_terms} Suchbegriffe im Alert gespeichert.", "info")
+        except Exception:
+            pass
 
     if not terms:
         flash("Bitte mindestens einen Suchbegriff für den Alarm angeben.", "warning")
@@ -493,6 +527,8 @@ def alerts_subscribe():
 
     notify_email = 1 if src.get("notify_email") else 0
     notify_telegram = 1 if src.get("notify_telegram") else 0
+    notify_mobilede = 1 if src.get("notify_mobilede") else 0
+    notify_autoscout = 1 if src.get("notify_autoscout") else 0
 
     try:
         conn = get_db()
@@ -502,9 +538,10 @@ def alerts_subscribe():
             cur.execute(
                 f"""
                 INSERT INTO search_alerts
-                    (user_email, terms_json, filters_json, source, last_run_ts, is_active, notify_email, notify_telegram)
+                    (user_email, terms_json, filters_json, source, last_run_ts, is_active,
+                     notify_email, notify_telegram, notify_mobilede, notify_autoscout)
                 VALUES
-                    ({PH}, {PH}, {PH}, {PH}, {PH}, 1, {PH}, {PH})
+                    ({PH}, {PH}, {PH}, {PH}, {PH}, 1, {PH}, {PH}, {PH}, {PH})
                 """,
                 (
                     current_user.email,
@@ -514,6 +551,8 @@ def alerts_subscribe():
                     0,
                     notify_email,
                     notify_telegram,
+                    notify_mobilede,
+                    notify_autoscout,
                 ),
             )
 
