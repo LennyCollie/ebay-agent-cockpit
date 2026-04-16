@@ -84,7 +84,8 @@
               <span class="badge rounded-pill bg-warning text-dark mb-1"> 🚗 Mobile.de </span><br />
               {% endif %} {% if a.notify_autoscout %}
               <span class="badge rounded-pill bg-danger mb-1"> 🚙 AutoScout24 </span>
-              {% endif %} {% if not a.notify_email and not a.notify_telegram and not a.notify_mobilede and not a.notify_autoscout %}
+              {% endif %} {% if not a.notify_email and not a.notify_telegram and not a.notify_mobilede and not
+              a.notify_autoscout %}
               <span class="text-muted small">Keine</span>
               {% endif %}
             </td>
@@ -100,26 +101,17 @@
 
             {# --- Aktionen (Toggle / Delete) #}
             <td class="text-end">
-              <a
-                href="{{ url_for('alerts.alert_results', alert_id=a.id) }}"
-                class="btn btn-sm btn-outline-primary me-1"
-              >
+              <a href="{{ url_for('alerts.alert_results', alert_id=a.id) }}"
+                class="btn btn-sm btn-outline-primary me-1">
                 Details
               </a>
-              <form
-                action="{{ url_for('alert_pause', alert_id=a.id) }}"
-                method="post"
-                class="d-inline"
-              >
-                <button class="btn btn-sm btn-outline-warning">⏸️ Pausieren</button>
+              <form action="{{ url_for('alerts.toggle_alert', alert_id=a.id) }}" method="post" class="d-inline">
+                <button class="btn btn-sm btn-outline-warning">{% if a.is_active %}⏸️ Pausieren{% else %}▶️ Aktivieren{%
+                  endif %}</button>
               </form>
 
-              <form
-                action="{{ url_for('alerts.delete_alert', alert_id=a.id) }}"
-                method="post"
-                class="d-inline"
-                onsubmit="return confirm('Alert wirklich komplett löschen? Dies kann nicht rückgängig gemacht werden.');"
-              >
+              <form action="{{ url_for('alerts.delete_alert', alert_id=a.id) }}" method="post" class="d-inline"
+                onsubmit="return confirm('Alert wirklich komplett löschen? Dies kann nicht rückgängig gemacht werden.');">
                 <button class="btn btn-sm btn-outline-danger ms-1">🗑️ Löschen</button>
               </form>
             </td>
@@ -164,6 +156,7 @@
     .alerts-card table {
       font-size: 0.9rem;
     }
+
     .alerts-card th,
     .alerts-card td {
       white-space: nowrap;

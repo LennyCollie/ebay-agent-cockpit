@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}
-  Letzte Ergebnisse – Alert #{{ alert_id }}
+Letzte Ergebnisse – Alert #{{ alert_id }}
 {% endblock %}
 
 {% block content %}
@@ -17,47 +17,41 @@
       <div class="small text-muted">
         Suchbegriffe:
         {% if terms_display != "–" %}
-          <span class="badge bg-secondary">{{ terms_display }}</span>
+        <span class="badge bg-secondary">{{ terms_display }}</span>
         {% else %}
-          –
+        –
         {% endif %}
       </div>
 
       <div class="small text-muted mt-1">
         Einträge: {{ total_items }}
         {% if total_pages > 1 %}
-          • Seite {{ page }} / {{ total_pages }}
+        • Seite {{ page }} / {{ total_pages }}
         {% endif %}
       </div>
     </div>
 
     <div class="text-end">
-      <a
-        href="{{ url_for('alerts_manage') }}"
-        class="btn btn-outline-secondary btn-sm mb-2"
-      >
+      <a href="{{ url_for('alerts.manage_alerts') }}" class="btn btn-outline-secondary btn-sm mb-2">
         ← Zur Übersicht
       </a>
 
-      <form
-        class="d-inline-block ms-2"
-        method="get"
-        action="{{ url_for('alert_results', alert_id=alert_id) }}"
-      >
+      <form class="d-inline-block ms-2" method="get" action="{{ url_for('alerts.alert_results', alert_id=alert_id) }}">
+
         <input type="hidden" name="page" value="1">
         <div class="input-group input-group-sm">
           <span class="input-group-text">Sortierung</span>
           <select class="form-select form-select-sm" name="sort" onchange="this.form.submit()">
-            <option value="last_sent_desc" {% if sort == 'last_sent_desc' %}selected{% endif %}>
+            <option value="last_sent_desc" {% if sort=='last_sent_desc' %}selected{% endif %}>
               Zuletzt gesendet (neu → alt)
             </option>
-            <option value="last_sent_asc" {% if sort == 'last_sent_asc' %}selected{% endif %}>
+            <option value="last_sent_asc" {% if sort=='last_sent_asc' %}selected{% endif %}>
               Zuletzt gesendet (alt → neu)
             </option>
-            <option value="first_seen_desc" {% if sort == 'first_seen_desc' %}selected{% endif %}>
+            <option value="first_seen_desc" {% if sort=='first_seen_desc' %}selected{% endif %}>
               Erstmals gesehen (neu → alt)
             </option>
-            <option value="first_seen_asc" {% if sort == 'first_seen_asc' %}selected{% endif %}>
+            <option value="first_seen_asc" {% if sort=='first_seen_asc' %}selected{% endif %}>
               Erstmals gesehen (alt → neu)
             </option>
           </select>
@@ -67,101 +61,92 @@
   </div>
 
   {% if items|length == 0 %}
-    <div class="alert alert-info">
-      Für diesen Alert wurden bisher noch keine Ergebnisse gespeichert.
-    </div>
+  <div class="alert alert-info">
+    Für diesen Alert wurden bisher noch keine Ergebnisse gespeichert.
+  </div>
   {% else %}
-    <div class="table-responsive">
-      <table class="table table-striped table-hover align-middle">
-        <thead class="table-light">
-          <tr>
-            <th style="width: 60px;">#</th>
-            <th>Item-ID / URL</th>
-            <th style="width: 160px;">Quelle</th>
-            <th style="width: 180px;">Erstmals gesehen</th>
-            <th style="width: 180px;">Zuletzt gesendet</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for item in items %}
-          <tr>
-            <td>{{ item.rownum }}</td>
+  <div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th style="width: 60px;">#</th>
+          <th>Item-ID / URL</th>
+          <th style="width: 160px;">Quelle</th>
+          <th style="width: 180px;">Erstmals gesehen</th>
+          <th style="width: 180px;">Zuletzt gesendet</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>{{ item.rownum }}</td>
 
-            <td>
-              {% if item.url %}
-                <a href="{{ item.url }}" target="_blank" rel="noopener">
-                  {{ item.item_id }}
-                </a>
-                <a
-                  href="{{ item.url }}"
-                  target="_blank"
-                  rel="noopener"
-                  class="btn btn-sm btn-outline-primary ms-2"
-                >
-                  Öffnen
-                </a>
-              {% else %}
-                {{ item.item_id }}
-              {% endif %}
-            </td>
+          <td>
+            {% if item.url %}
+            <a href="{{ item.url }}" target="_blank" rel="noopener">
+              {{ item.item_id }}
+            </a>
+            <a href="{{ item.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary ms-2">
+              Öffnen
+            </a>
+            {% else %}
+            {{ item.item_id }}
+            {% endif %}
+          </td>
 
-            <td>
-              {% set src = (item.src or '')|lower %}
-              {% if src == 'ebay' %}
-                <span class="badge bg-primary">🔵 eBay</span>
-              {% elif src == 'kleinanzeigen' %}
-                <span class="badge bg-success">🟢 Kleinanzeigen</span>
-              {% elif src == 'quoka' %}
-                <span class="badge bg-warning text-dark">🟠 Quoka</span>
-              {% elif src == 'shpock' %}
-                <span class="badge bg-info text-dark">🛍️ Shpock</span>
-              {% elif src == 'marktde' %}
-                <span class="badge bg-danger">🏪 Markt.de</span>
-              {% else %}
-                <span class="badge bg-secondary">
-                  {{ src or "Unbekannt" }}
-                 </span>
-              {% endif %}
-              </td>
+          <td>
+            {% set src = (item.src or '')|lower %}
+            {% if src == 'ebay' %}
+            <span class="badge bg-primary">🔵 eBay</span>
+            {% elif src == 'kleinanzeigen' %}
+            <span class="badge bg-success">🟢 Kleinanzeigen</span>
+            {% elif src == 'quoka' %}
+            <span class="badge bg-warning text-dark">🟠 Quoka</span>
+            {% elif src == 'shpock' %}
+            <span class="badge bg-info text-dark">🛍️ Shpock</span>
+            {% elif src == 'marktde' %}
+            <span class="badge bg-danger">🏪 Markt.de</span>
+            {% else %}
+            <span class="badge bg-secondary">
+              {{ src or "Unbekannt" }}
+            </span>
+            {% endif %}
+          </td>
 
-            <td>{{ item.first_seen_str or "–" }}</td>
-            <td>{{ item.last_sent_str or "–" }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          <td>{{ item.first_seen_str or "–" }}</td>
+          <td>{{ item.last_sent_str or "–" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if total_pages > 1 %}
+  <div class="d-flex justify-content-between align-items-center mt-3">
+    <div class="small text-muted">
+      Seite {{ page }} von {{ total_pages }}
     </div>
+    <nav aria-label="Seiten-Navigation">
+      <ul class="pagination pagination-sm mb-0">
+        <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+          <a class="page-link" href="{{ url_for('alerts.alert_results', alert_id=alert_id, page=page-1, sort=sort) }}">
+            «
+          </a>
 
-    {% if total_pages > 1 %}
-      <div class="d-flex justify-content-between align-items-center mt-3">
-        <div class="small text-muted">
-          Seite {{ page }} von {{ total_pages }}
-        </div>
-        <nav aria-label="Seiten-Navigation">
-          <ul class="pagination pagination-sm mb-0">
-            <li class="page-item {% if page <= 1 %}disabled{% endif %}">
-              <a
-                class="page-link"
-                href="{{ url_for('alert_results', alert_id=alert_id, page=page-1, sort=sort) }}"
-              >
-                «
-              </a>
-            </li>
-            <li class="page-item disabled">
-              <span class="page-link">{{ page }}</span>
-            </li>
-            <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
-              <a
-                class="page-link"
-                href="{{ url_for('alert_results', alert_id=alert_id, page=page+1, sort=sort) }}"
-              >
-                »
-              </a>
-            </li>
-          </ul>
-        </nav>
-      </div>
-    {% endif %}
+        </li>
+        <li class="page-item disabled">
+          <span class="page-link">{{ page }}</span>
+        </li>
+        <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+          <a class="page-link" href="{{ url_for('alerts.alert_results', alert_id=alert_id, page=page+1, sort=sort) }}">
+            »
+          </a>
+
+        </li>
+      </ul>
+    </nav>
+  </div>
+  {% endif %}
   {% endif %}
 </div>
 {% endblock %}
