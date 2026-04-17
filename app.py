@@ -11,12 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
-from math import ceil
 
 from alert_checker import run_alert_check
 from database import get_db, dict_cursor, init_db, IS_POSTGRES, get_placeholder
 from werkzeug.middleware.proxy_fix import ProxyFix
-from models import Base, engine
 from services.kleinanzeigen import search_kleinanzeigen, check_dependencies as ka_check_dependencies
 from typing import List, Dict, Tuple, Optional
 
@@ -34,46 +32,18 @@ from flask import (
     jsonify,
     redirect,
     render_template,
-    render_template_string,
     request,
     session,
     url_for,
-
 )
+from flask_login import LoginManager, UserMixin, login_user, current_user
 
-from flask_login import (
-    LoginManager,
-    login_user,
-    logout_user,
-    current_user,
-    login_required,
-    UserMixin,
-)
-
-from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, PLAN_FEATURES, Config
+from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
 from routes.search import bp_search as search_bp
 from routes.telegram import bp as telegram_bp
 from routes.watchlist import bp as watchlist_bp
 from routes.alerts import bp as alerts_bp
-from routes.stats import bp as stats_bp
 from agent import get_mail_settings, send_mail
-from routes.admin import bp as admin_bp
-from routes.webhooks import webhooks_bp
-from routes.api_keys import api_keys_bp
-from routes.sms_notifications import sms_bp
-from routes.reports import reports_bp
-from routes.roles import roles_bp
-from routes.reseller import reseller_bp
-from routes.ai_helper import bp_ai as ai_bp
-try:
-    from routes.ml_analytics import ml_bp
-except ImportError:
-    ml_bp = None
-
-try:
-    from flasgger import Flasgger  # optional dependency
-except Exception:
-    Flasgger = None
 
 
 
@@ -103,7 +73,7 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAME_SITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 Stunden
 
-# Render ist ein Reverse Proxy -> Flask muss das wissen
+# Render ist ein Reverse Proxy → Flask muss das wissen
 app.wsgi_app = ProxyFix(
     app.wsgi_app,
     x_for=1,
@@ -122,18 +92,13 @@ login_manager.login_message_category = "warning"
 
 # Minimaler UserMixin für Flask-Login (kompatibel mit deiner DB-Struktur)
 class User(UserMixin):
-    def __init__(self, id, email, is_premium=False, is_admin=False, plan_type="free"):
-        self.id = id
+    def __init__(self, id, email, is_premium=False):
+        self.id = str(id)           # Flask-Login erwartet String als get_id()
         self.email = email
         self.is_premium = is_premium
-        self.is_admin = is_admin
-        self.plan_type = plan_type
 
-ADMIN_EMAILS = {
-    e.strip().lower()
-    for e in os.getenv("ADMIN_EMAILS", "").split(",")
-    if e.strip()
-}
+    def get_id(self):
+        return self.id
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -141,28 +106,11 @@ def load_user(user_id):
     try:
         conn = get_db()
         cur = dict_cursor(conn)
-        cur.execute(
-            """
-            SELECT id, email, is_premium, is_admin, plan_type
-            FROM users
-            WHERE id = %s
-            """,
-            (int(user_id),),
-        )
+        cur.execute("SELECT id, email, is_premium FROM users WHERE id = %s", (int(user_id),))
         row = cur.fetchone()
         conn.close()
         if row:
-            email = row["email"].lower()
-            # Admin entweder aus DB-Spalte ODER aus ENV ADMIN_EMAILS
-            is_admin_flag = bool(row.get("is_admin", 0)) or (email in ADMIN_EMAILS)
-
-            return User(
-                id=row["id"],
-                email=row["email"],
-                is_premium=bool(row.get("is_premium", 0)),
-                is_admin=is_admin_flag,
-                plan_type=row.get("plan_type", "free"),
-            )
+            return User(row["id"], row["email"], bool(row["is_premium"]))
     except Exception as e:
         print(f"[user_loader] Fehler: {e}")
     return None
@@ -186,36 +134,15 @@ print("="*50 + "\n")
 # -------------------------------------------------------------------
 from routes.inbound import bp as inbound_bp
 from routes.vision_test import bp as vision_test_bp
-from routes.notifications import bp as notifications_bp
 
 app.register_blueprint(inbound_bp)
 app.register_blueprint(telegram_bp)
 app.register_blueprint(vision_test_bp)
 app.register_blueprint(watchlist_bp)
 app.register_blueprint(alerts_bp)
-app.register_blueprint(stats_bp)
 app.register_blueprint(search_bp)
-app.register_blueprint(notifications_bp)
-app.register_blueprint(admin_bp)
-app.register_blueprint(webhooks_bp)
-app.register_blueprint(api_keys_bp)
-app.register_blueprint(sms_bp)
-app.register_blueprint(reports_bp)
-app.register_blueprint(roles_bp)
-app.register_blueprint(reseller_bp)
-app.register_blueprint(ml_bp)
-app.register_blueprint(ai_bp)
-
-Base.metadata.create_all(bind=engine)
 
 
-# Initialize Swagger UI only if Flasgger is available
-swagger = None
-if Flasgger is not None:
-    try:
-        swagger = Flasgger(app)
-    except Exception:
-        swagger = None
 
 app.config.from_object(Config)
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
@@ -298,7 +225,7 @@ NOTIFICATION_METHOD = os.getenv("NOTIFICATION_METHOD", "email")
 def send_telegram_notification(chat_id: str, message: str) -> bool:
     """Sendet eine Telegram-Nachricht."""
     if not TELEGRAM_BOT_TOKEN:
-        print("[Telegram] [!] Bot Token fehlt!")
+        print("[Telegram] ❌ Bot Token fehlt!")
         return False
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -312,10 +239,10 @@ def send_telegram_notification(chat_id: str, message: str) -> bool:
     try:
         response = requests.post(url, json=payload, timeout=10)
         response.raise_for_status()
-        print(f"[Telegram] [OK] Nachricht gesendet an {chat_id}")
+        print(f"[Telegram] ✅ Nachricht gesendet an {chat_id}")
         return True
     except Exception as e:
-        print(f"[Telegram] [!] Fehler: {e}")
+        print(f"[Telegram] ❌ Fehler: {e}")
         return False
 
 # Affiliate Parameter
@@ -798,7 +725,7 @@ def _backend_search_ebay(
     LIVE_SEARCH_BOOL = str(os.getenv("LIVE_SEARCH", "false")).strip().lower() in ("true", "1", "yes", "on")
 
     if not LIVE_SEARCH_BOOL or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
-        print("[WARNUNG] Live-Suche nicht möglich -> Fallback zu Demo-Modus")
+        print("[WARNUNG] Live-Suche nicht möglich → Fallback zu Demo-Modus")
         return _backend_search_demo(terms, filters, page, per_page)
 
     filter_str = _build_ebay_filters(filters)
@@ -1214,15 +1141,12 @@ def _build_query(existing: dict, **extra) -> str:
     return urlencode(pairs)
 
 
-
-
 @app.context_processor
 def inject_globals():
     return {
         "FREE_SEARCH_LIMIT": FREE_SEARCH_LIMIT,
         "PREMIUM_SEARCH_LIMIT": PREMIUM_SEARCH_LIMIT,
         "STRIPE_PRICE": STRIPE_PRICE,
-        "PLAN_FEATURES": PLAN_FEATURES,
         "qs": _build_query,
         "plausible_domain": PLAUSIBLE_DOMAIN,
     }
@@ -1310,7 +1234,7 @@ def login():
     password = (request.form.get("password") or "").strip()
 
     print(f"[LOGIN DEBUG] Email: {email}")
-    print(f"[LOGIN DEBUG] Password: {'*' * len(password)}")
+    print(f"[LOGIN DEBUG] Password: {'*' * len(password)}")  # Sicherer: Passwort nicht im Klartext loggen!
 
     conn = get_db()
     cur = dict_cursor(conn)
@@ -1318,18 +1242,8 @@ def login():
 
     try:
         cur.execute(
-            f"""
-            SELECT
-                id,
-                email,
-                password,
-                is_premium,
-                is_admin,
-                plan_type
-            FROM users
-            WHERE email = {ph}
-            """,
-            (email,),
+            f"SELECT id, password, is_premium FROM users WHERE email = {ph}",
+            (email,)
         )
         row = cur.fetchone()
     except Exception as e:
@@ -1345,54 +1259,39 @@ def login():
         flash("E-Mail oder Passwort ist falsch.", "warning")
         return redirect(url_for("login"))
 
+    # --- Erfolgreich eingeloggt ---
     print("[LOGIN DEBUG] Login successful!")
 
-    # Admin-Flag bestimmen
-    email_db = row["email"].lower()
-    is_admin_flag = bool(row.get("is_admin", 0)) or (email_db in ADMIN_EMAILS)
-
-    # User-Objekt für Flask-Login
+    # Flask-Login User-Objekt erstellen
     user = User(
         id=row["id"],
-        email=row["email"],
-        is_premium=bool(row.get("is_premium", 0)),
-        is_admin=is_admin_flag,
-        plan_type=row.get("plan_type", "free"),
+        email=email,
+        is_premium=bool(row["is_premium"])
     )
 
-    # Session-Variablen (für Navbar / Templates)
-    session["user_id"] = user.id
-    session["user_email"] = user.email
-    session["plan_type"] = user.plan_type
-    session["is_premium"] = bool(user.is_premium)
-    session["is_admin"] = bool(user.is_admin)
+    # Session-Variablen beibehalten (für deine alten Templates)
+    session["user_id"] = int(row["id"])
+    session["user_email"] = email
+    session["is_premium"] = bool(row["is_premium"])
+    session.permanent = True
 
-    print(f"[LOGIN DEBUG] is_admin from DB/env: {is_admin_flag}")
-    print(f"[LOGIN DEBUG] session['is_admin']: {session['is_admin']}")
-
-    # Flask-Login
-    login_user(user, remember=True)
+    # WICHTIG: Flask-Login aktivieren!
+    login_user(user, remember=True)  # remember=True → Cookie bleibt 30 Tage
 
     flash("Login erfolgreich.", "success")
 
+    # Sicherer Redirect: vermeidet Open Redirects
     next_page = request.args.get("next")
     if not next_page or not next_page.startswith("/"):
         next_page = url_for("dashboard")
 
     return redirect(next_page)
 
-
-
 @app.route("/logout")
 def logout():
-    logout_user()
     session.clear()
     flash("Logout erfolgreich.", "info")
-    response = redirect(url_for("login"))
-    response.delete_cookie("remember_token")
-    response.set_cookie("session", "", expires=0)
-    return response
-
+    return redirect(url_for("public_home"))
 
 
 # -------------------------------------------------------------------
@@ -1442,77 +1341,6 @@ def get_watchlist_stats(user_email, conn):
         "plan": plan,
         "check_interval": limits["check_interval"],
     }
-
-def format_ts(ts: Optional[int]) -> Optional[str]:
-    """Unix-Timestamp (Sekunden) in 'DD.MM.YYYY HH:MM' umwandeln."""
-    if not ts:
-        return None
-    try:
-        return datetime.fromtimestamp(int(ts)).strftime("%d.%m.%Y %H:%M")
-    except Exception:
-        # Fallback, wenn irgendwas komisch ist
-        return str(ts)
-
-
-from typing import Optional
-
-def build_item_url(src: str, item_id: Optional[str]) -> Optional[str]:
-    """
-    Baut eine Klick-URL für gespeicherte Items.
-    Unterstützt:
-      - eBay (itemId z.B. 'v1|123456789012|0' oder '123456789012')
-      - Kleinanzeigen (z.B. 'ka_326762728', '326762728' oder fertige URL)
-    """
-    if not item_id:
-        return None
-
-    # Wenn schon eine komplette URL gespeichert ist, einfach zurückgeben
-    if item_id.startswith("http://") or item_id.startswith("https://"):
-        return item_id
-
-    src = (src or "").lower()
-
-    # --------------------------------------------------
-    # Kleinanzeigen
-    # --------------------------------------------------
-    if "klein" in src:
-        # Falls doch mal eine fertige URL drinsteht
-        if "kleinanzeigen.de" in item_id:
-            return item_id
-
-        ka_id = item_id
-
-        # unsere gespeicherten IDs sehen oft aus wie "ka_326762728"
-        if ka_id.startswith("ka_"):
-            ka_id = ka_id.split("_", 1)[1]
-
-        # nur Ziffern nehmen, falls noch Müll drin ist
-        ka_id_digits = "".join(ch for ch in ka_id if ch.isdigit())
-        if not ka_id_digits:
-            return None
-
-        # Standard-Detail-URL
-        return f"https://www.kleinanzeigen.de/s-anzeige/-/{ka_id_digits}"
-
-    # --------------------------------------------------
-    # eBay
-    # --------------------------------------------------
-    ebay_id = item_id
-
-    # Browse-API: v1|123456789012|0  -> 123456789012
-    if ebay_id.startswith("v1|"):
-        parts = ebay_id.split("|")
-        if len(parts) >= 2:
-            ebay_id = parts[1]
-
-    # sicherheitshalber nur Ziffern übrig lassen
-    ebay_id_digits = "".join(ch for ch in ebay_id if ch.isdigit())
-    if not ebay_id_digits:
-        return None
-
-    return f"https://www.ebay.de/itm/{ebay_id_digits}"
-
-
 
 
 @app.route("/dashboard")
@@ -1646,29 +1474,16 @@ def dashboard():
 def root_redirect():
     return redirect(url_for("public_home"))
 
+
 @app.route("/public")
 def public_home():
-    return render_template(
-        "public_home.html",
-        title="Super-Agent: eBay-Alerts in Echtzeit | Schnäppchen automatisch finden",
-        meta_desc="Erhalte sofort Benachrichtigungen, wenn neue eBay- und Kleinanzeigen-Angebote deinen Kriterien entsprechen. Kostenlos mit 3 Alerts starten, Premium ab 7€/Monat.",
-        og_title="Super-Agent – eBay-Schnäppchen automatisch finden",
-        og_desc="Echtzeit-Alerts für eBay & Kleinanzeigen. Preisfilter, Zustandswahl, Telegram-Integration. Jetzt kostenlos testen!"
-    )
-
-@app.route("/howto")
-def howto():
-    return safe_render(
-        "howto.html",
-        title="Anleitung – Super-Agent",
-        meta_desc="So nutzt du den Super-Agent in 30 Sekunden: Suche, Filter, Alerts & Telegram."
-    )
+    return safe_render("public_home.html", title="Start – ebay-agent-cockpit")
 
 
 @app.route("/pricing")
 def public_pricing():
     ev_free_limit_hit = bool(session.pop("ev_free_limit_hit", False))
-    return render_template(
+    return safe_render(
         "public_pricing.html",
         title="Preise – ebay-agent-cockpit",
         ev_free_limit_hit=ev_free_limit_hit,
@@ -1679,8 +1494,7 @@ def start_free():
     session["is_premium"] = False
     session["free_search_count"] = 0
     session["user_email"] = "guest"
-    return redirect(url_for("search.search_page"))
-
+    return redirect(url_for("search"))
 
 
 # -------------------------------------------------------------------
@@ -1688,17 +1502,229 @@ def start_free():
 # -------------------------------------------------------------------
 from urllib.parse import urlencode
 
-@app.route("/search-legacy", methods=["GET", "POST"])
-def search_legacy_root():
-    """
-    Alte URLs /search-legacy -> leiten wir auf die neue Suche (/search) um.
-    """
-    if request.method == "POST":
-        params = request.form.to_dict(flat=True)
-    else:
-        params = request.args.to_dict(flat=True)
+from urllib.parse import urlencode
 
-    return redirect(url_for("search.search_page", **params))
+@app.route("/search-legacy", methods=["GET", "POST"])
+def search():
+    # DEBUG: Log eingehender Request-Daten
+    current_app.logger.debug("=== /search called, method=%s ===", request.method)
+    current_app.logger.debug("request.args: %s", request.args.to_dict(flat=False))
+    current_app.logger.debug("request.form: %s", request.form.to_dict(flat=False))
+    try:
+        current_app.logger.debug("request.json: %s", request.get_json(silent=True))
+    except Exception:
+        current_app.logger.debug("request.json: <error>")
+
+    # ------------------------------------------------------------------
+    # POST  →  PRG-Pattern: Redirect mit Querystring
+    # ------------------------------------------------------------------
+    if request.method == "POST":
+        current_app.logger.debug("[DEBUG] POST received! Form data: %s", dict(request.form))
+
+        # Basis-Parameter einsammeln
+        params = {
+            "q1": (request.form.get("q1") or "").strip(),
+            "q2": (request.form.get("q2") or "").strip(),
+            "q3": (request.form.get("q3") or "").strip(),
+            "price_min": (request.form.get("price_min") or "").strip(),
+            "price_max": (request.form.get("price_max") or "").strip(),
+            "sort": (request.form.get("sort") or "best").strip(),
+            "per_page": (request.form.get("per_page") or "").strip(),
+            "location_country": (request.form.get("location_country") or "DE").strip(),
+            "listing_type": (request.form.get("listing_type") or "").strip(),
+            "source": (request.form.get("source") or "ebay").strip(),
+            # Mehrfachauswahl Zustand
+            "condition": request.form.getlist("condition"),
+        }
+
+        # Bool-Filter NUR setzen, wenn Checkbox angehakt ist
+        if request.form.get("free_shipping") == "1":
+            params["free_shipping"] = "1"
+        if request.form.get("returns_accepted") == "1":
+            params["returns_accepted"] = "1"
+        if request.form.get("top_rated_only") == "1":
+            params["top_rated_only"] = "1"
+
+        # Free-Search-Limit (deine bestehende Logik beibehalten)
+        if not session.get("is_premium", False):
+            count = int(session.get("free_search_count", 0))
+            if count >= FREE_SEARCH_LIMIT:
+                session["ev_free_limit_hit"] = True
+                flash(
+                    f"Kostenloses Limit ({FREE_SEARCH_LIMIT}) erreicht – bitte Upgrade buchen.",
+                    "info",
+                )
+                return redirect(url_for("public_pricing"))
+            session["free_search_count"] = count + 1
+
+            params["page"] = 1
+            query = urlencode(params, doseq=True)
+            redirect_url = url_for("search") + "?" + query
+            return redirect(redirect_url)
+
+        current_app.logger.debug("POST -> redirect params (raw): %s", params)
+
+        # Querystring bauen (doseq=True für condition=a&condition=b)
+        query = urlencode(params, doseq=True)
+        redirect_url = url_for("search") + ("?" + query if query else "")
+        current_app.logger.debug("Redirecting to: %s", redirect_url)
+        return redirect(redirect_url)
+
+    # ------------------------------------------------------------------
+    # GET  →  tatsächliche Suche
+    # ------------------------------------------------------------------
+    # Suchbegriffe einsammeln
+    terms = []
+    for key in ("q1", "q2", "q3"):
+        v = (request.args.get(key) or "").strip()
+        if v:
+            terms.append(v)
+
+    # Quelle: ebay / kleinanzeigen / both
+    source = (request.args.get("source") or "ebay").strip()
+
+    # Wenn keine Begriffe: nur Formular anzeigen, KEIN Backend-Call
+    if not terms:
+        print("📄 /search GET ohne Begriffe → nur Formular")
+        return safe_render(
+            "search_results.html",
+            title="Suche",
+            terms=[],
+            results=[],
+            filters={},
+            pagination={
+                "page": 1,
+                "per_page": int(request.args.get("per_page") or PER_PAGE_DEFAULT),
+                "total_estimated": None,
+                "total_pages": None,
+                "has_prev": False,
+                "has_next": False,
+            },
+            base_qs=request.args.to_dict(flat=False),
+            source=source,
+        )
+
+    # Filter aus Querystring
+    filters = {
+        "price_min": request.args.get("price_min", "").strip(),
+        "price_max": request.args.get("price_max", "").strip(),
+        "sort": request.args.get("sort", "best").strip(),
+        "conditions": request.args.getlist("condition") or [],
+        "location_country": request.args.get("location_country", "DE").strip(),
+        "free_shipping": request.args.get("free_shipping") == "1",
+        "returns_accepted": request.args.get("returns_accepted") == "1",
+        "top_rated_only": request.args.get("top_rated_only") == "1",
+        "listing_type": request.args.get("listing_type", "").strip(),
+    }
+
+    print("\n" + "=" * 70)
+    print("🔍 SEARCH ROUTE - GET REQUEST")
+    print("=" * 70)
+    print(f"Terms: {terms}")
+    print(f"Source: {source}")
+    print("\nFilters:")
+    for key, value in filters.items():
+        print(f"  {key}: {value!r}")
+    print("=" * 70 + "\n")
+
+    # Pagination-Parameter
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except Exception:
+        page = 1
+
+    try:
+        per_page = min(100, max(5, int(request.args.get("per_page", PER_PAGE_DEFAULT))))
+    except Exception:
+        per_page = PER_PAGE_DEFAULT
+
+        # ------------------------------------------------------------------
+    # Backend-Aufruf je nach Quelle
+    # ------------------------------------------------------------------
+    items = []
+    total_estimated = None
+
+    if source == "kleinanzeigen":
+        print("📦 Calling search_kleinanzeigen(...)")
+        ka_res = search_kleinanzeigen(terms, filters, page, per_page)
+        # Falls die Funktion (items, total) zurückgibt:
+        if isinstance(ka_res, tuple):
+            items, total_estimated = ka_res
+        else:
+            items = ka_res
+            total_estimated = None  # kein Total von Kleinanzeigen
+
+    elif source == "both":
+        print("📦 Calling both: eBay + Kleinanzeigen")
+        ebay_items, ebay_total = _backend_search_ebay(terms, filters, page, per_page)
+
+        ka_res = search_kleinanzeigen(terms, filters, page, per_page)
+        if isinstance(ka_res, tuple):
+            kleinanzeigen_items, _ = ka_res
+        else:
+            kleinanzeigen_items = ka_res
+
+        # eBay + Kleinanzeigen in einer Liste
+        items = ebay_items + kleinanzeigen_items
+        # Gesamtanzahl kommt weiter von eBay (für Pagination)
+        total_estimated = ebay_total
+
+    else:
+        print("📦 Calling ebay only ...")
+        ebay_items, ebay_total = _backend_search_ebay(terms, filters, page, per_page)
+        items = ebay_items
+        total_estimated = ebay_total
+
+
+    print(f"✅ Backend returned: {len(items)} items, total_estimated={total_estimated}\n")
+
+    # Pagination berechnen
+    total_pages = (
+        math.ceil(total_estimated / per_page) if total_estimated else None
+    )
+    has_prev = page > 1
+    has_next = (total_pages and page < total_pages) or (
+        not total_pages and len(items) == per_page
+    )
+
+    # Base Query-String für Pagination und Toolbar
+    base_qs = {
+        "q1": request.args.get("q1", ""),
+        "q2": request.args.get("q2", ""),
+        "q3": request.args.get("q3", ""),
+        "price_min": filters["price_min"],
+        "price_max": filters["price_max"],
+        "sort": filters["sort"],
+        "condition": filters["conditions"],
+        "per_page": per_page,
+        "location_country": filters["location_country"],
+        "listing_type": filters["listing_type"],
+        "source": source,
+    }
+    if filters["free_shipping"]:
+        base_qs["free_shipping"] = "1"
+    if filters["returns_accepted"]:
+        base_qs["returns_accepted"] = "1"
+    if filters["top_rated_only"]:
+        base_qs["top_rated_only"] = "1"
+
+    return safe_render(
+        "search_results.html",
+        title="Suchergebnisse",
+        terms=terms,
+        results=items,
+        filters=filters,
+        pagination={
+            "page": page,
+            "per_page": per_page,
+            "total_estimated": total_estimated,
+            "total_pages": total_pages,
+            "has_prev": has_prev,
+            "has_next": has_next,
+        },
+        base_qs=base_qs,
+        source=source,
+    )
 
 
 
@@ -1714,16 +1740,16 @@ def cron_check_alerts():
 
     # Token prüfen
     if not token or token != AGENT_TRIGGER_TOKEN:
-        print("[Cron] [!] Ungültiger Token")
+        print("[Cron] ❌ Ungültiger Token")
         return jsonify({"success": False, "error": "Unauthorized"}), 403
 
-    print(f"[Cron] [OK] Alert-Check gestartet")
+    print(f"[Cron] ✅ Alert-Check gestartet")
 
     try:
         result = run_alert_check()
         return jsonify(result), 200 if result["success"] else 500
     except Exception as e:
-        print(f"[Cron] [!] Fehler: {e}")
+        print(f"[Cron] ❌ Fehler: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
@@ -1777,7 +1803,7 @@ def email_test():
     # einfache Validierung
     if not recipient or "@" not in recipient:
         flash("Keine gültige E-Mail-Adresse gefunden (query/form/session/ENV).", "danger")
-        return redirect(url_for("search.search_page"))
+        return redirect(url_for("search"))
 
     # optional: PILOT whitelist (nur zulässige Test-Adressen erlauben)
     pilot_raw = os.getenv("PILOT_EMAILS", "")
@@ -1785,23 +1811,23 @@ def email_test():
         pilot_set = {e.strip().lower() for p in pilot_raw.split(",") for e in p.split(";") if e.strip()}
         if pilot_set and recipient.lower() not in pilot_set:
             flash("Diese E-Mail ist nicht für Testversand freigeschaltet.", "warning")
-            return redirect(url_for("search.search_page"))
+            return redirect(url_for("search"))
 
     settings = get_mail_settings()
     subject = "✉️ Test-E-Mail vom eBay-Agent"
-    body_html = "<p>[OK] Test-Mail erfolgreich gesendet!</p><p>Grüße vom eBay-Agent.</p>"
+    body_html = "<p>✅ Test-Mail erfolgreich gesendet!</p><p>Grüße vom eBay-Agent.</p>"
 
     try:
         ok = send_mail(settings, [recipient], subject, body_html)
         if ok:
-            flash(f"Test-Mail an {recipient} gesendet [OK]", "success")
+            flash(f"Test-Mail an {recipient} gesendet ✅", "success")
         else:
             flash("Fehler beim Versand (siehe Server-Log).", "warning")
     except Exception as e:
         # Ausnahme anzeigen, aber nicht sensiblen Inhalt ins UI schreiben
         flash(f"Fehler beim Versand: {str(e)}", "danger")
 
-    return redirect(url_for("search.search_page"))
+    return redirect(url_for("search"))
 
 
 
@@ -1810,78 +1836,77 @@ def email_test():
 # -------------------------------------------------------------------
 # Alerts: Subscribe / Send-now / Cron (HTTP-Trigger-Variante siehe unten)
 # -------------------------------------------------------------------
-@app.post("/alerts/subscribe")
+@app.route("/alerts/subscribe", methods=["POST"])
 def alerts_subscribe():
-    """Speichert die aktuelle Suche als Alert (inkl. Quelle & Benachrichtigungskanäle)."""
-    user_email = session.get("user_email") or ""
-    if not user_email or user_email.lower() == "guest" or "@" not in user_email:
-        flash("Bitte einloggen, um Alarme zu speichern.", "warning")
-        return redirect(url_for("login"))
+    """Speichert einen Such-Alarm (Search-Agent) für den aktuellen User."""
+    from flask_login import current_user
 
-    # --- Begriffe sammeln ---
-    terms = [
-        t.strip()
-        for t in [
-            request.form.get("q1", ""),
-            request.form.get("q2", ""),
-            request.form.get("q3", "")
-        ]
-        if t.strip()
-    ]
+    form = request.form
+
+    # 1) Suchbegriffe
+    q1 = (form.get("q1") or form.get("q") or "").strip()
+    q2 = (form.get("q2") or "").strip()
+    q3 = (form.get("q3") or "").strip()
+    terms = [q for q in (q1, q2, q3) if q]
+
     if not terms:
         flash("Keine Suchbegriffe übergeben.", "warning")
-        return redirect(url_for("search.search_page"))
+        return redirect(request.referrer or url_for("search"))
 
-    # --- Filter speichern ---
+    # 2) Filter aus Formular
+    conditions = form.getlist("condition") or []
+
     filters = {
-        "price_min": (request.form.get("price_min") or "").strip(),
-        "price_max": (request.form.get("price_max") or "").strip(),
-        "sort": (request.form.get("sort") or "best").strip(),
-        "conditions": request.form.getlist("condition"),
-        "location_country": request.form.get("location_country", "DE"),
-        "listing_type": request.form.get("listing_type", "all"),
+        "price_min": (form.get("price_min") or "").strip(),
+        "price_max": (form.get("price_max") or "").strip(),
+        "sort": (form.get("sort") or "best").strip(),
+        "conditions": conditions,
+        "location_country": (form.get("location_country") or "DE").strip(),
+        "free_shipping": (form.get("free_shipping") == "1"),
+        "returns_accepted": (form.get("returns_accepted") == "1"),
+        "top_rated_only": (form.get("top_rated_only") == "1"),
+        "listing_type": (form.get("listing_type") or "").strip(),
+        # 🆕 Quelle für Alerts mit speichern
+        "source": (form.get("source") or request.args.get("source") or "ebay").strip().lower(),
     }
 
-    per_page = 30
-    try:
-        per_page = min(100, max(5, int(request.form.get("per_page", "30"))))
-    except Exception:
-        pass
+    # 3) User ermitteln
+    user_email = None
+    if current_user.is_authenticated:
+        user_email = getattr(current_user, "email", None)
 
-    # --- Quelle (ebay / kleinanzeigen / both) ---
-    source = request.form.get("source", "ebay").lower()
-    if source not in ["ebay", "kleinanzeigen", "both"]:
-        source = "ebay"
+    if not user_email:
+        user_email = session.get("user_email")
 
-    # --- Benachrichtigungskanäle ---
-    notify_email = 1 if request.form.get("notify_email") else 0
-    notify_telegram = 1 if request.form.get("notify_telegram") else 0
+    if not user_email:
+        flash("Bitte melde dich an, um einen Alarm zu speichern.", "warning")
+        return redirect(url_for("login"))
 
-    # --- In DB speichern ---
+    # 4) In DB schreiben
     conn = get_db()
-    cur = conn.cursor()
+    cur = dict_cursor(conn)
+    ph = get_placeholder()
+
     cur.execute(
-        """
+        f"""
         INSERT INTO search_alerts
-            (user_email, terms_json, filters_json, per_page, is_active,
-             last_run_ts, source, notify_email, notify_telegram)
-        VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)
-        """.replace("?", "%s"),  # wichtig für PostgreSQL
+            (user_email, terms_json, filters_json, last_run_ts, is_active)
+        VALUES ({ph}, {ph}, {ph}, {ph}, 1)
+        """,
         (
             user_email,
-            json.dumps(terms, ensure_ascii=False),
-            json.dumps(filters, ensure_ascii=False),
-            per_page,
-            source,
-            notify_email,
-            notify_telegram,
+            json.dumps(terms),
+            json.dumps(filters),
+            0,  # last_run_ts
         ),
     )
     conn.commit()
     conn.close()
 
-    flash("🔔 Alert gespeichert – neue Treffer werden automatisch geprüft.", "success")
-    return redirect(url_for("search", **{**request.form}))
+    flash("Such-Alarm gespeichert – du wirst bei neuen Treffern benachrichtigt.", "success")
+
+    # Zurück zu den Suchergebnissen
+    return redirect(request.referrer or url_for("search", q1=q1))
 
 
 
@@ -1891,7 +1916,7 @@ def alerts_send_now():
     user_email = session.get("user_email") or request.form.get("email") or ""
     if not user_email or user_email.lower() == "guest" or "@" not in user_email:
         flash("Gültige E-Mail erforderlich (einloggen oder E-Mail angeben).", "warning")
-        return redirect(url_for("search.search_page"))
+        return redirect(url_for("search"))
 
     terms = [
         t
@@ -1904,7 +1929,7 @@ def alerts_send_now():
     ]
     if not terms:
         flash("Keine Suchbegriffe übergeben.", "warning")
-        return redirect(url_for("search.search_page"))
+        return redirect(url_for("search"))
 
     filters = {
         "price_min": (request.form.get("price_min") or "").strip(),
@@ -2015,7 +2040,7 @@ def create_agent():
     if not terms:
         conn.close()
         flash("Keine Suchbegriffe angegeben.", "warning")
-        return redirect(url_for("search.search_page"))
+        return redirect(url_for("search"))
 
     filters = {
         "price_min": request.form.get("price_min", "").strip(),
@@ -2045,8 +2070,6 @@ def create_agent():
         "success",
     )
     return redirect(url_for("dashboard"))
-
-
 
 
 # ALT/Kompatibilität (deprecated): Query-basiertes Cron-Endpoint
@@ -2169,7 +2192,7 @@ app.config.update(
     STRIPE_PRICE_TEAM=STRIPE_PRICE_TEAM,
 )
 
-# 4) Mapping Price-ID -> Plan (basic|pro|team)
+# 4) Mapping Price-ID → Plan (basic|pro|team)
 PRICE_TO_PLAN = {
     STRIPE_PRICE_BASIC: "basic",
     STRIPE_PRICE_PRO: "pro",
@@ -2347,24 +2370,6 @@ def checkout_success():
 def checkout_cancel():
     flash("Vorgang abgebrochen.", "info")
     return redirect(url_for("public_pricing"))
-
-# -------------------------------------------------------------------
-# Telegram Webhook für Bot-Commands
-# -------------------------------------------------------------------
-@app.post("/telegram/webhook")
-def telegram_webhook():
-    """Verarbeitet Telegram Bot Updates (Commands, Button-Clicks)"""
-    from telegram_bot import handle_telegram_update
-    try:
-        update = request.get_json()
-        if not update:
-            return jsonify({"ok": True}), 200
-        handle_telegram_update(update)
-        return jsonify({"ok": True}), 200
-    except Exception as e:
-        current_app.logger.error(f"[telegram_webhook] Error: {e}", exc_info=True)
-        return jsonify({"ok": False, "error": str(e)}), 500
-
 
 
 # -------------------------------------------------------------------
@@ -2721,7 +2726,7 @@ def internal_my_alerts():
             new_val = 0 if is_active else 1
             html.append(
                 f"<tr><td>{rid}</td>"
-                f"<td>{'[OK] aktiv' if is_active else '⛔ inaktiv'}</td>"
+                f"<td>{'✅ aktiv' if is_active else '⛔ inaktiv'}</td>"
                 f"<td>"
                 f"<form method='post' action='/internal/alerts/toggle' style='margin:0;'>"
                 f"<input type='hidden' name='id' value='{rid}'/>"
@@ -2842,7 +2847,7 @@ def pilot_waitlist_form():
         <label>Zeitfenster (z. B. Mo–Fr 8–12):</label><br><input name="fenster" style="width:100%"><br><br>
         <button type="submit">Auf Warteliste</button>
       </form>
-      <p style="margin-top:1rem"><a href="/pilot/widget">-> Praxis-Widget öffnen</a></p>
+      <p style="margin-top:1rem"><a href="/pilot/widget">→ Praxis-Widget öffnen</a></p>
     </div>
     """
     return render_template_string(html)
@@ -2860,7 +2865,7 @@ def pilot_waitlist_save():
             "created": datetime.utcnow().isoformat(),
         }
     )
-    return "<p>[OK] Eingetragen! <a href='/pilot/waitlist'>Zurück</a> • <a href='/pilot/widget'>Praxis-Widget</a></p>"
+    return "<p>✅ Eingetragen! <a href='/pilot/waitlist'>Zurück</a> • <a href='/pilot/widget'>Praxis-Widget</a></p>"
 
 
 # --- Praxis-Widget (Slot freigeben) ---
@@ -2882,7 +2887,7 @@ def pilot_widget_form():
           <input name="link" placeholder="https://www.116117.de/..." style="width:100%"><br><br>
         <button type="submit">Slot freigeben & Benachrichtigen</button>
       </form>
-      <p style="margin-top:1rem"><a href="/pilot/waitlist">-> Warteliste</a></p>
+      <p style="margin-top:1rem"><a href="/pilot/waitlist">→ Warteliste</a></p>
     </div>
     """.format(
         qs=("?key=" + PRACTICE_DEMO_SECRET) if PRACTICE_DEMO_SECRET else ""
@@ -2934,7 +2939,7 @@ def pilot_widget_free():
 
     qs = f"?key={PRACTICE_DEMO_SECRET}" if PRACTICE_DEMO_SECRET else ""
     return (
-        f"<p>[OK] Slot freigegeben ({fach}) bis {until}. "
+        f"<p>✅ Slot freigegeben ({fach}) bis {until}. "
         f"Benachrichtigungen verschickt: {sent}. "
         f"<a href='/pilot/widget{qs}'>Zurück</a></p>"
     )
@@ -2998,8 +3003,8 @@ def admin_logout():
 @app.route("/admin/dashboard")
 def admin_dashboard():
     """Admin Dashboard"""
-    if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
-        return redirect(url_for("login"))
+    if not session.get("is_admin"):
+        return redirect("/admin")
 
     # Statistiken aus der Datenbank holen
     conn = get_db()
@@ -3013,2914 +3018,648 @@ def admin_dashboard():
 
     conn.close()
 
-    return f"""
+    return render_template_string(
+        """
     <div style="font-family:Arial;max-width:1000px;margin:20px auto;padding:20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:30px">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            <h1>A
+            <h1>Admin Dashboard</h1>
+            <a href="/admin/logout" style="color:#dc3545">Logout</a>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:40px">
+            <div style="background:#f8f9fa;padding:20px;border-radius:8px;text-align:center">
+                <h3 style="margin:0;color:#28a745">{{ user_count }}</h3>
+                <p style="margin:5px 0 0 0">Benutzer</p>
+            </div>
+            <div style="background:#f8f9fa;padding:20px;border-radius:8px;text-align:center">
+                <h3 style="margin:0;color:#007cba">{{ alert_count }}</h3>
+                <p style="margin:5px 0 0 0">Aktive Alerts</p>
+            </div>
+            <div style="background:#f8f9fa;padding:20px;border-radius:8px;text-align:center">
+                <h3 style="margin:0;color:#6c757d">{{ total_alerts }}</h3>
+                <p style="margin:5px 0 0 0">Alerts gesamt</p>
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:30px">
+            <div>
+                <h3>Benutzerverwaltung</h3>
+                <a href="/admin/users" style="background:#007cba;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">
+                    Benutzer verwalten
+                </a>
+            </div>
+            <div>
+                <h3>Alert-Verwaltung</h3>
+                <a href="/admin/alerts" style="background:#28a745;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">
+                    Alerts verwalten
+                </a>
+            </div>
+        </div>
+
+        <div style="margin-top:40px">
+            <h3>Bounce-Management</h3>
+            <a href="/admin/bounces" style="background:#dc3545;color:white;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">
+                Gebounce E-Mails verwalten
+            </a>
+        </div>
+    </div>
+        """,
+        user_count=user_count,
+        alert_count=alert_count,
+        total_alerts=total_alerts,
+    )
+
+
+
+@app.route("/admin/users")
+def admin_users():
+    """Benutzerverwaltung"""
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
+    conn = get_db()
+    cur = conn.cursor()
+    users = cur.execute(
+        "SELECT id, email, password, is_premium FROM users ORDER BY id DESC"
+    ).fetchall()
+    conn.close()
+
+    user_rows = ""
+    for user in users:
+        premium_badge = "🌟 Premium" if user[3] else "🆓 Free"
+        user_rows += f"""
+        <tr>
+            <td>{user[0]}</td>
+            <td>{user[1]}</td>
+            <td>{premium_badge}</td>
+            <td>
+                <a href="/admin/user/{user[0]}/alerts" style="margin-right:10px">Alerts</a>
+                <a href="/admin/user/{user[0]}/delete" onclick="return confirm('Wirklich löschen?')" style="color:red">Löschen</a>
+            </td>
+        </tr>
+        """
+
+        return render_template_string(
+        """
+    <div style="font-family:Arial;max-width:1000px;margin:20px auto;padding:20px">
+        <div style="margin-bottom:20px">
+            <a href="/admin/dashboard">← Zurück zum Dashboard</a>
+        </div>
+
+        <h2>Benutzerverwaltung</h2>
+        <table style="width:100%;border-collapse:collapse;margin-top:20px">
+            <tr style="background:#f8f9fa">
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">ID</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">E-Mail</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Status</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktionen</th>
+            </tr>
+            {{ user_rows | safe }}
+        </table>
+    </div>
+        """,
+        user_rows=user_rows,
+    )
+
+
+
+@app.route("/admin/alerts")
+def admin_alerts():
+    """Alert-Verwaltung"""
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
+    conn = get_db()
+    cur = conn.cursor()
+    alerts = cur.execute(
+        """
+        SELECT id, user_email, terms_json, is_active, last_run_ts
+        FROM search_alerts
+        ORDER BY id DESC
+        LIMIT 50
+    """
+    ).fetchall()
+    conn.close()
+
+    alert_rows = ""
+    for alert in alerts:
+        try:
+            terms = json.loads(alert[2])
+            terms_text = ", ".join(terms[:3])  # Erste 3 Begriffe
+        except:
+            terms_text = "Fehlerhafte Daten"
+
+        status = "🟢 Aktiv" if alert[3] else "🔴 Inaktiv"
+        last_run = "Nie" if alert[4] == 0 else f"Zuletzt: {alert[4]}"
+
+        alert_rows += f"""
+        <tr>
+            <td style="padding:8px;border:1px solid #ddd">{alert[0]}</td>
+            <td style="padding:8px;border:1px solid #ddd">{alert[1]}</td>
+            <td style="padding:8px;border:1px solid #ddd">{terms_text}</td>
+            <td style="padding:8px;border:1px solid #ddd">{status}</td>
+            <td style="padding:8px;border:1px solid #ddd">
+                <a href="/admin/alert/{alert[0]}/toggle">Toggle</a> |
+                <a href="/admin/alert/{alert[0]}/delete" style="color:red">Löschen</a>
+            </td>
+        </tr>
+        """
+
+    return f"""
+    <div style="font-family:Arial;max-width:1200px;margin:20px auto;padding:20px">
+        <div style="margin-bottom:20px">
+            <a href="/admin/dashboard">← Zurück zum Dashboard</a>
+        </div>
+
+        <h2>Alert-Verwaltung</h2>
+        <table style="width:100%;border-collapse:collapse;margin-top:20px">
+            <tr style="background:#f8f9fa">
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">ID</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">E-Mail</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Suchbegriffe</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Status</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktionen</th>
+            </tr>
+            {alert_rows}
+        </table>
+    </div>
+    """
+
+
+@app.route("/admin/alert/<int:alert_id>/toggle")
+def admin_toggle_alert(alert_id):
+    """Alert aktivieren/deaktivieren"""
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE search_alerts SET is_active = 1 - is_active WHERE id = ?", (alert_id,)
+    )
+    conn.commit()
+    conn.close()
+
+    return redirect("/admin/alerts")
+
+
+@app.route("/admin/alert/<int:alert_id>/delete")
+def admin_delete_alert(alert_id):
+    """Alert löschen"""
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM search_alerts WHERE id = ?", (alert_id,))
+    cur.execute(
+        "DELETE FROM alert_seen WHERE search_hash IN (SELECT search_hash FROM search_alerts WHERE id = ?)",
+        (alert_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    return redirect("/admin/alerts")
+
+
+@app.route("/admin/bounces")
+def admin_bounces():
+    """Bounce-Management"""
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
+    # Bounce-Liste laden
+    from mailer import get_bounce_stats
+
+    stats = get_bounce_stats()
+
+    bounce_rows = ""
+    for email in stats["bounced_emails"]:
+        bounce_rows += f"""
+        <tr>
+            <td style="padding:8px;border:1px solid #ddd">{email}</td>
+            <td style="padding:8px;border:1px solid #ddd">
+                <a href="/admin/bounce/{email}/remove" style="color:green">Entfernen</a>
+            </td>
+        </tr>
+        """
+
+    return f"""
+    <div style="font-family:Arial;max-width:800px;margin:20px auto;padding:20px">
+        <div style="margin-bottom:20px">
+            <a href="/admin/dashboard">← Zurück zum Dashboard</a>
+        </div>
+
+        <h2>Bounce-Management</h2>
+        <p>Gesamt: {stats['total_bounced']} gebounce E-Mail-Adressen</p>
+
+        <div style="margin:20px 0">
+            <a href="/admin/bounces/clear"
+               onclick="return confirm('Alle Bounces löschen?')"
+               style="background:#dc3545;color:white;padding:10px 20px;text-decoration:none;border-radius:4px">
+                Alle Bounces löschen
+            </a>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;margin-top:20px">
+            <tr style="background:#f8f9fa">
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">E-Mail-Adresse</th>
+                <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktion</th>
+            </tr>
+            {bounce_rows}
+        </table>
+    </div>
+    """
+
+
+@app.route("/admin/bounces/clear")
+def admin_clear_bounces():
+    """Alle Bounces löschen"""
+    if not session.get("is_admin"):
+        return redirect("/admin")
+
+    from mailer import clear_bounce_list
+
+    clear_bounce_list()
+
+    return redirect("/admin/bounces")
+
+# ============================================================================
+# TELEGRAM ROUTES
+# ============================================================================
+
+@app.route("/telegram/settings")
+def telegram_settings():
+    """Zeigt Telegram-Einstellungen"""
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            telegram_chat_id,
+            telegram_enabled,
+            telegram_verified,
+            telegram_username
+        FROM users
+        WHERE email = ?
+    """, (user_email,))
+
+    user_row = cur.fetchone()
+    conn.close()
+
+    if user_row:
+        user = dict(user_row)
+    else:
+        user = {
+            "telegram_chat_id": None,
+            "telegram_enabled": False,
+            "telegram_verified": False,
+            "telegram_username": None
+        }
+
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")
+
+    return safe_render(
+        "telegram_settings.html",
+        user=user,
+        bot_configured=bool(TELEGRAM_BOT_TOKEN),
+        bot_username=TELEGRAM_BOT_USERNAME
+    )
+
+
+@app.route("/telegram/connect", methods=["POST"])
+def telegram_connect():
+    """Startet Telegram-Verbindungsprozess"""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    user_email = session.get("user_email")
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")
+
+    if not TELEGRAM_BOT_TOKEN:
+        return jsonify({
+            "success": False,
+            "error": "Telegram Bot nicht konfiguriert"
+        }), 500
+
+    # Deep Link zu Telegram Bot
+    deep_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start={user_email.replace('@', '_at_')}"
+
+    print(f"[Telegram] Deep Link erstellt: {deep_link}")
+
+    return jsonify({
+        "success": True,
+        "deep_link": deep_link,
+        "message": "Bitte klicke in Telegram auf 'Start'"
+    })
+
+
+@app.route("/telegram/verify", methods=["POST"])
+def telegram_verify():
+    """Wird vom Telegram Bot aufgerufen wenn User /start klickt"""
+    # Token-Check
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+
+    if token != AGENT_TRIGGER_TOKEN:
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
+
+    data = request.get_json()
+    chat_id = data.get("chat_id")
+    username = data.get("username")
+    user_email = data.get("user_email")
+
+    if not all([chat_id, user_email]):
+        return jsonify({"success": False, "error": "Missing data"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # User-Email dekodieren
+        user_email = user_email.replace("_at_", "@")
+
+        # Telegram-Daten setzen
+        cur.execute("""
+            UPDATE users
+            SET telegram_chat_id = ?,
+                telegram_username = ?,
+                telegram_enabled = 1,
+                telegram_verified = 1
+            WHERE email = ?
+        """, (str(chat_id), username, user_email))
+
+        if cur.rowcount == 0:
+            conn.close()
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        conn.commit()
+        conn.close()
+
+        # Willkommensnachricht senden
+        from telegram_bot import send_welcome_notification
+        send_welcome_notification(str(chat_id), username or "User")
+
+        print(f"[Telegram] ✅ User {user_email} verknüpft mit Chat-ID {chat_id}")
+
+        return jsonify({
+            "success": True,
+            "message": "User erfolgreich verknüpft"
+        })
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        print(f"[Telegram] ❌ Fehler: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/telegram/toggle", methods=["POST"])
+def telegram_toggle():
+    """Aktiviert/Deaktiviert Telegram-Benachrichtigungen"""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    user_email = session.get("user_email")
+    data = request.get_json()
+    enabled = data.get("enabled", False)
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE users
+        SET telegram_enabled = ?
+        WHERE email = ?
+    """, (1 if enabled else 0, user_email))
+
+    conn.commit()
+    conn.close()
+
+    status = "aktiviert" if enabled else "deaktiviert"
+    print(f"[Telegram] User {user_email}: Benachrichtigungen {status}")
+
+    return jsonify({
+        "success": True,
+        "message": f"Telegram-Alerts {status}"
+    })
+
+
+@app.route("/telegram/test", methods=["POST"])
+def telegram_test():
+    """Sendet Test-Benachrichtigung"""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    user_email = session.get("user_email")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT telegram_chat_id, telegram_enabled, telegram_verified
+        FROM users
+        WHERE email = ?
+    """, (user_email,))
+
+    user_row = cur.fetchone()
+    conn.close()
+
+    if not user_row:
+        return jsonify({"success": False, "message": "User nicht gefunden"}), 404
+
+    user = dict(user_row)
+
+    if not user["telegram_verified"]:
+        return jsonify({"success": False, "message": "Telegram nicht verbunden"}), 400
+
+    if not user["telegram_enabled"]:
+        return jsonify({"success": False, "message": "Telegram-Alerts sind deaktiviert"}), 400
+
+    # Test-Nachricht senden
+    from telegram_bot import TelegramBot
+    bot = TelegramBot()
+
+    message = """
+🧪 <b>Test-Benachrichtigung</b>
+
+Dein Telegram ist korrekt konfiguriert! ✅
+
+Du erhältst ab sofort Echtzeit-Benachrichtigungen,
+wenn neue Artikel gefunden werden.
+
+<i>Diese Nachricht kannst du ignorieren.</i>
+"""
+
+    success = bot.send_message(user["telegram_chat_id"], message)
+
+    if success:
+        return jsonify({"success": True, "message": "Test-Nachricht gesendet! Prüfe Telegram."})
+    else:
+        return jsonify({"success": False, "message": "Fehler beim Senden"}), 500
+
+
+@app.route("/telegram/disconnect", methods=["POST"])
+def telegram_disconnect():
+    """Trennt Telegram-Verbindung"""
+    if not session.get("user_id"):
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    user_email = session.get("user_email")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE users
+        SET telegram_chat_id = NULL,
+            telegram_enabled = 0,
+            telegram_verified = 0,
+            telegram_username = NULL
+        WHERE email = ?
+    """, (user_email,))
+
+    conn.commit()
+    conn.close()
+
+    print(f"[Telegram] User {user_email}: Verbindung getrennt")
+
+    return jsonify({"success": True, "message": "Telegram getrennt"})
+
+
+print("[Telegram] ✅ Routes registriert")
+
+
+# --- Admin Blueprint: simple stats view --------------------------------------
+import sqlite3
+
+from flask import Blueprint, abort, render_template, request
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")  # in Render als ENV setzen
+DB_PATH = "instance/db.sqlite3"
+
+admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+def _db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _is_admin() -> bool:
+    if not ADMIN_TOKEN:
+        # Wenn kein Token gesetzt ist, nur lokal erlauben
+        return request.host.startswith("127.0.0.1") or request.host.startswith(
+            "localhost"
+        )
+    return request.args.get("token") == ADMIN_TOKEN
+
+
+@admin_bp.route("/stats")
+def admin_stats():
+    if not _is_admin():
+        abort(403)
+
+    with _db() as conn:
+        cur = conn.cursor()
+
+        # Live-Kennzahlen
+        users_total = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        premium_total = cur.execute(
+            "SELECT COUNT(*) FROM users WHERE is_premium=1"
+        ).fetchone()[0]
+        alerts_total = cur.execute("SELECT COUNT(*) FROM search_alerts").fetchone()[0]
+        alerts_active = cur.execute(
+            "SELECT COUNT(*) FROM search_alerts WHERE is_active=1"
+        ).fetchone()[0]
+
+        plans = cur.execute(
+            """
+            SELECT id, name, price, max_agents, max_email_alerts
+            FROM plans WHERE is_active=1 ORDER BY sort_order
+        """
+        ).fetchall()
+
+        # System-Statistik (eine Zeile, id=1)
+        sys = cur.execute("SELECT * FROM system_stats WHERE id=1").fetchone()
+
+        # Plan-Usage (aus View; existiert durch init_db.py)
+        plan_usage = cur.execute(
+            """
+            SELECT plan, plan_name, user_count, total_alerts, max_agents, price
+            FROM v_plan_usage
+            ORDER BY price
+        """
+        ).fetchall()
+
+    data = {
+        "users_total": users_total,
+        "premium_total": premium_total,
+        "alerts_total": alerts_total,
+        "alerts_active": alerts_active,
+        "plans": plans,
+        "sys": sys,
+        "plan_usage": plan_usage,
+    }
+    return render_template("admin_stats.html", **data)
+
+
+@admin_bp.route("/stats/recalc", methods=["POST"])
+def admin_stats_recalc():
+    if not _is_admin():
+        abort(403)
+
+    with _db() as conn:
+        cur = conn.cursor()
+        # einfache Aggregation – passe nach Bedarf an
+        users_total = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        premium_total = cur.execute(
+            "SELECT COUNT(*) FROM users WHERE is_premium=1"
+        ).fetchone()[0]
+        alerts_total = cur.execute("SELECT COUNT(*) FROM search_alerts").fetchone()[0]
+        emails_sent = cur.execute(
+            "SELECT COALESCE(SUM(total_emails_sent),0) FROM user_stats"
+        ).fetchone()[0]
+
+        cur.execute(
+            """
+            UPDATE system_stats
+               SET total_users=?,
+                   total_premium_users=?,
+                   total_alerts=?,
+                   total_emails_sent=?,
+                   last_cron_run=CURRENT_TIMESTAMP,
+                   updated_at=CURRENT_TIMESTAMP
+             WHERE id=1
+        """,
+            (users_total, premium_total, alerts_total, emails_sent),
+        )
+        conn.commit()
+
+    # nach Recalc wieder zur Übersicht
+    q = f"?token={ADMIN_TOKEN}" if ADMIN_TOKEN else ""
+    return (
+        "",
+        204,
+        {"HX-Redirect": f"/admin/stats{q}"},
+    )  # funktioniert normal & mit HTMX
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "5000"))
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+
+    print("\n" + "="*50)
+    print("🚀 Flask App startet...")
+    print(f"   Port: {port}")
+    print(f"   Debug: {debug}")
+    print(f"   Database: {'PostgreSQL' if IS_POSTGRES else 'SQLite'}")
+    print("="*50 + "\n")
+
+    app.run(host="0.0.0.0", port=port, debug=debug)

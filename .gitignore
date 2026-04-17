@@ -1,48 +1,38 @@
-# .gitignore
-
-.env
+﻿# Bytecode / Caches
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+.python-version
+.pytest_cache/
+
+# Envs
+env/
+venv/
+ENV/
+.venv/
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets/Configs
+.env
+.env.local
+.env.*.local
+
+# Flask/Instance
 instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# Node (falls vorhanden)
 node_modules/
-.next/
+
+# Backups/Artefakte
+backups/
 dist/
 build/
-package-lock.json
-.env.*
-*.sqlite3
-*.log
-venv/
-/.env
-/instance/
-/database.db
-*.zip
-__pycache__/
-
-
-/venv/
-.env
-# Python/venv
-.venv/
-__pycache__/
-*.pyc
-
-# lokale Sicherungskopien
-app - Kopie*
-*.bak.venv/
-__pycache__/
-*.pyc
-app - Kopie*
-*.bak
-
-.venv/, __pycache__/, *.pyc
-
-# .gitignore
-.vscode/
-*.log
-__pycache__/
-*.pyc
-Textdokument (neu)*.txt
-infinite-loader-*.json
-infinite-loader-*.json
-.env
