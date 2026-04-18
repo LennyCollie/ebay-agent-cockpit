@@ -44,7 +44,9 @@ from routes.search import bp_search as search_bp
 from routes.telegram import bp as telegram_bp
 from routes.watchlist import bp as watchlist_bp
 from routes.alerts import bp as alerts_bp
+from routes.admin import bp as admin_bp
 from agent import get_mail_settings, send_mail
+
 
 
 
@@ -142,6 +144,8 @@ app.register_blueprint(vision_test_bp)
 app.register_blueprint(watchlist_bp)
 app.register_blueprint(alerts_bp)
 app.register_blueprint(search_bp)
+app.register_blueprint(admin_bp)
+
 
 
 
