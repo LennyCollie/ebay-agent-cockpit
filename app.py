@@ -32,6 +32,7 @@ from flask import (
     jsonify,
     redirect,
     render_template,
+    render_template_string,
     request,
     session,
     url_for,
@@ -3145,8 +3146,8 @@ def admin_alerts():
     for alert in alerts:
         try:
             terms = json.loads(alert[2])
-            terms_text = ", ".join(terms[:3])  # Erste 3 Begriffe
-        except:
+            terms_text = ", ".join(terms[:3]) if terms else "–"
+        except Exception:
             terms_text = "Fehlerhafte Daten"
 
         status = "🟢 Aktiv" if alert[3] else "🔴 Inaktiv"
@@ -3165,7 +3166,7 @@ def admin_alerts():
         </tr>
         """
 
-    return f"""
+    return render_template_string("""
     <div style="font-family:Arial;max-width:1200px;margin:20px auto;padding:20px">
         <div style="margin-bottom:20px">
             <a href="/admin/dashboard">← Zurück zum Dashboard</a>
@@ -3180,10 +3181,10 @@ def admin_alerts():
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">Status</th>
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktionen</th>
             </tr>
-            {alert_rows}
+            {{ alert_rows|safe }}
         </table>
     </div>
-    """
+    """, alert_rows=alert_rows)
 
 
 @app.route("/admin/alert/<int:alert_id>/toggle")
@@ -3228,9 +3229,7 @@ def admin_bounces():
     if not session.get("is_admin"):
         return redirect("/admin")
 
-    # Bounce-Liste laden
     from mailer import get_bounce_stats
-
     stats = get_bounce_stats()
 
     bounce_rows = ""
@@ -3244,14 +3243,14 @@ def admin_bounces():
         </tr>
         """
 
-    return f"""
+    return render_template_string("""
     <div style="font-family:Arial;max-width:800px;margin:20px auto;padding:20px">
         <div style="margin-bottom:20px">
             <a href="/admin/dashboard">← Zurück zum Dashboard</a>
         </div>
 
         <h2>Bounce-Management</h2>
-        <p>Gesamt: {stats['total_bounced']} gebounce E-Mail-Adressen</p>
+        <p>Gesamt: {{ total_bounced }} gebounce E-Mail-Adressen</p>
 
         <div style="margin:20px 0">
             <a href="/admin/bounces/clear"
@@ -3266,10 +3265,10 @@ def admin_bounces():
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">E-Mail-Adresse</th>
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktion</th>
             </tr>
-            {bounce_rows}
+            {{ bounce_rows|safe }}
         </table>
     </div>
-    """
+    """, total_bounced=stats["total_bounced"], bounce_rows=bounce_rows)
 
 
 @app.route("/admin/bounces/clear")
