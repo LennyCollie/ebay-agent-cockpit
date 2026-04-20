@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-3">Alert-Verwaltung</h1>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>ID</th>
+            <th>E-Mail</th>
+            <th>Suche</th>
+            <th>Aktiv</th>
+            <th>Letzter Lauf</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if alerts %}
+          {% for a in alerts %}
+          <tr>
+            <td>{{ a.id }}</td>
+            <td>{{ a.email }}</td>
+            <td>{{ a.terms_text }}</td>
+            <td>
+              {% if a.is_active %}
+              <span class="badge bg-success">Aktiv</span>
+              {% else %}
+              <span class="badge bg-secondary">Inaktiv</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if a.last_run_ts %}
+              {{ a.last_run_ts }}
+              {% else %}
+              –
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr>
+            <td colspan="5" class="text-muted">Keine Alerts gefunden.</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

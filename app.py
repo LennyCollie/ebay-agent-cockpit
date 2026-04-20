@@ -11,10 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
+from math import ceil
 
 from alert_checker import run_alert_check
 from database import get_db, dict_cursor, init_db, IS_POSTGRES, get_placeholder
 from werkzeug.middleware.proxy_fix import ProxyFix
+from models import Base, engine
 from services.kleinanzeigen import search_kleinanzeigen, check_dependencies as ka_check_dependencies
 from typing import List, Dict, Tuple, Optional
 
@@ -36,17 +38,38 @@ from flask import (
     request,
     session,
     url_for,
-)
-from flask_login import LoginManager, UserMixin, login_user, current_user
 
-from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, Config
+)
+
+from flask_login import (
+    LoginManager,
+    login_user,
+    logout_user,
+    current_user,
+    login_required,
+    UserMixin,
+)
+
+from config import PLAUSIBLE_DOMAIN, PRICE_TO_PLAN, STRIPE_PRICE, PLAN_FEATURES, Config
 from routes.search import bp_search as search_bp
 from routes.telegram import bp as telegram_bp
 from routes.watchlist import bp as watchlist_bp
 from routes.alerts import bp as alerts_bp
-from routes.admin import bp as admin_bp
+from routes.stats import bp as stats_bp
 from agent import get_mail_settings, send_mail
-
+from routes.admin import bp as admin_bp
+from routes.webhooks import webhooks_bp
+from routes.api_keys import api_keys_bp
+from routes.sms_notifications import sms_bp
+from routes.reports import reports_bp
+from routes.roles import roles_bp
+from routes.reseller import reseller_bp
+from routes.ai_helper import bp_ai as ai_bp
+try:
+    from routes.ml_analytics import ml_bp
+except ImportError:
+    ml_bp = None
+from flasgger import Flasgger
 
 
 
@@ -76,7 +99,7 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAME_SITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 Stunden
 
-# Render ist ein Reverse Proxy → Flask muss das wissen
+# Render ist ein Reverse Proxy -> Flask muss das wissen
 app.wsgi_app = ProxyFix(
     app.wsgi_app,
     x_for=1,
@@ -95,13 +118,18 @@ login_manager.login_message_category = "warning"
 
 # Minimaler UserMixin für Flask-Login (kompatibel mit deiner DB-Struktur)
 class User(UserMixin):
-    def __init__(self, id, email, is_premium=False):
-        self.id = str(id)           # Flask-Login erwartet String als get_id()
+    def __init__(self, id, email, is_premium=False, is_admin=False, plan_type="free"):
+        self.id = id
         self.email = email
         self.is_premium = is_premium
+        self.is_admin = is_admin
+        self.plan_type = plan_type
 
-    def get_id(self):
-        return self.id
+ADMIN_EMAILS = {
+    e.strip().lower()
+    for e in os.getenv("ADMIN_EMAILS", "").split(",")
+    if e.strip()
+}
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -109,11 +137,28 @@ def load_user(user_id):
     try:
         conn = get_db()
         cur = dict_cursor(conn)
-        cur.execute("SELECT id, email, is_premium FROM users WHERE id = %s", (int(user_id),))
+        cur.execute(
+            """
+            SELECT id, email, is_premium, is_admin, plan_type
+            FROM users
+            WHERE id = %s
+            """,
+            (int(user_id),),
+        )
         row = cur.fetchone()
         conn.close()
         if row:
-            return User(row["id"], row["email"], bool(row["is_premium"]))
+            email = row["email"].lower()
+            # Admin entweder aus DB-Spalte ODER aus ENV ADMIN_EMAILS
+            is_admin_flag = bool(row.get("is_admin", 0)) or (email in ADMIN_EMAILS)
+
+            return User(
+                id=row["id"],
+                email=row["email"],
+                is_premium=bool(row.get("is_premium", 0)),
+                is_admin=is_admin_flag,
+                plan_type=row.get("plan_type", "free"),
+            )
     except Exception as e:
         print(f"[user_loader] Fehler: {e}")
     return None
@@ -137,17 +182,33 @@ print("="*50 + "\n")
 # -------------------------------------------------------------------
 from routes.inbound import bp as inbound_bp
 from routes.vision_test import bp as vision_test_bp
+from routes.notifications import bp as notifications_bp
 
-app.register_blueprint(inbound_bp)
-app.register_blueprint(telegram_bp)
-app.register_blueprint(vision_test_bp)
-app.register_blueprint(watchlist_bp)
-app.register_blueprint(alerts_bp)
-app.register_blueprint(search_bp)
-app.register_blueprint(admin_bp)
+for bp in [
+    inbound_bp,
+    telegram_bp,
+    vision_test_bp,
+    watchlist_bp,
+    alerts_bp,
+    stats_bp,
+    search_bp,
+    notifications_bp,
+    admin_bp,
+    webhooks_bp,
+    api_keys_bp,
+    sms_bp,
+    reports_bp,
+    roles_bp,
+    reseller_bp,
+    ml_bp,
+    ai_bp,
+]:
+    if bp is not None:
+        app.register_blueprint(bp)
 
+Base.metadata.create_all(bind=engine)
 
-
+swagger = Flasgger(app)
 
 app.config.from_object(Config)
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
@@ -230,7 +291,7 @@ NOTIFICATION_METHOD = os.getenv("NOTIFICATION_METHOD", "email")
 def send_telegram_notification(chat_id: str, message: str) -> bool:
     """Sendet eine Telegram-Nachricht."""
     if not TELEGRAM_BOT_TOKEN:
-        print("[Telegram] ❌ Bot Token fehlt!")
+        print("[Telegram] [!] Bot Token fehlt!")
         return False
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -244,10 +305,10 @@ def send_telegram_notification(chat_id: str, message: str) -> bool:
     try:
         response = requests.post(url, json=payload, timeout=10)
         response.raise_for_status()
-        print(f"[Telegram] ✅ Nachricht gesendet an {chat_id}")
+        print(f"[Telegram] [OK] Nachricht gesendet an {chat_id}")
         return True
     except Exception as e:
-        print(f"[Telegram] ❌ Fehler: {e}")
+        print(f"[Telegram] [!] Fehler: {e}")
         return False
 
 # Affiliate Parameter
@@ -725,13 +786,17 @@ def _backend_search_ebay(
     page: int,
     per_page: int
 ) -> Tuple[List[Dict], Optional[int]]:
-    """eBay-Suche mit korrekter Filter-Anwendung."""
+    """eBay-Suche getrennt pro Suchbegriff mit Deduping."""
 
     LIVE_SEARCH_BOOL = str(os.getenv("LIVE_SEARCH", "false")).strip().lower() in ("true", "1", "yes", "on")
 
+    search_terms = [t.strip() for t in terms if t and t.strip()]
+    if not search_terms:
+        return [], 0
+
     if not LIVE_SEARCH_BOOL or not EBAY_CLIENT_ID or not EBAY_CLIENT_SECRET:
-        print("[WARNUNG] Live-Suche nicht möglich → Fallback zu Demo-Modus")
-        return _backend_search_demo(terms, filters, page, per_page)
+        print("[WARNUNG] Live-Suche nicht möglich -> Fallback zu Demo-Modus")
+        return _backend_search_demo(search_terms, filters, page, per_page)
 
     filter_str = _build_ebay_filters(filters)
     sort = _map_sort(filters.get("sort", "best"))
@@ -746,24 +811,55 @@ def _backend_search_ebay(
     location_country = (filters.get("location_country") or "DE").upper()
     marketplace_id = marketplace_map.get(location_country, EBAY_MARKETPLACE_ID)
 
-    n = max(1, len(terms))
+    n = max(1, len(search_terms))
     per_term = max(1, per_page // n)
-    offset = (page - 1) * per_term
+    offset = max(0, (page - 1) * per_term)
 
     items_all: List[Dict] = []
     totals: List[int] = []
+    seen = set()
 
-    for t in terms:
-        items, total = ebay_search_one(t, per_term, offset, filter_str, sort, marketplace_id=marketplace_id)
-        items_all.extend(items)
+    for term in search_terms:
+        items, total = ebay_search_one(
+            term,
+            per_term,
+            offset,
+            filter_str,
+            sort,
+            marketplace_id=marketplace_id,
+        )
+
+        for it in items:
+            iid = it.get("id") or it.get("url") or it.get("title")
+            if iid and iid not in seen:
+                seen.add(iid)
+                items_all.append(it)
+
         if isinstance(total, int):
             totals.append(total)
 
-    if len(items_all) < per_page and terms:
+    if len(items_all) < per_page and search_terms:
         rest = per_page - len(items_all)
-        base = offset + per_term
-        extra, _ = ebay_search_one(terms[0], rest, base, filter_str, sort, marketplace_id=marketplace_id)
-        items_all.extend(extra)
+        extra_per_term = max(1, rest // len(search_terms))
+
+        for term in search_terms:
+            extra, _ = ebay_search_one(
+                term,
+                extra_per_term,
+                offset + per_term,
+                filter_str,
+                sort,
+                marketplace_id=marketplace_id,
+            )
+
+            for it in extra:
+                iid = it.get("id") or it.get("url") or it.get("title")
+                if iid and iid not in seen:
+                    seen.add(iid)
+                    items_all.append(it)
+
+            if len(items_all) >= per_page:
+                break
 
     total_estimated = sum(totals) if totals else None
     return items_all[:per_page], total_estimated
@@ -779,33 +875,43 @@ def search_kleinanzeigen(
     page: int,
     per_page: int
 ) -> Tuple[List[Dict], Optional[int]]:
-    """Wrapper für die echte Kleinanzeigen-Suche"""
+    """Wrapper für die echte Kleinanzeigen-Suche - getrennt pro Suchbegriff"""
     from services.kleinanzeigen import search_kleinanzeigen as ka_search
 
-    # Konvertiere Parameter
-    query = " ".join(terms) if terms else ""
+    all_items: List[Dict] = []
+    seen = set()
 
-    results = ka_search(
-        query=query,
-        price_min=float(filters.get("price_min") or 0) if filters.get("price_min") else None,
-        price_max=float(filters.get("price_max") or 0) if filters.get("price_max") else None,
-        limit=per_page
-    )
+    search_terms = [t.strip() for t in terms if t and t.strip()]
+    if not search_terms:
+        return [], None
 
-    # Konvertiere zu deinem Format
-    items = []
-    for item in results:
-        items.append({
-            "id": item.get("item_id"),
-            "title": item.get("title"),
-            "price": f"{item.get('price'):.2f} EUR" if item.get('price') else "VB",
-            "url": item.get("url"),
-            "img": item.get("image_url"),
-            "term": query,
-            "src": "kleinanzeigen",
-        })
+    per_term = max(1, per_page // max(1, len(search_terms)))
 
-    return items, None
+    for term in search_terms:
+        results = ka_search(
+            query=term,
+            price_min=float(filters.get("price_min") or 0) if filters.get("price_min") else None,
+            price_max=float(filters.get("price_max") or 0) if filters.get("price_max") else None,
+            limit=per_term
+        )
+
+        for item in results:
+            key = item.get("item_id") or item.get("url") or item.get("title")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+
+            all_items.append({
+                "id": item.get("item_id"),
+                "title": item.get("title"),
+                "price": f"{item.get('price'):.2f} EUR" if item.get('price') else "VB",
+                "url": item.get("url"),
+                "img": item.get("image_url"),
+                "term": term,
+                "src": "kleinanzeigen",
+            })
+
+    return all_items[:per_page], None
 
 
 
@@ -1146,12 +1252,15 @@ def _build_query(existing: dict, **extra) -> str:
     return urlencode(pairs)
 
 
+
+
 @app.context_processor
 def inject_globals():
     return {
         "FREE_SEARCH_LIMIT": FREE_SEARCH_LIMIT,
         "PREMIUM_SEARCH_LIMIT": PREMIUM_SEARCH_LIMIT,
         "STRIPE_PRICE": STRIPE_PRICE,
+        "PLAN_FEATURES": PLAN_FEATURES,
         "qs": _build_query,
         "plausible_domain": PLAUSIBLE_DOMAIN,
     }
@@ -1230,6 +1339,8 @@ def register():
         conn.close()
 
 
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
@@ -1239,7 +1350,7 @@ def login():
     password = (request.form.get("password") or "").strip()
 
     print(f"[LOGIN DEBUG] Email: {email}")
-    print(f"[LOGIN DEBUG] Password: {'*' * len(password)}")  # Sicherer: Passwort nicht im Klartext loggen!
+    print(f"[LOGIN DEBUG] Password: {'*' * len(password)}")
 
     conn = get_db()
     cur = dict_cursor(conn)
@@ -1247,8 +1358,18 @@ def login():
 
     try:
         cur.execute(
-            f"SELECT id, password, is_premium FROM users WHERE email = {ph}",
-            (email,)
+            f"""
+            SELECT
+                id,
+                email,
+                password,
+                is_premium,
+                is_admin,
+                plan_type
+            FROM users
+            WHERE email = {ph}
+            """,
+            (email,),
         )
         row = cur.fetchone()
     except Exception as e:
@@ -1264,39 +1385,54 @@ def login():
         flash("E-Mail oder Passwort ist falsch.", "warning")
         return redirect(url_for("login"))
 
-    # --- Erfolgreich eingeloggt ---
     print("[LOGIN DEBUG] Login successful!")
 
-    # Flask-Login User-Objekt erstellen
+    # Admin-Flag bestimmen
+    email_db = row["email"].lower()
+    is_admin_flag = bool(row.get("is_admin", 0)) or (email_db in ADMIN_EMAILS)
+
+    # User-Objekt für Flask-Login
     user = User(
         id=row["id"],
-        email=email,
-        is_premium=bool(row["is_premium"])
+        email=row["email"],
+        is_premium=bool(row.get("is_premium", 0)),
+        is_admin=is_admin_flag,
+        plan_type=row.get("plan_type", "free"),
     )
 
-    # Session-Variablen beibehalten (für deine alten Templates)
-    session["user_id"] = int(row["id"])
-    session["user_email"] = email
-    session["is_premium"] = bool(row["is_premium"])
-    session.permanent = True
+    # Session-Variablen (für Navbar / Templates)
+    session["user_id"] = user.id
+    session["user_email"] = user.email
+    session["plan_type"] = user.plan_type
+    session["is_premium"] = bool(user.is_premium)
+    session["is_admin"] = bool(user.is_admin)
 
-    # WICHTIG: Flask-Login aktivieren!
-    login_user(user, remember=True)  # remember=True → Cookie bleibt 30 Tage
+    print(f"[LOGIN DEBUG] is_admin from DB/env: {is_admin_flag}")
+    print(f"[LOGIN DEBUG] session['is_admin']: {session['is_admin']}")
+
+    # Flask-Login
+    login_user(user, remember=True)
 
     flash("Login erfolgreich.", "success")
 
-    # Sicherer Redirect: vermeidet Open Redirects
     next_page = request.args.get("next")
     if not next_page or not next_page.startswith("/"):
         next_page = url_for("dashboard")
 
     return redirect(next_page)
 
+
+
 @app.route("/logout")
 def logout():
+    logout_user()
     session.clear()
     flash("Logout erfolgreich.", "info")
-    return redirect(url_for("public_home"))
+    response = redirect(url_for("login"))
+    response.delete_cookie("remember_token")
+    response.set_cookie("session", "", expires=0)
+    return response
+
 
 
 # -------------------------------------------------------------------
@@ -1346,6 +1482,77 @@ def get_watchlist_stats(user_email, conn):
         "plan": plan,
         "check_interval": limits["check_interval"],
     }
+
+def format_ts(ts: Optional[int]) -> Optional[str]:
+    """Unix-Timestamp (Sekunden) in 'DD.MM.YYYY HH:MM' umwandeln."""
+    if not ts:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ts)).strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        # Fallback, wenn irgendwas komisch ist
+        return str(ts)
+
+
+from typing import Optional
+
+def build_item_url(src: str, item_id: Optional[str]) -> Optional[str]:
+    """
+    Baut eine Klick-URL für gespeicherte Items.
+    Unterstützt:
+      - eBay (itemId z.B. 'v1|123456789012|0' oder '123456789012')
+      - Kleinanzeigen (z.B. 'ka_326762728', '326762728' oder fertige URL)
+    """
+    if not item_id:
+        return None
+
+    # Wenn schon eine komplette URL gespeichert ist, einfach zurückgeben
+    if item_id.startswith("http://") or item_id.startswith("https://"):
+        return item_id
+
+    src = (src or "").lower()
+
+    # --------------------------------------------------
+    # Kleinanzeigen
+    # --------------------------------------------------
+    if "klein" in src:
+        # Falls doch mal eine fertige URL drinsteht
+        if "kleinanzeigen.de" in item_id:
+            return item_id
+
+        ka_id = item_id
+
+        # unsere gespeicherten IDs sehen oft aus wie "ka_326762728"
+        if ka_id.startswith("ka_"):
+            ka_id = ka_id.split("_", 1)[1]
+
+        # nur Ziffern nehmen, falls noch Müll drin ist
+        ka_id_digits = "".join(ch for ch in ka_id if ch.isdigit())
+        if not ka_id_digits:
+            return None
+
+        # Standard-Detail-URL
+        return f"https://www.kleinanzeigen.de/s-anzeige/-/{ka_id_digits}"
+
+    # --------------------------------------------------
+    # eBay
+    # --------------------------------------------------
+    ebay_id = item_id
+
+    # Browse-API: v1|123456789012|0  -> 123456789012
+    if ebay_id.startswith("v1|"):
+        parts = ebay_id.split("|")
+        if len(parts) >= 2:
+            ebay_id = parts[1]
+
+    # sicherheitshalber nur Ziffern übrig lassen
+    ebay_id_digits = "".join(ch for ch in ebay_id if ch.isdigit())
+    if not ebay_id_digits:
+        return None
+
+    return f"https://www.ebay.de/itm/{ebay_id_digits}"
+
+
 
 
 @app.route("/dashboard")
@@ -1479,16 +1686,29 @@ def dashboard():
 def root_redirect():
     return redirect(url_for("public_home"))
 
-
 @app.route("/public")
 def public_home():
-    return safe_render("public_home.html", title="Start – ebay-agent-cockpit")
+    return render_template(
+        "public_home.html",
+        title="Super-Agent: eBay-Alerts in Echtzeit | Schnäppchen automatisch finden",
+        meta_desc="Erhalte sofort Benachrichtigungen, wenn neue eBay- und Kleinanzeigen-Angebote deinen Kriterien entsprechen. Kostenlos mit 3 Alerts starten, Premium ab 7€/Monat.",
+        og_title="Super-Agent – eBay-Schnäppchen automatisch finden",
+        og_desc="Echtzeit-Alerts für eBay & Kleinanzeigen. Preisfilter, Zustandswahl, Telegram-Integration. Jetzt kostenlos testen!"
+    )
+
+@app.route("/howto")
+def howto():
+    return safe_render(
+        "howto.html",
+        title="Anleitung – Super-Agent",
+        meta_desc="So nutzt du den Super-Agent in 30 Sekunden: Suche, Filter, Alerts & Telegram."
+    )
 
 
 @app.route("/pricing")
 def public_pricing():
     ev_free_limit_hit = bool(session.pop("ev_free_limit_hit", False))
-    return safe_render(
+    return render_template(
         "public_pricing.html",
         title="Preise – ebay-agent-cockpit",
         ev_free_limit_hit=ev_free_limit_hit,
@@ -1499,7 +1719,8 @@ def start_free():
     session["is_premium"] = False
     session["free_search_count"] = 0
     session["user_email"] = "guest"
-    return redirect(url_for("search"))
+    return redirect(url_for("search.search_page"))
+
 
 
 # -------------------------------------------------------------------
@@ -1507,229 +1728,17 @@ def start_free():
 # -------------------------------------------------------------------
 from urllib.parse import urlencode
 
-from urllib.parse import urlencode
-
 @app.route("/search-legacy", methods=["GET", "POST"])
-def search():
-    # DEBUG: Log eingehender Request-Daten
-    current_app.logger.debug("=== /search called, method=%s ===", request.method)
-    current_app.logger.debug("request.args: %s", request.args.to_dict(flat=False))
-    current_app.logger.debug("request.form: %s", request.form.to_dict(flat=False))
-    try:
-        current_app.logger.debug("request.json: %s", request.get_json(silent=True))
-    except Exception:
-        current_app.logger.debug("request.json: <error>")
-
-    # ------------------------------------------------------------------
-    # POST  →  PRG-Pattern: Redirect mit Querystring
-    # ------------------------------------------------------------------
+def search_legacy_root():
+    """
+    Alte URLs /search-legacy -> leiten wir auf die neue Suche (/search) um.
+    """
     if request.method == "POST":
-        current_app.logger.debug("[DEBUG] POST received! Form data: %s", dict(request.form))
-
-        # Basis-Parameter einsammeln
-        params = {
-            "q1": (request.form.get("q1") or "").strip(),
-            "q2": (request.form.get("q2") or "").strip(),
-            "q3": (request.form.get("q3") or "").strip(),
-            "price_min": (request.form.get("price_min") or "").strip(),
-            "price_max": (request.form.get("price_max") or "").strip(),
-            "sort": (request.form.get("sort") or "best").strip(),
-            "per_page": (request.form.get("per_page") or "").strip(),
-            "location_country": (request.form.get("location_country") or "DE").strip(),
-            "listing_type": (request.form.get("listing_type") or "").strip(),
-            "source": (request.form.get("source") or "ebay").strip(),
-            # Mehrfachauswahl Zustand
-            "condition": request.form.getlist("condition"),
-        }
-
-        # Bool-Filter NUR setzen, wenn Checkbox angehakt ist
-        if request.form.get("free_shipping") == "1":
-            params["free_shipping"] = "1"
-        if request.form.get("returns_accepted") == "1":
-            params["returns_accepted"] = "1"
-        if request.form.get("top_rated_only") == "1":
-            params["top_rated_only"] = "1"
-
-        # Free-Search-Limit (deine bestehende Logik beibehalten)
-        if not session.get("is_premium", False):
-            count = int(session.get("free_search_count", 0))
-            if count >= FREE_SEARCH_LIMIT:
-                session["ev_free_limit_hit"] = True
-                flash(
-                    f"Kostenloses Limit ({FREE_SEARCH_LIMIT}) erreicht – bitte Upgrade buchen.",
-                    "info",
-                )
-                return redirect(url_for("public_pricing"))
-            session["free_search_count"] = count + 1
-
-            params["page"] = 1
-            query = urlencode(params, doseq=True)
-            redirect_url = url_for("search") + "?" + query
-            return redirect(redirect_url)
-
-        current_app.logger.debug("POST -> redirect params (raw): %s", params)
-
-        # Querystring bauen (doseq=True für condition=a&condition=b)
-        query = urlencode(params, doseq=True)
-        redirect_url = url_for("search") + ("?" + query if query else "")
-        current_app.logger.debug("Redirecting to: %s", redirect_url)
-        return redirect(redirect_url)
-
-    # ------------------------------------------------------------------
-    # GET  →  tatsächliche Suche
-    # ------------------------------------------------------------------
-    # Suchbegriffe einsammeln
-    terms = []
-    for key in ("q1", "q2", "q3"):
-        v = (request.args.get(key) or "").strip()
-        if v:
-            terms.append(v)
-
-    # Quelle: ebay / kleinanzeigen / both
-    source = (request.args.get("source") or "ebay").strip()
-
-    # Wenn keine Begriffe: nur Formular anzeigen, KEIN Backend-Call
-    if not terms:
-        print("📄 /search GET ohne Begriffe → nur Formular")
-        return safe_render(
-            "search_results.html",
-            title="Suche",
-            terms=[],
-            results=[],
-            filters={},
-            pagination={
-                "page": 1,
-                "per_page": int(request.args.get("per_page") or PER_PAGE_DEFAULT),
-                "total_estimated": None,
-                "total_pages": None,
-                "has_prev": False,
-                "has_next": False,
-            },
-            base_qs=request.args.to_dict(flat=False),
-            source=source,
-        )
-
-    # Filter aus Querystring
-    filters = {
-        "price_min": request.args.get("price_min", "").strip(),
-        "price_max": request.args.get("price_max", "").strip(),
-        "sort": request.args.get("sort", "best").strip(),
-        "conditions": request.args.getlist("condition") or [],
-        "location_country": request.args.get("location_country", "DE").strip(),
-        "free_shipping": request.args.get("free_shipping") == "1",
-        "returns_accepted": request.args.get("returns_accepted") == "1",
-        "top_rated_only": request.args.get("top_rated_only") == "1",
-        "listing_type": request.args.get("listing_type", "").strip(),
-    }
-
-    print("\n" + "=" * 70)
-    print("🔍 SEARCH ROUTE - GET REQUEST")
-    print("=" * 70)
-    print(f"Terms: {terms}")
-    print(f"Source: {source}")
-    print("\nFilters:")
-    for key, value in filters.items():
-        print(f"  {key}: {value!r}")
-    print("=" * 70 + "\n")
-
-    # Pagination-Parameter
-    try:
-        page = max(1, int(request.args.get("page", 1)))
-    except Exception:
-        page = 1
-
-    try:
-        per_page = min(100, max(5, int(request.args.get("per_page", PER_PAGE_DEFAULT))))
-    except Exception:
-        per_page = PER_PAGE_DEFAULT
-
-        # ------------------------------------------------------------------
-    # Backend-Aufruf je nach Quelle
-    # ------------------------------------------------------------------
-    items = []
-    total_estimated = None
-
-    if source == "kleinanzeigen":
-        print("📦 Calling search_kleinanzeigen(...)")
-        ka_res = search_kleinanzeigen(terms, filters, page, per_page)
-        # Falls die Funktion (items, total) zurückgibt:
-        if isinstance(ka_res, tuple):
-            items, total_estimated = ka_res
-        else:
-            items = ka_res
-            total_estimated = None  # kein Total von Kleinanzeigen
-
-    elif source == "both":
-        print("📦 Calling both: eBay + Kleinanzeigen")
-        ebay_items, ebay_total = _backend_search_ebay(terms, filters, page, per_page)
-
-        ka_res = search_kleinanzeigen(terms, filters, page, per_page)
-        if isinstance(ka_res, tuple):
-            kleinanzeigen_items, _ = ka_res
-        else:
-            kleinanzeigen_items = ka_res
-
-        # eBay + Kleinanzeigen in einer Liste
-        items = ebay_items + kleinanzeigen_items
-        # Gesamtanzahl kommt weiter von eBay (für Pagination)
-        total_estimated = ebay_total
-
+        params = request.form.to_dict(flat=True)
     else:
-        print("📦 Calling ebay only ...")
-        ebay_items, ebay_total = _backend_search_ebay(terms, filters, page, per_page)
-        items = ebay_items
-        total_estimated = ebay_total
+        params = request.args.to_dict(flat=True)
 
-
-    print(f"✅ Backend returned: {len(items)} items, total_estimated={total_estimated}\n")
-
-    # Pagination berechnen
-    total_pages = (
-        math.ceil(total_estimated / per_page) if total_estimated else None
-    )
-    has_prev = page > 1
-    has_next = (total_pages and page < total_pages) or (
-        not total_pages and len(items) == per_page
-    )
-
-    # Base Query-String für Pagination und Toolbar
-    base_qs = {
-        "q1": request.args.get("q1", ""),
-        "q2": request.args.get("q2", ""),
-        "q3": request.args.get("q3", ""),
-        "price_min": filters["price_min"],
-        "price_max": filters["price_max"],
-        "sort": filters["sort"],
-        "condition": filters["conditions"],
-        "per_page": per_page,
-        "location_country": filters["location_country"],
-        "listing_type": filters["listing_type"],
-        "source": source,
-    }
-    if filters["free_shipping"]:
-        base_qs["free_shipping"] = "1"
-    if filters["returns_accepted"]:
-        base_qs["returns_accepted"] = "1"
-    if filters["top_rated_only"]:
-        base_qs["top_rated_only"] = "1"
-
-    return safe_render(
-        "search_results.html",
-        title="Suchergebnisse",
-        terms=terms,
-        results=items,
-        filters=filters,
-        pagination={
-            "page": page,
-            "per_page": per_page,
-            "total_estimated": total_estimated,
-            "total_pages": total_pages,
-            "has_prev": has_prev,
-            "has_next": has_next,
-        },
-        base_qs=base_qs,
-        source=source,
-    )
+    return redirect(url_for("search.search_page", **params))
 
 
 
@@ -1745,16 +1754,16 @@ def cron_check_alerts():
 
     # Token prüfen
     if not token or token != AGENT_TRIGGER_TOKEN:
-        print("[Cron] ❌ Ungültiger Token")
+        print("[Cron] [!] Ungültiger Token")
         return jsonify({"success": False, "error": "Unauthorized"}), 403
 
-    print(f"[Cron] ✅ Alert-Check gestartet")
+    print(f"[Cron] [OK] Alert-Check gestartet")
 
     try:
         result = run_alert_check()
         return jsonify(result), 200 if result["success"] else 500
     except Exception as e:
-        print(f"[Cron] ❌ Fehler: {e}")
+        print(f"[Cron] [!] Fehler: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
@@ -1808,7 +1817,7 @@ def email_test():
     # einfache Validierung
     if not recipient or "@" not in recipient:
         flash("Keine gültige E-Mail-Adresse gefunden (query/form/session/ENV).", "danger")
-        return redirect(url_for("search"))
+        return redirect(url_for("search.search_page"))
 
     # optional: PILOT whitelist (nur zulässige Test-Adressen erlauben)
     pilot_raw = os.getenv("PILOT_EMAILS", "")
@@ -1816,23 +1825,23 @@ def email_test():
         pilot_set = {e.strip().lower() for p in pilot_raw.split(",") for e in p.split(";") if e.strip()}
         if pilot_set and recipient.lower() not in pilot_set:
             flash("Diese E-Mail ist nicht für Testversand freigeschaltet.", "warning")
-            return redirect(url_for("search"))
+            return redirect(url_for("search.search_page"))
 
     settings = get_mail_settings()
     subject = "✉️ Test-E-Mail vom eBay-Agent"
-    body_html = "<p>✅ Test-Mail erfolgreich gesendet!</p><p>Grüße vom eBay-Agent.</p>"
+    body_html = "<p>[OK] Test-Mail erfolgreich gesendet!</p><p>Grüße vom eBay-Agent.</p>"
 
     try:
         ok = send_mail(settings, [recipient], subject, body_html)
         if ok:
-            flash(f"Test-Mail an {recipient} gesendet ✅", "success")
+            flash(f"Test-Mail an {recipient} gesendet [OK]", "success")
         else:
             flash("Fehler beim Versand (siehe Server-Log).", "warning")
     except Exception as e:
         # Ausnahme anzeigen, aber nicht sensiblen Inhalt ins UI schreiben
         flash(f"Fehler beim Versand: {str(e)}", "danger")
 
-    return redirect(url_for("search"))
+    return redirect(url_for("search.search_page"))
 
 
 
@@ -1841,77 +1850,78 @@ def email_test():
 # -------------------------------------------------------------------
 # Alerts: Subscribe / Send-now / Cron (HTTP-Trigger-Variante siehe unten)
 # -------------------------------------------------------------------
-@app.route("/alerts/subscribe", methods=["POST"])
+@app.post("/alerts/subscribe")
 def alerts_subscribe():
-    """Speichert einen Such-Alarm (Search-Agent) für den aktuellen User."""
-    from flask_login import current_user
-
-    form = request.form
-
-    # 1) Suchbegriffe
-    q1 = (form.get("q1") or form.get("q") or "").strip()
-    q2 = (form.get("q2") or "").strip()
-    q3 = (form.get("q3") or "").strip()
-    terms = [q for q in (q1, q2, q3) if q]
-
-    if not terms:
-        flash("Keine Suchbegriffe übergeben.", "warning")
-        return redirect(request.referrer or url_for("search"))
-
-    # 2) Filter aus Formular
-    conditions = form.getlist("condition") or []
-
-    filters = {
-        "price_min": (form.get("price_min") or "").strip(),
-        "price_max": (form.get("price_max") or "").strip(),
-        "sort": (form.get("sort") or "best").strip(),
-        "conditions": conditions,
-        "location_country": (form.get("location_country") or "DE").strip(),
-        "free_shipping": (form.get("free_shipping") == "1"),
-        "returns_accepted": (form.get("returns_accepted") == "1"),
-        "top_rated_only": (form.get("top_rated_only") == "1"),
-        "listing_type": (form.get("listing_type") or "").strip(),
-        # 🆕 Quelle für Alerts mit speichern
-        "source": (form.get("source") or request.args.get("source") or "ebay").strip().lower(),
-    }
-
-    # 3) User ermitteln
-    user_email = None
-    if current_user.is_authenticated:
-        user_email = getattr(current_user, "email", None)
-
-    if not user_email:
-        user_email = session.get("user_email")
-
-    if not user_email:
-        flash("Bitte melde dich an, um einen Alarm zu speichern.", "warning")
+    """Speichert die aktuelle Suche als Alert (inkl. Quelle & Benachrichtigungskanäle)."""
+    user_email = session.get("user_email") or ""
+    if not user_email or user_email.lower() == "guest" or "@" not in user_email:
+        flash("Bitte einloggen, um Alarme zu speichern.", "warning")
         return redirect(url_for("login"))
 
-    # 4) In DB schreiben
-    conn = get_db()
-    cur = dict_cursor(conn)
-    ph = get_placeholder()
+    # --- Begriffe sammeln ---
+    terms = [
+        t.strip()
+        for t in [
+            request.form.get("q1", ""),
+            request.form.get("q2", ""),
+            request.form.get("q3", "")
+        ]
+        if t.strip()
+    ]
+    if not terms:
+        flash("Keine Suchbegriffe übergeben.", "warning")
+        return redirect(url_for("search.search_page"))
 
+    # --- Filter speichern ---
+    filters = {
+        "price_min": (request.form.get("price_min") or "").strip(),
+        "price_max": (request.form.get("price_max") or "").strip(),
+        "sort": (request.form.get("sort") or "best").strip(),
+        "conditions": request.form.getlist("condition"),
+        "location_country": request.form.get("location_country", "DE"),
+        "listing_type": request.form.get("listing_type", "all"),
+    }
+
+    per_page = 30
+    try:
+        per_page = min(100, max(5, int(request.form.get("per_page", "30"))))
+    except Exception:
+        pass
+
+    # --- Quelle (ebay / kleinanzeigen / both) ---
+    source = request.form.get("source", "ebay").lower()
+    if source not in ["ebay", "kleinanzeigen", "both"]:
+        source = "ebay"
+
+    # --- Benachrichtigungskanäle ---
+    notify_email = 1 if request.form.get("notify_email") else 0
+    notify_telegram = 1 if request.form.get("notify_telegram") else 0
+
+    # --- In DB speichern ---
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute(
-        f"""
+        """
         INSERT INTO search_alerts
-            (user_email, terms_json, filters_json, last_run_ts, is_active)
-        VALUES ({ph}, {ph}, {ph}, {ph}, 1)
-        """,
+            (user_email, terms_json, filters_json, per_page, is_active,
+             last_run_ts, source, notify_email, notify_telegram)
+        VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)
+        """.replace("?", "%s"),  # wichtig für PostgreSQL
         (
             user_email,
-            json.dumps(terms),
-            json.dumps(filters),
-            0,  # last_run_ts
+            json.dumps(terms, ensure_ascii=False),
+            json.dumps(filters, ensure_ascii=False),
+            per_page,
+            source,
+            notify_email,
+            notify_telegram,
         ),
     )
     conn.commit()
     conn.close()
 
-    flash("Such-Alarm gespeichert – du wirst bei neuen Treffern benachrichtigt.", "success")
-
-    # Zurück zu den Suchergebnissen
-    return redirect(request.referrer or url_for("search", q1=q1))
+    flash("🔔 Alert gespeichert – neue Treffer werden automatisch geprüft.", "success")
+    return redirect(url_for("search", **{**request.form}))
 
 
 
@@ -1921,7 +1931,7 @@ def alerts_send_now():
     user_email = session.get("user_email") or request.form.get("email") or ""
     if not user_email or user_email.lower() == "guest" or "@" not in user_email:
         flash("Gültige E-Mail erforderlich (einloggen oder E-Mail angeben).", "warning")
-        return redirect(url_for("search"))
+        return redirect(url_for("search.search_page"))
 
     terms = [
         t
@@ -1934,7 +1944,7 @@ def alerts_send_now():
     ]
     if not terms:
         flash("Keine Suchbegriffe übergeben.", "warning")
-        return redirect(url_for("search"))
+        return redirect(url_for("search.search_page"))
 
     filters = {
         "price_min": (request.form.get("price_min") or "").strip(),
@@ -2045,7 +2055,7 @@ def create_agent():
     if not terms:
         conn.close()
         flash("Keine Suchbegriffe angegeben.", "warning")
-        return redirect(url_for("search"))
+        return redirect(url_for("search.search_page"))
 
     filters = {
         "price_min": request.form.get("price_min", "").strip(),
@@ -2075,6 +2085,8 @@ def create_agent():
         "success",
     )
     return redirect(url_for("dashboard"))
+
+
 
 
 # ALT/Kompatibilität (deprecated): Query-basiertes Cron-Endpoint
@@ -2197,7 +2209,7 @@ app.config.update(
     STRIPE_PRICE_TEAM=STRIPE_PRICE_TEAM,
 )
 
-# 4) Mapping Price-ID → Plan (basic|pro|team)
+# 4) Mapping Price-ID -> Plan (basic|pro|team)
 PRICE_TO_PLAN = {
     STRIPE_PRICE_BASIC: "basic",
     STRIPE_PRICE_PRO: "pro",
@@ -2376,6 +2388,24 @@ def checkout_cancel():
     flash("Vorgang abgebrochen.", "info")
     return redirect(url_for("public_pricing"))
 
+# -------------------------------------------------------------------
+# Telegram Webhook für Bot-Commands
+# -------------------------------------------------------------------
+@app.post("/telegram/webhook")
+def telegram_webhook():
+    """Verarbeitet Telegram Bot Updates (Commands, Button-Clicks)"""
+    from telegram_bot import handle_telegram_update
+    try:
+        update = request.get_json()
+        if not update:
+            return jsonify({"ok": True}), 200
+        handle_telegram_update(update)
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        current_app.logger.error(f"[telegram_webhook] Error: {e}", exc_info=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 
 # -------------------------------------------------------------------
 # Debug / Health
@@ -2453,6 +2483,22 @@ def debug_env():
 @app.route("/healthz")
 def healthz():
     return "ok", 200
+
+
+@app.route("/api/user/engagement")
+def api_user_engagement():
+    if not session.get("user_id"):
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    return jsonify({
+        "success": True,
+        "engagement": {
+            "searches": 0,
+            "alerts": 0,
+            "watchlist_items": 0,
+            "score": 0,
+        }
+    })
 
 
 # (Optional) Amazon Direkt-Suche
@@ -2731,7 +2777,7 @@ def internal_my_alerts():
             new_val = 0 if is_active else 1
             html.append(
                 f"<tr><td>{rid}</td>"
-                f"<td>{'✅ aktiv' if is_active else '⛔ inaktiv'}</td>"
+                f"<td>{'[OK] aktiv' if is_active else '⛔ inaktiv'}</td>"
                 f"<td>"
                 f"<form method='post' action='/internal/alerts/toggle' style='margin:0;'>"
                 f"<input type='hidden' name='id' value='{rid}'/>"
@@ -2852,7 +2898,7 @@ def pilot_waitlist_form():
         <label>Zeitfenster (z. B. Mo–Fr 8–12):</label><br><input name="fenster" style="width:100%"><br><br>
         <button type="submit">Auf Warteliste</button>
       </form>
-      <p style="margin-top:1rem"><a href="/pilot/widget">→ Praxis-Widget öffnen</a></p>
+      <p style="margin-top:1rem"><a href="/pilot/widget">-> Praxis-Widget öffnen</a></p>
     </div>
     """
     return render_template_string(html)
@@ -2870,7 +2916,7 @@ def pilot_waitlist_save():
             "created": datetime.utcnow().isoformat(),
         }
     )
-    return "<p>✅ Eingetragen! <a href='/pilot/waitlist'>Zurück</a> • <a href='/pilot/widget'>Praxis-Widget</a></p>"
+    return "<p>[OK] Eingetragen! <a href='/pilot/waitlist'>Zurück</a> • <a href='/pilot/widget'>Praxis-Widget</a></p>"
 
 
 # --- Praxis-Widget (Slot freigeben) ---
@@ -2892,7 +2938,7 @@ def pilot_widget_form():
           <input name="link" placeholder="https://www.116117.de/..." style="width:100%"><br><br>
         <button type="submit">Slot freigeben & Benachrichtigen</button>
       </form>
-      <p style="margin-top:1rem"><a href="/pilot/waitlist">→ Warteliste</a></p>
+      <p style="margin-top:1rem"><a href="/pilot/waitlist">-> Warteliste</a></p>
     </div>
     """.format(
         qs=("?key=" + PRACTICE_DEMO_SECRET) if PRACTICE_DEMO_SECRET else ""
@@ -2944,7 +2990,7 @@ def pilot_widget_free():
 
     qs = f"?key={PRACTICE_DEMO_SECRET}" if PRACTICE_DEMO_SECRET else ""
     return (
-        f"<p>✅ Slot freigegeben ({fach}) bis {until}. "
+        f"<p>[OK] Slot freigegeben ({fach}) bis {until}. "
         f"Benachrichtigungen verschickt: {sent}. "
         f"<a href='/pilot/widget{qs}'>Zurück</a></p>"
     )
@@ -3008,8 +3054,8 @@ def admin_logout():
 @app.route("/admin/dashboard")
 def admin_dashboard():
     """Admin Dashboard"""
-    if not session.get("is_admin"):
-        return redirect("/admin")
+    if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
+        return redirect(url_for("login"))
 
     # Statistiken aus der Datenbank holen
     conn = get_db()
@@ -3023,8 +3069,7 @@ def admin_dashboard():
 
     conn.close()
 
-    return render_template_string(
-        """
+    return f"""
     <div style="font-family:Arial;max-width:1000px;margin:20px auto;padding:20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:30px">
             <h1>Admin Dashboard</h1>
@@ -3033,15 +3078,15 @@ def admin_dashboard():
 
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:40px">
             <div style="background:#f8f9fa;padding:20px;border-radius:8px;text-align:center">
-                <h3 style="margin:0;color:#28a745">{{ user_count }}</h3>
+                <h3 style="margin:0;color:#28a745">{user_count}</h3>
                 <p style="margin:5px 0 0 0">Benutzer</p>
             </div>
             <div style="background:#f8f9fa;padding:20px;border-radius:8px;text-align:center">
-                <h3 style="margin:0;color:#007cba">{{ alert_count }}</h3>
+                <h3 style="margin:0;color:#007cba">{alert_count}</h3>
                 <p style="margin:5px 0 0 0">Aktive Alerts</p>
             </div>
             <div style="background:#f8f9fa;padding:20px;border-radius:8px;text-align:center">
-                <h3 style="margin:0;color:#6c757d">{{ total_alerts }}</h3>
+                <h3 style="margin:0;color:#6c757d">{total_alerts}</h3>
                 <p style="margin:5px 0 0 0">Alerts gesamt</p>
             </div>
         </div>
@@ -3068,19 +3113,14 @@ def admin_dashboard():
             </a>
         </div>
     </div>
-        """,
-        user_count=user_count,
-        alert_count=alert_count,
-        total_alerts=total_alerts,
-    )
-
+    """
 
 
 @app.route("/admin/users")
 def admin_users():
     """Benutzerverwaltung"""
-    if not session.get("is_admin"):
-        return redirect("/admin")
+    if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
+        return redirect(url_for("login"))
 
     conn = get_db()
     cur = conn.cursor()
@@ -3104,8 +3144,7 @@ def admin_users():
         </tr>
         """
 
-        return render_template_string(
-        """
+    return f"""
     <div style="font-family:Arial;max-width:1000px;margin:20px auto;padding:20px">
         <div style="margin-bottom:20px">
             <a href="/admin/dashboard">← Zurück zum Dashboard</a>
@@ -3119,20 +3158,17 @@ def admin_users():
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">Status</th>
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktionen</th>
             </tr>
-            {{ user_rows | safe }}
+            {user_rows}
         </table>
     </div>
-        """,
-        user_rows=user_rows,
-    )
-
+    """
 
 
 @app.route("/admin/alerts")
 def admin_alerts():
     """Alert-Verwaltung"""
-    if not session.get("is_admin"):
-        return redirect("/admin")
+    if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
+        return redirect(url_for("login"))
 
     conn = get_db()
     cur = conn.cursor()
@@ -3150,8 +3186,8 @@ def admin_alerts():
     for alert in alerts:
         try:
             terms = json.loads(alert[2])
-            terms_text = ", ".join(terms[:3]) if terms else "–"
-        except Exception:
+            terms_text = ", ".join(terms[:3])  # Erste 3 Begriffe
+        except:
             terms_text = "Fehlerhafte Daten"
 
         status = "🟢 Aktiv" if alert[3] else "🔴 Inaktiv"
@@ -3170,7 +3206,7 @@ def admin_alerts():
         </tr>
         """
 
-    return render_template_string("""
+    return f"""
     <div style="font-family:Arial;max-width:1200px;margin:20px auto;padding:20px">
         <div style="margin-bottom:20px">
             <a href="/admin/dashboard">← Zurück zum Dashboard</a>
@@ -3185,17 +3221,18 @@ def admin_alerts():
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">Status</th>
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktionen</th>
             </tr>
-            {{ alert_rows|safe }}
+            {alert_rows}
         </table>
     </div>
-    """, alert_rows=alert_rows)
+    """
 
 
 @app.route("/admin/alert/<int:alert_id>/toggle")
 def admin_toggle_alert(alert_id):
     """Alert aktivieren/deaktivieren"""
-    if not session.get("is_admin"):
-        return redirect("/admin")
+    if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
+        return redirect(url_for("login"))
+
 
     conn = get_db()
     cur = conn.cursor()
@@ -3211,8 +3248,8 @@ def admin_toggle_alert(alert_id):
 @app.route("/admin/alert/<int:alert_id>/delete")
 def admin_delete_alert(alert_id):
     """Alert löschen"""
-    if not session.get("is_admin"):
-        return redirect("/admin")
+    if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
+        return redirect(url_for("login"))
 
     conn = get_db()
     cur = conn.cursor()
@@ -3226,14 +3263,391 @@ def admin_delete_alert(alert_id):
 
     return redirect("/admin/alerts")
 
+@app.route("/alerts/manage")
+def alerts_manage():
+    """Übersicht & Verwaltung aller Alerts des eingeloggten Users."""
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    if not user_email:
+        flash("Kein Benutzer im Session-Kontext gefunden.", "warning")
+        return redirect(url_for("login"))
+
+    is_admin = user_email.lower() in ADMIN_EMAILS
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Achtung: %s ist hier für PostgreSQL korrekt.
+        cur.execute(
+            """
+            SELECT
+                id,
+                user_email,
+                terms_json,
+                filters_json,
+                is_active,
+                last_run_ts,
+                source,
+                notify_email,
+                notify_telegram,
+                per_page,
+                created_at
+            FROM search_alerts
+            WHERE user_email = %s AND is_active = 1
+
+            ORDER BY created_at DESC, id DESC
+            """,
+            (user_email,),
+        )
+        rows = cur.fetchall()
+    except Exception as e:
+        conn.close()
+        current_app.logger.exception("Fehler beim Laden der Alerts")
+        flash(f"Fehler beim Laden der Alerts: {e}", "danger")
+        return redirect(url_for("dashboard"))
+
+    col_names = [c[0] for c in cur.description]
+
+    alerts = []
+    for row in rows:
+        # row -> dict
+        data = {col_names[i]: row[i] for i in range(len(col_names))}
+
+        # Terms & Filter sicher parsen
+        try:
+            terms = json.loads(data.get("terms_json") or "[]")
+        except Exception:
+            terms = []
+
+        try:
+            filters = json.loads(data.get("filters_json") or "{}")
+        except Exception:
+            filters = {}
+
+        # last_run_ts (UNIX-Timestamp) hübsch formatieren
+        raw_last_run = data.get("last_run_ts")
+        if raw_last_run:
+            try:
+                ts_int = int(raw_last_run)
+                dt = datetime.fromtimestamp(ts_int)
+                last_run_str = dt.strftime("%d.%m.%Y %H:%M")
+            except Exception:
+                last_run_str = str(raw_last_run)
+        else:
+            last_run_str = None
+
+        # created_at (TIMESTAMP aus Postgres) formatieren
+        raw_created = data.get("created_at")
+        if raw_created:
+            try:
+                if isinstance(raw_created, str):
+                    dt_created = datetime.fromisoformat(raw_created)
+                else:
+                    dt_created = raw_created
+                created_at_str = dt_created.strftime("%d.%m.%Y %H:%M")
+            except Exception:
+                created_at_str = str(raw_created)
+        else:
+            created_at_str = None
+
+        alerts.append(
+            {
+                "id": data["id"],
+                "user_email": data.get("user_email"),
+                "source": (data.get("source") or "ebay").lower(),
+                "is_active": bool(data.get("is_active")),
+                "notify_email": bool(data.get("notify_email")),
+                "notify_telegram": bool(data.get("notify_telegram")),
+                "search_terms": ", ".join(terms) if terms else "–",
+                "price_min": filters.get("price_min") or "",
+                "price_max": filters.get("price_max") or "",
+                "location_country": filters.get("location_country", "DE"),
+                "per_page": data.get("per_page") or 20,
+                "last_run_ts": raw_last_run,
+                "last_run_str": last_run_str,
+                "created_at": raw_created,
+                "created_at_str": created_at_str,
+            }
+        )
+
+    conn.close()
+
+    return safe_render(
+        "alerts_manage.html",
+        title="Meine Such-Alerts",
+        alerts=alerts,
+        is_admin=is_admin,
+    )
+
+
+@app.route("/alerts/<int:alert_id>/toggle", methods=["POST"])
+def alert_toggle(alert_id: int):
+    """Aktiv / Inaktiv umschalten."""
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    if not user_email:
+        flash("Kein Benutzer im Session-Kontext gefunden.", "warning")
+        return redirect(url_for("login"))
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        cur.execute(
+            """
+            UPDATE search_alerts
+            SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END
+            WHERE id = %s AND user_email = %s
+            """,
+            (alert_id, user_email),
+        )
+        if cur.rowcount == 0:
+            flash("Alert nicht gefunden oder keine Berechtigung.", "warning")
+        else:
+            flash("Alert-Status wurde aktualisiert.", "success")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        current_app.logger.exception("Fehler beim Umschalten des Alert-Status")
+        flash(f"Fehler beim Aktualisieren des Alerts: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("alerts_manage"))
+
+@app.post("/alert/<int:alert_id>/pause")
+def alert_pause(alert_id: int):
+    """Pausiert Alert (is_active = 0)"""
+    if not session.get("user_email"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        cur.execute(
+            "UPDATE search_alerts SET is_active = 0 WHERE id = %s AND user_email = %s",
+            (alert_id, user_email),
+        )
+        conn.commit()
+        flash("Alert pausiert.", "success")
+    except Exception as e:
+        conn.rollback()
+        flash(f"Fehler: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("alerts_manage"))
+
+
+
+
+
+@app.route("/alerts/<int:alert_id>/delete", methods=["POST"])
+def alert_delete(alert_id: int):
+    """Alert komplett löschen (+ gesehene Items)."""
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    if not user_email:
+        flash("Kein Benutzer im Session-Kontext gefunden.", "warning")
+        return redirect(url_for("login"))
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Gesehene Items zu diesem Alert aufräumen
+        cur.execute(
+            "DELETE FROM alert_seen WHERE user_email = %s AND search_hash = %s",
+            (user_email, str(alert_id)),
+        )
+
+        # Alert selbst löschen
+        cur.execute(
+            "DELETE FROM search_alerts WHERE id = %s AND user_email = %s",
+            (alert_id, user_email),
+        )
+
+        if cur.rowcount == 0:
+            flash("Alert nicht gefunden oder keine Berechtigung.", "warning")
+        else:
+            flash("Alert wurde gelöscht.", "success")
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        current_app.logger.exception("Fehler beim Löschen eines Alerts")
+        flash(f"Fehler beim Löschen des Alerts: {e}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("alerts_manage"))
+
+
+@app.route("/alerts/<int:alert_id>/results")
+def alert_results(alert_id: int):
+    """
+    Zeigt die zuletzt gesehenen Items für einen Alert.
+    Mit:
+      - Quelle (Badge)
+      - Direkt-Öffnen-Button
+      - Sortierung & Pagination
+    """
+    if not session.get("user_id"):
+        flash("Bitte einloggen.", "info")
+        return redirect(url_for("login"))
+
+    user_email = session.get("user_email")
+    if not user_email:
+        flash("Kein Benutzer im Session-Kontext gefunden.", "warning")
+        return redirect(url_for("login"))
+
+    if user_email.lower() not in ADMIN_EMAILS:
+        flash("Diese Seite ist nur für Admins verfügbar.", "warning")
+        return redirect(url_for("alerts_manage"))
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Paging & Sortierung aus Query-Parametern
+    page = request.args.get("page", 1, type=int)
+    if page < 1:
+        page = 1
+
+    sort = request.args.get("sort", "last_sent_desc")
+    per_page = 50  # kannst du bei Bedarf anpassen
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+        # Alert-Metadaten (gleichzeitig Ownership check)
+        cur.execute(
+            """
+            SELECT id, user_email, terms_json, source
+            FROM search_alerts
+            WHERE id = %s AND user_email = %s
+            """,
+            (alert_id, user_email),
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            flash("Alert nicht gefunden oder gehört nicht zu deinem Konto.", "warning")
+            return redirect(url_for("alerts_manage"))
+
+        _, _, terms_json, source = row
+        alert_source = (source or "ebay").lower()
+        source_label = "Kleinanzeigen" if alert_source == "kleinanzeigen" else "eBay"
+
+        try:
+            terms_list = json.loads(terms_json or "[]")
+        except Exception:
+            terms_list = []
+        terms_display = ", ".join(terms_list) if terms_list else "–"
+
+        # Gesamtanzahl für Pagination
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM alert_seen
+            WHERE user_email = %s AND search_hash = %s
+            """,
+            (user_email, str(alert_id)),
+        )
+        total_items = cur.fetchone()[0] or 0
+
+        # Sortierung sicher mappen
+        if sort == "first_seen_asc":
+            order_clause = "first_seen ASC"
+        elif sort == "first_seen_desc":
+            order_clause = "first_seen DESC"
+        elif sort == "last_sent_asc":
+            order_clause = "last_sent ASC"
+        else:
+            sort = "last_sent_desc"
+            order_clause = "last_sent DESC"
+
+        offset = (page - 1) * per_page
+
+        cur.execute(
+            f"""
+            SELECT item_id, src, first_seen, last_sent
+            FROM alert_seen
+            WHERE user_email = %s AND search_hash = %s
+            ORDER BY {order_clause}
+            LIMIT %s OFFSET %s
+            """,
+            (user_email, str(alert_id), per_page, offset),
+        )
+        rows = cur.fetchall()
+    except Exception as e:
+        conn.close()
+        current_app.logger.exception("Fehler beim Laden der Alert-Ergebnisse")
+        flash(f"Fehler beim Laden der Alert-Ergebnisse: {e}", "danger")
+        return redirect(url_for("alerts_manage"))
+
+    conn.close()
+
+    items = []
+    for idx, row in enumerate(rows, start=1 + offset):
+        item_id, src, first_seen_ts, last_sent_ts = row
+        src = (src or alert_source or "ebay").lower()
+        item_id_str = str(item_id or "")
+
+        items.append(
+            {
+                "rownum": idx,
+                "item_id": item_id_str,
+                "src": src,
+                "first_seen_str": format_ts(first_seen_ts),
+                "last_sent_str": format_ts(last_sent_ts),
+                "url": build_item_url(src, item_id_str),
+            }
+        )
+
+    total_pages = max(1, ceil(total_items / per_page)) if total_items else 1
+
+    return safe_render(
+        "alert_results.html",
+        title=f"Letzte Ergebnisse – Alert #{alert_id}",
+        alert_id=alert_id,
+        alert_source=alert_source,
+        alert_source_label=source_label,
+        terms_display=terms_display,
+        items=items,
+        page=page,
+        total_pages=total_pages,
+        total_items=total_items,
+        sort=sort,
+    )
+
+
+
+
+
 
 @app.route("/admin/bounces")
 def admin_bounces():
     """Bounce-Management"""
-    if not session.get("is_admin"):
-        return redirect("/admin")
+    if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
+        return redirect(url_for("login"))
 
+    # Bounce-Liste laden
     from mailer import get_bounce_stats
+
     stats = get_bounce_stats()
 
     bounce_rows = ""
@@ -3247,14 +3661,14 @@ def admin_bounces():
         </tr>
         """
 
-    return render_template_string("""
+    return f"""
     <div style="font-family:Arial;max-width:800px;margin:20px auto;padding:20px">
         <div style="margin-bottom:20px">
             <a href="/admin/dashboard">← Zurück zum Dashboard</a>
         </div>
 
         <h2>Bounce-Management</h2>
-        <p>Gesamt: {{ total_bounced }} gebounce E-Mail-Adressen</p>
+        <p>Gesamt: {stats['total_bounced']} gebounce E-Mail-Adressen</p>
 
         <div style="margin:20px 0">
             <a href="/admin/bounces/clear"
@@ -3269,17 +3683,17 @@ def admin_bounces():
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">E-Mail-Adresse</th>
                 <th style="padding:12px;text-align:left;border:1px solid #ddd">Aktion</th>
             </tr>
-            {{ bounce_rows|safe }}
+            {bounce_rows}
         </table>
     </div>
-    """, total_bounced=stats["total_bounced"], bounce_rows=bounce_rows)
+    """
 
 
 @app.route("/admin/bounces/clear")
 def admin_clear_bounces():
     """Alle Bounces löschen"""
-    if not session.get("is_admin"):
-        return redirect("/admin")
+    if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
+        return redirect(url_for("login"))
 
     from mailer import clear_bounce_list
 
@@ -3409,7 +3823,7 @@ def telegram_verify():
         from telegram_bot import send_welcome_notification
         send_welcome_notification(str(chat_id), username or "User")
 
-        print(f"[Telegram] ✅ User {user_email} verknüpft mit Chat-ID {chat_id}")
+        print(f"[Telegram] [OK] User {user_email} verknüpft mit Chat-ID {chat_id}")
 
         return jsonify({
             "success": True,
@@ -3419,7 +3833,7 @@ def telegram_verify():
     except Exception as e:
         conn.rollback()
         conn.close()
-        print(f"[Telegram] ❌ Fehler: {e}")
+        print(f"[Telegram] [!] Fehler: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -3492,7 +3906,7 @@ def telegram_test():
     message = """
 🧪 <b>Test-Benachrichtigung</b>
 
-Dein Telegram ist korrekt konfiguriert! ✅
+Dein Telegram ist korrekt konfiguriert! [OK]
 
 Du erhältst ab sofort Echtzeit-Benachrichtigungen,
 wenn neue Artikel gefunden werden.
@@ -3536,7 +3950,7 @@ def telegram_disconnect():
     return jsonify({"success": True, "message": "Telegram getrennt"})
 
 
-print("[Telegram] ✅ Routes registriert")
+print("[Telegram] [OK] Routes registriert")
 
 
 # --- Admin Blueprint: simple stats view --------------------------------------
@@ -3654,6 +4068,1902 @@ def admin_stats_recalc():
         {"HX-Redirect": f"/admin/stats{q}"},
     )  # funktioniert normal & mit HTMX
 
+    # ---------------------------------------------------------
+# Globale Template-Variablen (Admin-Flag etc.)
+# ---------------------------------------------------------
+from flask import session  # falls oben noch nicht importiert
+
+def is_admin_email(email: str) -> bool:
+    """Hilfsfunktion: Prüft, ob E-Mail in ADMIN_EMAILS eingetragen ist."""
+    admin_env = os.getenv("ADMIN_EMAILS", "")
+    admins = [
+        e.strip().lower()
+        for e in admin_env.split(",")
+        if e.strip()
+    ]
+    return email and email.lower() in admins
+
+
+@app.context_processor
+def inject_user_flags():
+    """Stellt is_admin in ALLEN Templates zur Verfügung."""
+    user_email = session.get("user_email")
+    return {
+        "current_user_email": user_email,
+        "is_admin": is_admin_email(user_email) if user_email else False,
+    }
+
+
+@app.route("/api/newsletter/subscribe", methods=["POST"])
+def newsletter_subscribe():
+    import secrets
+    import requests
+    from models import NewsletterSubscriber
+
+    data = request.get_json()
+    email = data.get("email", "").strip().lower()
+
+    if not email or "@" not in email:
+        return jsonify({"error": "Ungültige E-Mail"}), 400
+
+    try:
+        subscriber = db.session.query(NewsletterSubscriber).filter_by(email=email).first()
+
+        if subscriber and subscriber.verified:
+            return jsonify({"error": "Diese E-Mail ist bereits angemeldet"}), 400
+
+        if subscriber:
+            subscriber.verified = False
+            subscriber.verification_token = secrets.token_urlsafe(32)
+        else:
+            subscriber = NewsletterSubscriber(
+                email=email,
+                verification_token=secrets.token_urlsafe(32)
+            )
+            db.session.add(subscriber)
+
+        db.session.commit()
+
+        verification_url = f"{request.url_root}api/newsletter/verify/{subscriber.verification_token}"
+
+        postmark_token = os.getenv("POSTMARK_SERVER_TOKEN")
+        if postmark_token:
+            requests.post(
+                "https://api.postmarkapp.com/email",
+                headers={
+                    "X-Postmark-Server-Token": postmark_token,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "From": os.getenv("POSTMARK_FROM", "alerts@alerts.lennycolli.com"),
+                    "To": email,
+                    "Subject": "Newsletter-Anmeldung bestätigen",
+                    "HtmlBody": f"""
+                    <h2>Newsletter-Bestätigung 📧</h2>
+                    <p>Danke für deine Anmeldung! Bitte bestätige deine E-Mail-Adresse:</p>
+                    <p><a href="{verification_url}" class="btn">Bestätigen</a></p>
+                    <p style="color: #999; font-size: 12px;">Dieser Link ist 24 Stunden gültig.</p>
+                    """,
+                    "TextBody": f"Bestätige deine Anmeldung: {verification_url}",
+                }
+            )
+
+        return jsonify({"message": "Bestätigungsemail sent! Bitte E-Mail überprüfen."}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Fehler: {str(e)}"}), 500
+
+
+@app.route("/api/newsletter/verify/<token>", methods=["GET"])
+def newsletter_verify(token):
+    from models import NewsletterSubscriber
+
+    try:
+        subscriber = db.session.query(NewsletterSubscriber).filter_by(
+            verification_token=token
+        ).first()
+
+        if not subscriber:
+            return render_template_string("""
+            <h2>Ungültiger Link</h2>
+            <p><a href="/">Zurück zur Startseite</a></p>
+            """)
+
+        subscriber.verified = True
+        subscriber.verification_token = None
+        subscriber.verified_at = datetime.utcnow()
+        db.session.commit()
+
+        return render_template_string("""
+        <h2>✓ Vielen Dank!</h2>
+        <p>Deine E-Mail ist bestätigt. Du erhältst jetzt Newsletter!</p>
+        <p><a href="/">Zurück zur Startseite</a></p>
+        """)
+
+    except Exception as e:
+        return f"Fehler: {str(e)}", 500
+
+
+@app.route("/api/affiliate/generate", methods=["POST"])
+@login_required
+def affiliate_generate():
+    import secrets
+    from models import AffiliateAccount
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        affiliate = db.query(AffiliateAccount).filter_by(user_id=current_user.id).first()
+
+        if affiliate:
+            return jsonify({"error": "Sie haben bereits ein Affiliate-Konto"}), 400
+
+        referral_code = secrets.token_urlsafe(8)
+        referral_url = f"{request.url_root}ref/{referral_code}"
+
+        affiliate = AffiliateAccount(
+            user_id=current_user.id,
+            referral_code=referral_code,
+            referral_url=referral_url
+        )
+        db.add(affiliate)
+        db.commit()
+
+        return jsonify({
+            "referral_code": referral_code,
+            "referral_url": referral_url,
+            "message": "Affiliate-Link erstellt!"
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/affiliate/stats", methods=["GET"])
+@login_required
+def affiliate_stats():
+    from models import AffiliateAccount
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        affiliate = db.query(AffiliateAccount).filter_by(user_id=current_user.id).first()
+
+        if not affiliate:
+            return jsonify({"error": "Kein Affiliate-Konto gefunden"}), 404
+
+        return jsonify({
+            "referral_code": affiliate.referral_code,
+            "referral_url": affiliate.referral_url,
+            "total_clicks": affiliate.total_clicks,
+            "total_conversions": affiliate.total_conversions,
+            "total_earnings": float(affiliate.total_earnings),
+            "commission_rate": affiliate.commission_rate,
+            "is_active": affiliate.is_active
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/ref/<referral_code>")
+def affiliate_track(referral_code):
+    from models import AffiliateAccount, AffiliateClick
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        affiliate = db.query(AffiliateAccount).filter_by(referral_code=referral_code).first()
+
+        if not affiliate:
+            return redirect(url_for('public_home'))
+
+        click = AffiliateClick(
+            affiliate_id=affiliate.id,
+            referrer_ip=request.remote_addr,
+            referrer_url=request.referrer,
+            user_agent=request.user_agent.string
+        )
+        db.add(click)
+        affiliate.total_clicks += 1
+        db.commit()
+
+        session['affiliate_click_id'] = click.id
+        session['referral_code'] = referral_code
+
+        return redirect(url_for('search.search_page'))
+    except Exception as e:
+        return redirect(url_for('public_home'))
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/community/links", methods=["GET"])
+def community_links():
+    from models import CommunityLink
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        links = db.query(CommunityLink).order_by(
+            CommunityLink.is_featured.desc(),
+            CommunityLink.display_order,
+            CommunityLink.created_at.desc()
+        ).all()
+
+        return jsonify({
+            "links": [
+                {
+                    "id": link.id,
+                    "title": link.title,
+                    "description": link.description,
+                    "url": link.url,
+                    "category": link.category,
+                    "icon": link.icon,
+                    "is_featured": link.is_featured
+                }
+                for link in links
+            ]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/community-links", methods=["GET"])
+@login_required
+def admin_community_links_list():
+    from models import CommunityLink, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        links = db.query(CommunityLink).order_by(CommunityLink.display_order).all()
+
+        return jsonify({
+            "links": [
+                {
+                    "id": link.id,
+                    "title": link.title,
+                    "description": link.description,
+                    "url": link.url,
+                    "category": link.category,
+                    "icon": link.icon,
+                    "is_featured": link.is_featured,
+                    "display_order": link.display_order
+                }
+                for link in links
+            ]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/community-links", methods=["POST"])
+@login_required
+def admin_community_links_create():
+    from models import CommunityLink, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        data = request.get_json()
+
+        if not data.get("title") or not data.get("url") or not data.get("category"):
+            return jsonify({"error": "Titel, URL und Kategorie sind erforderlich"}), 400
+
+        link = CommunityLink(
+            title=data["title"],
+            description=data.get("description"),
+            url=data["url"],
+            category=data["category"],
+            icon=data.get("icon"),
+            is_featured=data.get("is_featured", False),
+            display_order=data.get("display_order", 0)
+        )
+        db.add(link)
+        db.commit()
+
+        return jsonify({
+            "message": "Link erstellt!",
+            "id": link.id
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/community-links/<int:link_id>", methods=["PUT"])
+@login_required
+def admin_community_links_update(link_id):
+    from models import CommunityLink, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        link = db.query(CommunityLink).filter_by(id=link_id).first()
+        if not link:
+            return jsonify({"error": "Link nicht gefunden"}), 404
+
+        data = request.get_json()
+
+        if "title" in data:
+            link.title = data["title"]
+        if "description" in data:
+            link.description = data["description"]
+        if "url" in data:
+            link.url = data["url"]
+        if "category" in data:
+            link.category = data["category"]
+        if "icon" in data:
+            link.icon = data["icon"]
+        if "is_featured" in data:
+            link.is_featured = data["is_featured"]
+        if "display_order" in data:
+            link.display_order = data["display_order"]
+
+        db.commit()
+
+        return jsonify({"message": "Link aktualisiert!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/community-links/<int:link_id>", methods=["DELETE"])
+@login_required
+def admin_community_links_delete(link_id):
+    from models import CommunityLink, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        link = db.query(CommunityLink).filter_by(id=link_id).first()
+        if not link:
+            return jsonify({"error": "Link nicht gefunden"}), 404
+
+        db.delete(link)
+        db.commit()
+
+        return jsonify({"message": "Link gelöscht!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/coupons", methods=["GET"])
+@login_required
+def admin_coupons_list():
+    from models import Coupon, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        coupons = db.query(Coupon).order_by(Coupon.created_at.desc()).all()
+
+        return jsonify({
+            "coupons": [
+                {
+                    "id": c.id,
+                    "code": c.code,
+                    "description": c.description,
+                    "amount": c.amount,
+                    "discount_type": c.discount_type,
+                    "is_affiliate": c.is_affiliate,
+                    "usage_limit": c.usage_limit,
+                    "used_count": c.used_count,
+                    "is_active": c.is_active,
+                    "valid_from": c.valid_from.isoformat(),
+                    "valid_until": c.valid_until.isoformat() if c.valid_until else None
+                }
+                for c in coupons
+            ]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/coupons", methods=["POST"])
+@login_required
+def admin_coupons_create():
+    import secrets
+    from models import Coupon, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        data = request.get_json()
+
+        if not data.get("amount"):
+            return jsonify({"error": "Betrag ist erforderlich"}), 400
+
+        code = data.get("code") or f"COUPON{secrets.token_hex(4).upper()}"
+
+        existing = db.query(Coupon).filter_by(code=code).first()
+        if existing:
+            return jsonify({"error": "Code existiert bereits"}), 400
+
+        coupon = Coupon(
+            code=code,
+            description=data.get("description"),
+            amount=float(data["amount"]),
+            discount_type=data.get("discount_type", "fixed"),
+            is_affiliate=data.get("is_affiliate", False),
+            usage_limit=data.get("usage_limit"),
+            valid_until=None
+        )
+
+        db.add(coupon)
+        db.commit()
+
+        return jsonify({
+            "message": "Gutschein erstellt!",
+            "id": coupon.id,
+            "code": coupon.code
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/coupons/<int:coupon_id>", methods=["PUT"])
+@login_required
+def admin_coupons_update(coupon_id):
+    from models import Coupon, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        coupon = db.query(Coupon).filter_by(id=coupon_id).first()
+        if not coupon:
+            return jsonify({"error": "Gutschein nicht gefunden"}), 404
+
+        data = request.get_json()
+
+        if "amount" in data:
+            coupon.amount = float(data["amount"])
+        if "description" in data:
+            coupon.description = data["description"]
+        if "discount_type" in data:
+            coupon.discount_type = data["discount_type"]
+        if "usage_limit" in data:
+            coupon.usage_limit = data["usage_limit"]
+        if "is_active" in data:
+            coupon.is_active = data["is_active"]
+
+        db.commit()
+
+        return jsonify({"message": "Gutschein aktualisiert!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/coupons/<int:coupon_id>", methods=["DELETE"])
+@login_required
+def admin_coupons_delete(coupon_id):
+    from models import Coupon, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        coupon = db.query(Coupon).filter_by(id=coupon_id).first()
+        if not coupon:
+            return jsonify({"error": "Gutschein nicht gefunden"}), 404
+
+        db.delete(coupon)
+        db.commit()
+
+        return jsonify({"message": "Gutschein gelöscht!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/coupons/validate", methods=["POST"])
+def validate_coupon():
+    from models import Coupon
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+
+        data = request.get_json()
+        code = data.get("code")
+
+        if not code:
+            return jsonify({"error": "Code erforderlich"}), 400
+
+        coupon = db.query(Coupon).filter_by(code=code).first()
+
+        if not coupon:
+            return jsonify({"error": "Gutschein nicht gefunden"}), 404
+
+        if not coupon.is_valid():
+            return jsonify({"error": "Gutschein ist nicht mehr gültig"}), 400
+
+        return jsonify({
+            "valid": True,
+            "code": coupon.code,
+            "amount": coupon.amount,
+            "discount_type": coupon.discount_type,
+            "description": coupon.description
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/coupons/apply", methods=["POST"])
+@login_required
+def apply_coupon():
+    from models import Coupon, CouponUsage, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+
+        data = request.get_json()
+        code = data.get("code")
+
+        if not code:
+            return jsonify({"error": "Code erforderlich"}), 400
+
+        coupon = db.query(Coupon).filter_by(code=code).first()
+        if not coupon:
+            return jsonify({"error": "Gutschein nicht gefunden"}), 404
+
+        if not coupon.is_valid():
+            return jsonify({"error": "Gutschein ist nicht mehr gültig"}), 400
+
+        existing_usage = db.query(CouponUsage).filter_by(
+            coupon_id=coupon.id,
+            user_id=current_user.id
+        ).first()
+
+        if existing_usage:
+            return jsonify({"error": "Du hast diesen Gutschein bereits verwendet"}), 400
+
+        usage = CouponUsage(
+            coupon_id=coupon.id,
+            user_id=current_user.id
+        )
+        coupon.used_count += 1
+
+        db.add(usage)
+        db.commit()
+
+        return jsonify({
+            "message": "Gutschein angewendet!",
+            "amount": coupon.amount,
+            "discount_type": coupon.discount_type
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/user/coupons", methods=["GET"])
+@login_required
+def user_coupons():
+    from models import CouponUsage, Coupon
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        usages = db.query(CouponUsage).filter_by(user_id=current_user.id).all()
+
+        coupons = []
+        for usage in usages:
+            coupon = usage.coupon
+            coupons.append({
+                "id": coupon.id,
+                "code": coupon.code,
+                "amount": coupon.amount,
+                "discount_type": coupon.discount_type,
+                "description": coupon.description,
+                "is_affiliate": coupon.is_affiliate,
+                "applied_at": usage.applied_at.isoformat()
+            })
+
+        return jsonify({"coupons": coupons}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/user/analytics", methods=["GET"])
+@login_required
+def user_analytics():
+    from models import AffiliateAccount, AffiliateClick, AffiliateConversion, Coupon
+    from database import get_db
+    from datetime import timedelta
+
+    db = None
+    try:
+        db = next(get_db())
+        affiliate = db.query(AffiliateAccount).filter_by(user_id=current_user.id).first()
+
+        if not affiliate:
+            return jsonify({"error": "Kein Affiliate-Konto gefunden"}), 404
+
+        last_30_days = datetime.utcnow() - timedelta(days=30)
+
+        clicks_30d = db.query(AffiliateClick).filter(
+            AffiliateClick.affiliate_id == affiliate.id,
+            AffiliateClick.created_at >= last_30_days
+        ).count()
+
+        conversions_30d = db.query(AffiliateConversion).filter(
+            AffiliateConversion.affiliate_id == affiliate.id,
+            AffiliateConversion.created_at >= last_30_days
+        ).count()
+
+        earnings_30d = db.query(AffiliateConversion).filter(
+            AffiliateConversion.affiliate_id == affiliate.id,
+            AffiliateConversion.created_at >= last_30_days
+        ).with_entities(
+            db.func.sum(AffiliateConversion.commission_amount)
+        ).scalar() or 0.0
+
+        coupons = db.query(Coupon).filter_by(
+            is_affiliate=True,
+            user_id=current_user.id
+        ).all()
+
+        coupon_data = []
+        for coupon in coupons:
+            coupon_data.append({
+                "code": coupon.code,
+                "amount": coupon.amount,
+                "type": coupon.discount_type,
+                "used_count": coupon.used_count,
+                "limit": coupon.usage_limit
+            })
+
+        daily_data = {}
+        clicks_all = db.query(AffiliateClick).filter(
+            AffiliateClick.affiliate_id == affiliate.id,
+            AffiliateClick.created_at >= last_30_days
+        ).all()
+
+        conversions_all = db.query(AffiliateConversion).filter(
+            AffiliateConversion.affiliate_id == affiliate.id,
+            AffiliateConversion.created_at >= last_30_days
+        ).all()
+
+        for i in range(30):
+            date_key = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
+            daily_data[date_key] = {"clicks": 0, "conversions": 0, "earnings": 0.0}
+
+        for click in clicks_all:
+            date_key = click.created_at.strftime("%Y-%m-%d")
+            if date_key in daily_data:
+                daily_data[date_key]["clicks"] += 1
+
+        for conv in conversions_all:
+            date_key = conv.created_at.strftime("%Y-%m-%d")
+            if date_key in daily_data:
+                daily_data[date_key]["conversions"] += 1
+                daily_data[date_key]["earnings"] += conv.commission_amount
+
+        daily_list = sorted(daily_data.items())
+
+        return jsonify({
+            "lifetime": {
+                "total_clicks": affiliate.total_clicks,
+                "total_conversions": affiliate.total_conversions,
+                "total_earnings": float(affiliate.total_earnings),
+                "conversion_rate": round((affiliate.total_conversions / affiliate.total_clicks * 100) if affiliate.total_clicks > 0 else 0, 2)
+            },
+            "last_30_days": {
+                "clicks": clicks_30d,
+                "conversions": conversions_30d,
+                "earnings": float(earnings_30d),
+                "conversion_rate": round((conversions_30d / clicks_30d * 100) if clicks_30d > 0 else 0, 2)
+            },
+            "coupons": coupon_data,
+            "daily_trends": [{"date": d[0], **d[1]} for d in daily_list]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/analytics/overview", methods=["GET"])
+@login_required
+def analytics_overview():
+    from models import User, AffiliateAccount, Coupon, CouponUsage, AffiliateConversion
+    from database import get_db
+    from datetime import timedelta
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        today = datetime.utcnow().date()
+        last_30_days = datetime.utcnow() - timedelta(days=30)
+
+        total_users = db.query(User).count()
+        premium_users = db.query(User).filter(User.plan != "free").count()
+
+        new_users_30d = db.query(User).filter(User.created_at >= last_30_days).count()
+
+        total_affiliate_clicks = db.query(AffiliateAccount).with_entities(
+            db.func.sum(AffiliateAccount.total_clicks)
+        ).scalar() or 0
+
+        total_conversions = db.query(AffiliateConversion).count()
+        total_earnings = db.query(AffiliateConversion).with_entities(
+            db.func.sum(AffiliateConversion.commission_amount)
+        ).scalar() or 0.0
+
+        total_coupons = db.query(Coupon).count()
+        redeemed_coupons = db.query(CouponUsage).count()
+
+        return jsonify({
+            "total_users": total_users,
+            "premium_users": premium_users,
+            "new_users_30d": new_users_30d,
+            "affiliate_metrics": {
+                "total_clicks": total_affiliate_clicks,
+                "total_conversions": total_conversions,
+                "total_earnings": float(total_earnings),
+                "conversion_rate": round((total_conversions / total_affiliate_clicks * 100) if total_affiliate_clicks > 0 else 0, 2)
+            },
+            "coupon_metrics": {
+                "total_coupons": total_coupons,
+                "redeemed_coupons": redeemed_coupons,
+                "redemption_rate": round((redeemed_coupons / total_coupons * 100) if total_coupons > 0 else 0, 2)
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/analytics/trends", methods=["GET"])
+@login_required
+def analytics_trends():
+    from models import AnalyticsSnapshot, User
+    from database import get_db
+    from datetime import timedelta
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        days = request.args.get("days", 30, type=int)
+        start_date = datetime.utcnow() - timedelta(days=days)
+
+        snapshots = db.query(AnalyticsSnapshot).filter(
+            AnalyticsSnapshot.snapshot_date >= start_date
+        ).order_by(AnalyticsSnapshot.snapshot_date).all()
+
+        trends = []
+        for snap in snapshots:
+            trends.append({
+                "date": snap.snapshot_date.strftime("%Y-%m-%d"),
+                "users": snap.total_users,
+                "premium_users": snap.total_premium_users,
+                "conversions": snap.affiliate_conversions,
+                "coupons_redeemed": snap.coupons_redeemed,
+                "earnings": float(snap.affiliate_earnings)
+            })
+
+        return jsonify({"trends": trends, "days": days}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/analytics/affiliate", methods=["GET"])
+@login_required
+def analytics_affiliate():
+    from models import AffiliateAccount, AffiliateConversion, AffiliateClick, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        affiliates = db.query(AffiliateAccount).order_by(
+            AffiliateAccount.total_earnings.desc()
+        ).limit(20).all()
+
+        top_affiliates = []
+        for aff in affiliates:
+            top_affiliates.append({
+                "user_email": aff.user.email,
+                "code": aff.referral_code,
+                "clicks": aff.total_clicks,
+                "conversions": aff.total_conversions,
+                "earnings": float(aff.total_earnings),
+                "ctr": round((aff.total_clicks / aff.total_conversions) if aff.total_conversions > 0 else 0, 2)
+            })
+
+        total_clicks = sum(a.total_clicks for a in affiliates)
+        total_conversions = sum(a.total_conversions for a in affiliates)
+        total_earnings = sum(a.total_earnings for a in affiliates)
+
+        return jsonify({
+            "top_affiliates": top_affiliates,
+            "summary": {
+                "total_affiliates": db.query(AffiliateAccount).count(),
+                "total_clicks": total_clicks,
+                "total_conversions": total_conversions,
+                "total_earnings": float(total_earnings),
+                "avg_conversion_rate": round((total_conversions / total_clicks * 100) if total_clicks > 0 else 0, 2)
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/analytics/coupons", methods=["GET"])
+@login_required
+def analytics_coupons():
+    from models import Coupon, CouponUsage, User
+    from database import get_db
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        coupons = db.query(Coupon).order_by(Coupon.used_count.desc()).limit(20).all()
+
+        top_coupons = []
+        for coupon in coupons:
+            top_coupons.append({
+                "code": coupon.code,
+                "description": coupon.description,
+                "amount": coupon.amount,
+                "type": coupon.discount_type,
+                "used_count": coupon.used_count,
+                "usage_limit": coupon.usage_limit,
+                "is_affiliate": coupon.is_affiliate
+            })
+
+        total_coupons = db.query(Coupon).count()
+        total_redeemed = db.query(CouponUsage).count()
+        total_value = db.query(Coupon).with_entities(
+            db.func.sum(Coupon.amount)
+        ).scalar() or 0.0
+
+        return jsonify({
+            "top_coupons": top_coupons,
+            "summary": {
+                "total_coupons": total_coupons,
+                "total_redeemed": total_redeemed,
+                "redemption_rate": round((total_redeemed / total_coupons * 100) if total_coupons > 0 else 0, 2),
+                "total_value_distributed": float(total_value)
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/analytics")
+@login_required
+def user_analytics_page():
+    return render_template("user_analytics.html")
+
+
+@app.route("/leaderboard")
+@login_required
+def leaderboard_page():
+    return render_template("leaderboard.html")
+
+
+@app.route("/api/analytics/export", methods=["GET"])
+@login_required
+def analytics_export():
+    import csv
+    from io import StringIO
+    from models import AffiliateAccount, AffiliateClick, AffiliateConversion
+    from database import get_db
+    from datetime import timedelta
+
+    db = None
+    try:
+        db = next(get_db())
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            affiliate = db.query(AffiliateAccount).filter_by(user_id=current_user.id).first()
+            if not affiliate:
+                return jsonify({"error": "Nicht berechtigt"}), 403
+            affiliates = [affiliate]
+        else:
+            affiliates = db.query(AffiliateAccount).all()
+
+        format_type = request.args.get("format", "csv").lower()
+
+        if format_type == "csv":
+            output = StringIO()
+            writer = csv.writer(output)
+
+            writer.writerow(["Affiliate Report"])
+            writer.writerow([datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")])
+            writer.writerow([])
+            writer.writerow(["Email", "Code", "Total Clicks", "Total Conversions", "Total Earnings", "30d Clicks", "30d Conversions", "30d Earnings"])
+
+            last_30 = datetime.utcnow() - timedelta(days=30)
+
+            for aff in affiliates:
+                clicks_30 = db.query(AffiliateClick).filter(
+                    AffiliateClick.affiliate_id == aff.id,
+                    AffiliateClick.created_at >= last_30
+                ).count()
+
+                conversions_30 = db.query(AffiliateConversion).filter(
+                    AffiliateConversion.affiliate_id == aff.id,
+                    AffiliateConversion.created_at >= last_30
+                ).count()
+
+                earnings_30 = db.query(AffiliateConversion).filter(
+                    AffiliateConversion.affiliate_id == aff.id,
+                    AffiliateConversion.created_at >= last_30
+                ).with_entities(
+                    db.func.sum(AffiliateConversion.commission_amount)
+                ).scalar() or 0.0
+
+                writer.writerow([
+                    aff.user.email,
+                    aff.referral_code,
+                    aff.total_clicks,
+                    aff.total_conversions,
+                    f"{aff.total_earnings:.2f}",
+                    clicks_30,
+                    conversions_30,
+                    f"{earnings_30:.2f}"
+                ])
+
+            response = app.response_class(
+                response=output.getvalue(),
+                status=200,
+                mimetype="text/csv"
+            )
+            response.headers["Content-Disposition"] = "attachment;filename=affiliate-report.csv"
+            return response
+
+        elif format_type == "json":
+            data = []
+            last_30 = datetime.utcnow() - timedelta(days=30)
+
+            for aff in affiliates:
+                clicks_30 = db.query(AffiliateClick).filter(
+                    AffiliateClick.affiliate_id == aff.id,
+                    AffiliateClick.created_at >= last_30
+                ).count()
+
+                conversions_30 = db.query(AffiliateConversion).filter(
+                    AffiliateConversion.affiliate_id == aff.id,
+                    AffiliateConversion.created_at >= last_30
+                ).count()
+
+                earnings_30 = db.query(AffiliateConversion).filter(
+                    AffiliateConversion.affiliate_id == aff.id,
+                    AffiliateConversion.created_at >= last_30
+                ).with_entities(
+                    db.func.sum(AffiliateConversion.commission_amount)
+                ).scalar() or 0.0
+
+                data.append({
+                    "email": aff.user.email,
+                    "code": aff.referral_code,
+                    "lifetime": {
+                        "clicks": aff.total_clicks,
+                        "conversions": aff.total_conversions,
+                        "earnings": float(aff.total_earnings)
+                    },
+                    "last_30_days": {
+                        "clicks": clicks_30,
+                        "conversions": conversions_30,
+                        "earnings": float(earnings_30)
+                    }
+                })
+
+            return jsonify({
+                "export_date": datetime.utcnow().isoformat(),
+                "affiliates": data
+            }), 200
+
+        else:
+            return jsonify({"error": "Unsupported format. Use 'csv' or 'json'"}), 400
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/user/achievements", methods=["GET"])
+@login_required
+def get_user_achievements():
+    from models import UserBadge, Achievement, SessionLocal
+
+    db = None
+    try:
+        db = SessionLocal()
+        badges = db.query(UserBadge).filter_by(user_id=current_user.id).all()
+
+        badge_list = []
+        for badge in badges:
+            badge_list.append({
+                "id": badge.achievement.id,
+                "code": badge.achievement.code,
+                "name": badge.achievement.name,
+                "description": badge.achievement.description,
+                "icon": badge.achievement.icon,
+                "category": badge.achievement.category,
+                "points": badge.achievement.points,
+                "earned_at": badge.earned_at.isoformat(),
+                "is_public": badge.is_public
+            })
+
+        return jsonify({"badges": badge_list, "total": len(badge_list)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/user/engagement", methods=["GET"])
+@login_required
+def get_user_engagement():
+    from models import UserEngagement, SessionLocal
+
+    db = None
+    try:
+        db = SessionLocal()
+        engagement = db.query(UserEngagement).filter_by(user_id=current_user.id).first()
+
+        if not engagement:
+            return jsonify({"error": "Engagement data not found"}), 404
+
+        return jsonify({
+            "login_streak": engagement.login_streak,
+            "last_login": engagement.last_login.isoformat() if engagement.last_login else None,
+            "searches_count": engagement.searches_count,
+            "agents_created": engagement.agents_created,
+            "alerts_triggered": engagement.alerts_triggered,
+            "affiliate_clicks": engagement.affiliate_clicks,
+            "affiliate_conversions": engagement.affiliate_conversions,
+            "coupons_applied": engagement.coupons_applied,
+            "coupons_created": engagement.coupons_created,
+            "total_points": engagement.total_points,
+            "tier": engagement.tier
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/leaderboard", methods=["GET"])
+@login_required
+def get_leaderboard():
+    from models import LeaderboardSnapshot, User, SessionLocal
+    from datetime import datetime, timedelta
+
+    db = None
+    try:
+        db = SessionLocal()
+        period = request.args.get("period", "all_time")
+        limit = request.args.get("limit", 50, type=int)
+
+        now = datetime.utcnow()
+
+        if period == "weekly":
+            start_date = now - timedelta(days=7)
+        elif period == "monthly":
+            start_date = now - timedelta(days=30)
+        else:
+            start_date = now - timedelta(days=365)
+
+        snapshots = db.query(LeaderboardSnapshot).filter(
+            LeaderboardSnapshot.period == period,
+            LeaderboardSnapshot.snapshot_date >= start_date
+        ).all()
+
+        user_scores = {}
+        for snapshot in snapshots:
+            if snapshot.user_id not in user_scores:
+                user_scores[snapshot.user_id] = snapshot.points
+            else:
+                user_scores[snapshot.user_id] = max(user_scores[snapshot.user_id], snapshot.points)
+
+        sorted_users = sorted(user_scores.items(), key=lambda x: x[1], reverse=True)[:limit]
+
+        leaderboard = []
+        for rank, (user_id, points) in enumerate(sorted_users, 1):
+            user = db.query(User).filter_by(id=user_id).first()
+            if user:
+                leaderboard.append({
+                    "rank": rank,
+                    "user_id": user_id,
+                    "email": user.email,
+                    "points": points,
+                    "is_current_user": user_id == current_user.id
+                })
+
+        return jsonify({
+            "period": period,
+            "leaderboard": leaderboard,
+            "count": len(leaderboard)
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/achievements", methods=["GET"])
+@login_required
+def get_all_achievements():
+    from models import Achievement, SessionLocal
+
+    db = None
+    try:
+        db = SessionLocal()
+        achievements = db.query(Achievement).filter_by(is_active=True).all()
+
+        ach_list = []
+        for ach in achievements:
+            ach_list.append({
+                "id": ach.id,
+                "code": ach.code,
+                "name": ach.name,
+                "description": ach.description,
+                "icon": ach.icon,
+                "category": ach.category,
+                "points": ach.points,
+                "trigger_type": ach.trigger_type,
+                "trigger_condition": ach.trigger_condition
+            })
+
+        return jsonify({"achievements": ach_list, "total": len(ach_list)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/profile/<int:user_id>", methods=["GET"])
+def get_public_profile(user_id):
+    from models import User, UserBadge, UserEngagement, SessionLocal
+
+    db = None
+    try:
+        db = SessionLocal()
+        user = db.query(User).filter_by(id=user_id).first()
+
+        if not user:
+            return render_template("error.html", error="User not found"), 404
+
+        engagement = db.query(UserEngagement).filter_by(user_id=user_id).first()
+
+        public_badges = db.query(UserBadge).filter(
+            UserBadge.user_id == user_id,
+            UserBadge.is_public == True
+        ).all()
+
+        badge_list = []
+        for badge in public_badges:
+            badge_list.append({
+                "name": badge.achievement.name,
+                "icon": badge.achievement.icon,
+                "earned_at": badge.earned_at.strftime("%Y-%m-%d")
+            })
+
+        return render_template("profile.html",
+            user_name=user.email.split("@")[0],
+            total_points=engagement.total_points if engagement else 0,
+            tier=engagement.tier if engagement else "bronze",
+            badges=badge_list,
+            badge_count=len(badge_list)
+        ), 200
+    except Exception as e:
+        return render_template("error.html", error=str(e)), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/api/admin/achievements", methods=["GET", "POST", "PUT", "DELETE"])
+@login_required
+def manage_achievements():
+    from models import Achievement, User, SessionLocal
+    import os
+
+    db = None
+    try:
+        db = SessionLocal()
+        user = db.query(User).filter_by(id=current_user.id).first()
+
+        if user.plan != "team" and user.email != os.getenv("ADMIN_EMAIL"):
+            return jsonify({"error": "Nicht berechtigt"}), 403
+
+        if request.method == "GET":
+            achievements = db.query(Achievement).all()
+            ach_list = []
+            for ach in achievements:
+                ach_list.append({
+                    "id": ach.id,
+                    "code": ach.code,
+                    "name": ach.name,
+                    "description": ach.description,
+                    "icon": ach.icon,
+                    "category": ach.category,
+                    "points": ach.points,
+                    "trigger_type": ach.trigger_type,
+                    "trigger_condition": ach.trigger_condition,
+                    "is_active": ach.is_active
+                })
+            return jsonify({"achievements": ach_list}), 200
+
+        elif request.method == "POST":
+            data = request.get_json()
+            new_ach = Achievement(
+                code=data.get("code"),
+                name=data.get("name"),
+                description=data.get("description"),
+                icon=data.get("icon"),
+                category=data.get("category"),
+                points=int(data.get("points", 10)),
+                trigger_type=data.get("trigger_type"),
+                trigger_condition=data.get("trigger_condition"),
+                is_active=data.get("is_active", True)
+            )
+            db.add(new_ach)
+            db.commit()
+            return jsonify({"id": new_ach.id, "code": new_ach.code}), 201
+
+        elif request.method == "PUT":
+            data = request.get_json()
+            ach_id = data.get("id")
+            ach = db.query(Achievement).filter_by(id=ach_id).first()
+            if not ach:
+                return jsonify({"error": "Achievement not found"}), 404
+
+            ach.name = data.get("name", ach.name)
+            ach.description = data.get("description", ach.description)
+            ach.icon = data.get("icon", ach.icon)
+            ach.category = data.get("category", ach.category)
+            ach.points = int(data.get("points", ach.points))
+            ach.is_active = data.get("is_active", ach.is_active)
+
+            db.commit()
+            return jsonify({"success": True}), 200
+
+        elif request.method == "DELETE":
+            ach_id = request.args.get("id")
+            ach = db.query(Achievement).filter_by(id=ach_id).first()
+            if not ach:
+                return jsonify({"error": "Achievement not found"}), 404
+
+            db.delete(ach)
+            db.commit()
+            return jsonify({"success": True}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/profile", methods=["GET"])
+@login_required
+def view_own_profile():
+    """View own profile with achievements"""
+    from models import UserBadge, UserEngagement, SessionLocal
+
+    db = None
+    try:
+        db = SessionLocal()
+        user = current_user
+
+        engagement = db.query(UserEngagement).filter_by(user_id=user.id).first()
+        if not engagement:
+            engagement = UserEngagement(user_id=user.id)
+            db.add(engagement)
+            db.commit()
+
+        badges = db.query(UserBadge).filter_by(user_id=user.id).all()
+        badge_list = []
+        for badge in badges:
+            if badge.is_public:
+                badge_list.append({
+                    "code": badge.achievement.code,
+                    "name": badge.achievement.name,
+                    "description": badge.achievement.description,
+                    "icon": badge.achievement.icon,
+                    "category": badge.achievement.category,
+                    "points": badge.achievement.points,
+                    "earned_at": badge.earned_at.strftime("%d.%m.%Y") if badge.earned_at else "Unknown"
+                })
+
+        return render_template(
+            "profile.html",
+            user_name=user.email.split("@")[0],
+            total_points=engagement.total_points,
+            tier=engagement.tier,
+            badge_count=len(badge_list),
+            badges=badge_list
+        )
+    except Exception as e:
+        print(f"[ERROR] Failed to load profile: {e}")
+        return render_template("error.html", error="Profil konnte nicht geladen werden"), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/profile/<int:user_id>", methods=["GET"])
+def view_user_profile(user_id):
+    """View public profile of any user"""
+    from models import User, UserBadge, UserEngagement, SessionLocal
+
+    db = None
+    try:
+        db = SessionLocal()
+        user = db.query(User).filter_by(id=user_id).first()
+
+        if not user:
+            return render_template("error.html", error="User nicht gefunden"), 404
+
+        engagement = db.query(UserEngagement).filter_by(user_id=user.id).first()
+        if not engagement:
+            engagement = UserEngagement(user_id=user.id)
+            db.add(engagement)
+            db.commit()
+
+        badges = db.query(UserBadge).filter_by(user_id=user.id).all()
+        badge_list = []
+        for badge in badges:
+            if badge.is_public:
+                badge_list.append({
+                    "code": badge.achievement.code,
+                    "name": badge.achievement.name,
+                    "description": badge.achievement.description,
+                    "icon": badge.achievement.icon,
+                    "category": badge.achievement.category,
+                    "points": badge.achievement.points,
+                    "earned_at": badge.earned_at.strftime("%d.%m.%Y") if badge.earned_at else "Unknown"
+                })
+
+        return render_template(
+            "profile.html",
+            user_name=user.email.split("@")[0],
+            total_points=engagement.total_points,
+            tier=engagement.tier,
+            badge_count=len(badge_list),
+            badges=badge_list
+        )
+    except Exception as e:
+        print(f"[ERROR] Failed to load profile: {e}")
+        return render_template("error.html", error="Profil konnte nicht geladen werden"), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route("/leaderboard", methods=["GET"])
+def view_leaderboard():
+    """View leaderboard page"""
+    return render_template("leaderboard.html")
+
+
+@app.route("/webhooks", methods=["GET"])
+@login_required
+def view_webhooks():
+    """Webhook management page"""
+    return render_template("webhooks.html")
+
+
+@app.route("/api-keys", methods=["GET"])
+@login_required
+def view_api_keys():
+    """API Keys & Documentation page"""
+    return render_template("api_keys.html")
+
+
+@app.route("/sms-settings", methods=["GET"])
+@login_required
+def view_sms_settings():
+    """SMS Notifications settings page"""
+    return render_template("sms_settings.html")
+
+
+@app.route("/reports", methods=["GET"])
+@login_required
+def view_reports():
+    """Reports and PDF export page"""
+    return render_template("reports.html")
+
+
+def process_affiliate_conversion(user_id, db=None):
+    """
+    Verarbeite Affiliate-Konversion und erstelle automatisch Gutschein für beide Seiten
+    - Gutschein für Affiliate (als Provision)
+    - Gutschein für referrierten Benutzer (als Anreiz)
+    """
+    from models import (
+        AffiliateClick, AffiliateConversion, AffiliateAccount,
+        Coupon, SessionLocal
+    )
+    import secrets
+
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+
+    try:
+        affiliate_click_id = session.get('affiliate_click_id')
+        referral_code_session = session.get('referral_code')
+
+        if not affiliate_click_id or not referral_code_session:
+            return None
+
+        click = db.query(AffiliateClick).filter_by(id=affiliate_click_id).first()
+        if not click:
+            return None
+
+        affiliate = db.query(AffiliateAccount).filter_by(referral_code=referral_code_session).first()
+        if not affiliate:
+            return None
+
+        conversion = AffiliateConversion(
+            affiliate_id=affiliate.id,
+            click_id=click.id,
+            converted_user_id=user_id,
+            conversion_type="signup",
+            commission_amount=25.0
+        )
+        click.converted = True
+        affiliate.total_conversions += 1
+        affiliate.total_earnings += 25.0
+
+        db.add(conversion)
+        db.commit()
+
+        affiliate_code = f"AFF{secrets.token_hex(4).upper()}"
+        new_referral_code = f"REF{secrets.token_hex(4).upper()}"
+
+        affiliate_coupon = Coupon(
+            code=affiliate_code,
+            description=f"Affiliate-Provision für Referral",
+            amount=25.0,
+            discount_type="fixed",
+            is_affiliate=True,
+            affiliate_conversion_id=conversion.id,
+            user_id=affiliate.user_id,
+            usage_limit=None
+        )
+
+        referral_coupon = Coupon(
+            code=new_referral_code,
+            description=f"Willkommensbonus - über Referral beigetreten",
+            amount=10.0,
+            discount_type="fixed",
+            is_affiliate=True,
+            user_id=user_id,
+            usage_limit=None
+        )
+
+        db.add(affiliate_coupon)
+        db.add(referral_coupon)
+        db.commit()
+
+        session.pop('affiliate_click_id', None)
+        session.pop('referral_code', None)
+
+        return {
+            "conversion_id": conversion.id,
+            "affiliate_coupon": affiliate_code,
+            "referral_coupon": new_referral_code
+        }
+    except Exception as e:
+        print(f"[ERROR] Affiliate conversion processing failed: {e}")
+        return None
+    finally:
+        if close_db:
+            db.close()
+
+
+def init_default_achievements(db=None):
+    """Initialize default achievements in the database"""
+    from models import Achievement, SessionLocal
+
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+
+    try:
+        achievements = [
+            {
+                "code": "first_search",
+                "name": "🔍 Erste Suche",
+                "description": "Erstelle deine erste Suchabfrage",
+                "icon": "🔍",
+                "category": "searches",
+                "points": 10,
+                "trigger_type": "counter",
+                "trigger_condition": "searches_count:1"
+            },
+            {
+                "code": "search_100",
+                "name": "🔍 100 Searches",
+                "description": "Führe 100 Suchen durch",
+                "icon": "🔍",
+                "category": "searches",
+                "points": 50,
+                "trigger_type": "counter",
+                "trigger_condition": "searches_count:100"
+            },
+            {
+                "code": "search_500",
+                "name": "🔍🔍 500 Searches",
+                "description": "Führe 500 Suchen durch",
+                "icon": "🔍",
+                "category": "searches",
+                "points": 150,
+                "trigger_type": "counter",
+                "trigger_condition": "searches_count:500"
+            },
+            {
+                "code": "first_alert",
+                "name": "🚨 Erste Benachrichtigung",
+                "description": "Erstelle deinen ersten Alert",
+                "icon": "🚨",
+                "category": "alerts",
+                "points": 20,
+                "trigger_type": "counter",
+                "trigger_condition": "agents_created:1"
+            },
+            {
+                "code": "alert_master",
+                "name": "🚨 Alert Master",
+                "description": "Erstelle 10 verschiedene Alerts",
+                "icon": "🚨",
+                "category": "alerts",
+                "points": 100,
+                "trigger_type": "counter",
+                "trigger_condition": "agents_created:10"
+            },
+            {
+                "code": "first_conversion",
+                "name": "💰 Erste Konvertierung",
+                "description": "Generiere deine erste Affiliate-Konvertierung",
+                "icon": "💰",
+                "category": "affiliate",
+                "points": 50,
+                "trigger_type": "counter",
+                "trigger_condition": "affiliate_conversions:1"
+            },
+            {
+                "code": "top_affiliate",
+                "name": "🏆 Top Affiliate",
+                "description": "Erreiche 10 Affiliate-Konvertierungen",
+                "icon": "🏆",
+                "category": "affiliate",
+                "points": 200,
+                "trigger_type": "counter",
+                "trigger_condition": "affiliate_conversions:10"
+            },
+            {
+                "code": "coupon_collector",
+                "name": "🎟️ Gutschein-Sammler",
+                "description": "Nutze 5 verschiedene Gutscheine",
+                "icon": "🎟️",
+                "category": "coupons",
+                "points": 30,
+                "trigger_type": "counter",
+                "trigger_condition": "coupons_applied:5"
+            },
+            {
+                "code": "login_streak_7",
+                "name": "🔥 7-Tage Streak",
+                "description": "Logge dich 7 Tage in Folge ein",
+                "icon": "🔥",
+                "category": "engagement",
+                "points": 75,
+                "trigger_type": "counter",
+                "trigger_condition": "login_streak:7"
+            },
+            {
+                "code": "login_streak_30",
+                "name": "🔥🔥 30-Tage Streak",
+                "description": "Logge dich 30 Tage in Folge ein",
+                "icon": "🔥",
+                "category": "engagement",
+                "points": 300,
+                "trigger_type": "counter",
+                "trigger_condition": "login_streak:30"
+            }
+        ]
+
+        for ach_data in achievements:
+            existing = db.query(Achievement).filter_by(code=ach_data["code"]).first()
+            if not existing:
+                ach = Achievement(**ach_data)
+                db.add(ach)
+
+        db.commit()
+        print("[OK] Default achievements initialized")
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize achievements: {e}")
+    finally:
+        if close_db:
+            db.close()
+
+
+def update_user_engagement(user_id, metric=None, value=1, db=None):
+    """Update user engagement metrics"""
+    from models import UserEngagement, User, SessionLocal
+    from datetime import timedelta
+
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+
+    try:
+        engagement = db.query(UserEngagement).filter_by(user_id=user_id).first()
+        if not engagement:
+            engagement = UserEngagement(user_id=user_id)
+            db.add(engagement)
+            db.flush()
+
+        if metric == "search":
+            engagement.searches_count += value
+        elif metric == "agent":
+            engagement.agents_created += value
+        elif metric == "alert":
+            engagement.alerts_triggered += value
+        elif metric == "affiliate_click":
+            engagement.affiliate_clicks += value
+        elif metric == "affiliate_conversion":
+            engagement.affiliate_conversions += value
+        elif metric == "coupon_applied":
+            engagement.coupons_applied += value
+        elif metric == "coupon_created":
+            engagement.coupons_created += value
+        elif metric == "login":
+            user = db.query(User).filter_by(id=user_id).first()
+            if user:
+                now = datetime.utcnow()
+                last_login = engagement.last_login
+
+                if last_login and (now - last_login).days == 1:
+                    engagement.login_streak += 1
+                elif not last_login or (now - last_login).days > 1:
+                    engagement.login_streak = 1
+
+                engagement.last_login = now
+                user.last_login = now
+
+        db.commit()
+        return engagement
+    except Exception as e:
+        print(f"[ERROR] Failed to update engagement for user {user_id}: {e}")
+        return None
+    finally:
+        if close_db:
+            db.close()
+
+
+def check_and_award_achievement(user_id, db=None):
+    """Check if user qualifies for any achievements and award them"""
+    from models import Achievement, UserBadge, UserEngagement, SessionLocal
+
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+
+    try:
+        engagement = db.query(UserEngagement).filter_by(user_id=user_id).first()
+        if not engagement:
+            return []
+
+        achievements = db.query(Achievement).filter_by(is_active=True).all()
+        awarded = []
+
+        for achievement in achievements:
+            trigger_condition = achievement.trigger_condition
+            field, threshold = trigger_condition.split(":")
+            threshold = int(threshold)
+
+            user_has_badge = db.query(UserBadge).filter(
+                UserBadge.user_id == user_id,
+                UserBadge.achievement_id == achievement.id
+            ).first()
+
+            if user_has_badge:
+                continue
+
+            current_value = getattr(engagement, field, 0)
+
+            if current_value >= threshold:
+                badge = UserBadge(
+                    user_id=user_id,
+                    achievement_id=achievement.id,
+                    is_public=True
+                )
+                db.add(badge)
+                engagement.total_points += achievement.points
+                awarded.append(achievement.code)
+
+        db.commit()
+        return awarded
+    except Exception as e:
+        print(f"[ERROR] Failed to check achievements for user {user_id}: {e}")
+        return []
+    finally:
+        if close_db:
+            db.close()
+
+
+def update_leaderboard_snapshots(db=None):
+    """Update daily leaderboard snapshots for all users"""
+    from models import UserEngagement, LeaderboardSnapshot, User, SessionLocal
+    from datetime import datetime, timedelta
+
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+
+    try:
+        now = datetime.utcnow()
+
+        engagements = db.query(UserEngagement).all()
+
+        for engagement in engagements:
+            for period in ["all_time", "monthly", "weekly"]:
+                snapshot = LeaderboardSnapshot(
+                    user_id=engagement.user_id,
+                    period=period,
+                    points=engagement.total_points,
+                    metric_value=engagement.searches_count,
+                    metric_type="searches",
+                    snapshot_date=now
+                )
+                db.add(snapshot)
+
+        db.commit()
+        print("[OK] Leaderboard snapshots updated")
+    except Exception as e:
+        print(f"[ERROR] Failed to update leaderboard snapshots: {e}")
+    finally:
+        if close_db:
+            db.close()
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
@@ -3664,5 +5974,8 @@ if __name__ == "__main__":
     print(f"   Debug: {debug}")
     print(f"   Database: {'PostgreSQL' if IS_POSTGRES else 'SQLite'}")
     print("="*50 + "\n")
+
+    Base.metadata.create_all(bind=engine)
+    init_default_achievements()
 
     app.run(host="0.0.0.0", port=port, debug=debug)

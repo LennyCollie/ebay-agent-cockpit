@@ -1,10 +1,6 @@
-# routes/search.py
 from __future__ import annotations
 
-from typing import Any, Dict, List
-
-from flask_login import current_user
-from alert_checker import ALERT_INTERVAL_FREE, ALERT_INTERVAL_PREMIUM
+from typing import Any, Dict, List, Tuple
 
 from flask import (
     Blueprint,
@@ -17,50 +13,51 @@ from flask import (
     jsonify,
     make_response,
 )
+from flask_login import current_user
 
+from alert_checker import ALERT_INTERVAL_FREE, ALERT_INTERVAL_PREMIUM
 from services.ebay_api import ebay_search
 from services.price_tracker import track_item_price
-from utils.ebay_browse import browse_search
-from utils.ebay_finding import finding_search
-from utils.ebay_normalize import normalize_browse, normalize_finding
-
-# Live-Kleinanzeigen + Meta-Suche über mehrere Marktplätze
 from services.kleinanzeigen import search_kleinanzeigen
 from services.search_integration import merge_all_marketplaces
 from services.csv_exporter import export_search_results_to_csv
 from smart_filters import SmartFilter
-from services.ai_price_analyzer import analyze_prices_with_ai
-
 
 bp_search = Blueprint("search", __name__)
 
-# Maximale Anzahl Suchbegriffe je nach Plan
 MAX_TERMS_FREE = 3
 MAX_TERMS_PREMIUM = 6
 
 
 # =============================================================================
-# HELFER: eBay-API -> View-Items
+# HELPERS
 # =============================================================================
-def _to_view_items(payload: Dict) -> List[Dict]:
-    out: List[Dict] = []
+
+def _to_view_items(payload: Dict, *, term: str = "") -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
     for it in (payload or {}).get("itemSummaries", []) or []:
         price_txt = ""
+        price_raw = 0.0
         if it.get("price"):
             v = it["price"].get("value")
             c = it["price"].get("currency")
             if v is not None:
                 price_txt = f"{v} {c}"
+                try:
+                    price_raw = float(v)
+                except Exception:
+                    price_raw = 0.0
+
         img_url = (it.get("image") or {}).get("imageUrl") or ""
         out.append(
             {
                 "title": it.get("title", "Ohne Titel"),
                 "price": price_txt,
-                "price_raw": float(it["price"].get("value")) if it.get("price") and it["price"].get("value") is not None else 0.0,
+                "price_raw": price_raw,
                 "url": it.get("itemWebUrl") or "#",
                 "img": img_url,
                 "images": [img_url] if img_url else [],
-                "term": "",
+                "term": term,
                 "source": "ebay",
                 "src": "ebay",
                 "verdict": "unknown",
@@ -70,22 +67,28 @@ def _to_view_items(payload: Dict) -> List[Dict]:
     return out
 
 
-# =============================================================================
-# HELFER: Kleinanzeigen-Normalisierung (für dedizierte Route)
-# =============================================================================
-def _normalize_kleinanzeigen(ka_results: List[Dict]) -> List[Dict]:
-    normalized: List[Dict] = []
+def _normalize_kleinanzeigen(ka_results: List[Dict], *, term: str = "") -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
     for item in ka_results:
         src = (item.get("source") or "kleinanzeigen").lower()
         img_url = item.get("image_url", "")
+        price_value = item.get("price")
+        if price_value not in (None, ""):
+            try:
+                price_text = f"{float(price_value):.2f} EUR"
+                price_raw = float(price_value)
+            except Exception:
+                price_text = str(price_value)
+                price_raw = 0.0
+        else:
+            price_text = "Preis auf Anfrage"
+            price_raw = 0.0
+
         normalized.append(
             {
                 "title": item.get("title", "Ohne Titel"),
-                "price": (
-                    f"{item.get('price', 0):.2f} EUR"
-                    if item.get("price") not in (None, "")
-                    else "Preis auf Anfrage"
-                ),
+                "price": price_text,
+                "price_raw": price_raw,
                 "url": item.get("url", "#"),
                 "img": img_url,
                 "images": [img_url] if img_url else [],
@@ -97,7 +100,7 @@ def _normalize_kleinanzeigen(ka_results: List[Dict]) -> List[Dict]:
                 "source": src,
                 "src": src,
                 "item_id": item.get("item_id"),
-                "term": "",
+                "term": term,
                 "verdict": "unknown",
                 "score": None,
             }
@@ -105,13 +108,26 @@ def _normalize_kleinanzeigen(ka_results: List[Dict]) -> List[Dict]:
     return normalized
 
 
-# =============================================================================
-# HELFER: Form-/Query-Parameter parsen
-# =============================================================================
+def _dedupe_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = set()
+    out: List[Dict[str, Any]] = []
+    for item in items:
+        key = (
+            item.get("url")
+            or item.get("item_id")
+            or item.get("id")
+            or item.get("title")
+        )
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
 def _parse_args() -> Dict[str, Any]:
     src = request.args if request.method == "GET" else request.form
 
-    # 1–6 Suchbegriffe
     q1 = (src.get("q") or src.get("q1") or "").strip()
     q2 = (src.get("q2") or "").strip()
     q3 = (src.get("q3") or "").strip()
@@ -121,7 +137,6 @@ def _parse_args() -> Dict[str, Any]:
     terms = [t for t in (q1, q2, q3, q4, q5, q6) if t]
     q = " ".join(terms)
 
-    # Sortierung (UI -> eBay)
     sort_ui = (src.get("sort") or "best").strip()
     sort_map = {
         "best": "bestMatch",
@@ -136,7 +151,6 @@ def _parse_args() -> Dict[str, Any]:
     category_ids = (src.get("category_ids") or "").strip()
     per_page = (src.get("per_page") or "20").strip()
 
-    # Zustände (Checkboxen)
     conds: List[str] = []
     if hasattr(src, "getlist"):
         conds = [c.strip().upper() for c in src.getlist("condition") if c.strip()]
@@ -145,7 +159,6 @@ def _parse_args() -> Dict[str, Any]:
         if cond_field:
             conds = [c.strip().upper() for c in cond_field.split(",") if c.strip()]
 
-    # eBay-Filter-String (Preis + Zustand)
     filters: List[str] = []
     if price_min or price_max:
         lo = price_min if price_min else "*"
@@ -160,11 +173,7 @@ def _parse_args() -> Dict[str, Any]:
     free_shipping = bool(src.get("free_shipping"))
     returns_accepted = bool(src.get("returns_accepted"))
     top_rated_only = bool(src.get("top_rated_only"))
-
-    # Nur Hauptprodukt / Zubehör ausblenden
     only_main_product = bool(src.get("only_main_product"))
-
-    # Quelle / Portal (ebay, kleinanzeigen, quoka, shpock, marktde, both, all, …)
     source = (src.get("source") or "both").strip().lower()
 
     return {
@@ -188,9 +197,6 @@ def _parse_args() -> Dict[str, Any]:
     }
 
 
-# =============================================================================
-# HELFER: Plan-/Abo-Infos
-# =============================================================================
 def _get_plan_info():
     if not current_user.is_authenticated:
         return None
@@ -223,80 +229,149 @@ def _get_plan_info():
 
 
 def filter_main_products(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Versucht Zubehör / Reparatur-Angebote rauszufiltern.
-    Wir schauen in den Titel – reicht oft schon gut.
-    """
     blacklist = [
-        # Zubehör
-        "hülle",
-        "schutzhülle",
-        "case",
-        "tasche",
-        "panzerglas",
-        "schutzglas",
-        "schutzfolie",
-        "displayfolie",
-        "folie",
-        "backcover",
-        "cover",
-        "bumper",
-        "ladekabel",
-        "kabel",
-        "netzteil",
-        "ladegerät",
-        "adapter",
-        "halterung",
-        "dockingstation",
-        "dock",
-        "lade-dock",
-        "etui",
-        # Reparatur / Service
-        "reparatur",
-        "displaytausch",
-        "tausch",
-        "service",
-        "reparieren",
-        # Teile / Schrott
-        "ersatzteil",
-        "ersatzteile",
-        "nur teile",
-        "nur für teile",
-        "nur zum ausschlachten",
-        "defekt",
-        "defekte",
-        "funktioniert nicht",
-        "ohne funktion",
-        "bastler",
-        "bastlerware",
-        "displaybruch",
-        "display defekt",
-        "wasserschaden",
-        "wasser schaden",
+        "hülle", "schutzhülle", "case", "tasche", "panzerglas", "schutzglas",
+        "schutzfolie", "displayfolie", "folie", "backcover", "cover", "bumper",
+        "ladekabel", "kabel", "netzteil", "ladegerät", "adapter", "halterung",
+        "dockingstation", "dock", "lade-dock", "etui", "reparatur", "displaytausch",
+        "tausch", "service", "reparieren", "ersatzteil", "ersatzteile", "nur teile",
+        "nur für teile", "nur zum ausschlachten", "defekt", "defekte", "funktioniert nicht",
+        "ohne funktion", "bastler", "bastlerware", "displaybruch", "display defekt",
+        "wasserschaden", "wasser schaden",
     ]
 
     filtered: List[Dict[str, Any]] = []
-
     for it in items:
-        # Titel holen – Dict oder Objekt
         if isinstance(it, dict):
             title = (it.get("title") or it.get("name") or "").lower()
         else:
-            title = (
-                (getattr(it, "title", "") or getattr(it, "name", "") or "")
-            ).lower()
+            title = ((getattr(it, "title", "") or getattr(it, "name", "") or "")).lower()
 
         if not title:
             filtered.append(it)
             continue
 
-        # Wenn ein Blacklist-Wort im Titel ist → wir nehmen an: kein Hauptprodukt
         if any(word in title for word in blacklist):
             continue
 
         filtered.append(it)
-
     return filtered
+
+
+# =============================================================================
+# SEARCH HELPERS
+# =============================================================================
+
+def _search_ebay_terms(args: Dict[str, Any]) -> List[Dict[str, Any]]:
+    search_terms = args["terms"] if args["terms"] else [args["q"]]
+    if not search_terms:
+        return []
+
+    per_page = int(args["per_page"] or 20)
+    per_term_limit = max(1, per_page // max(1, len(search_terms)))
+
+    ebay_items: List[Dict[str, Any]] = []
+    seen = set()
+
+    for term in search_terms:
+        payload = ebay_search(
+            term,
+            limit=per_term_limit,
+            sort=args["sort"],
+            category_ids=args["category_ids"],
+            filter_str=args["filter_str"],
+            country_code=args["location_country"],
+        )
+        part_items = _to_view_items(payload, term=term)
+        for item in part_items:
+            key = item.get("url") or item.get("title")
+            if key and key not in seen:
+                seen.add(key)
+                ebay_items.append(item)
+
+    return ebay_items[:per_page]
+
+
+def _search_external_marketplaces(args: Dict[str, Any], current_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    source = (args.get("source") or "both").strip().lower()
+
+    if source == "ebay":
+        return current_items
+
+    if source in ("kleinanzeigen", "shpock", "marktde"):
+        active_sources = [source]
+    elif source == "quoka":
+        active_sources = ["kleinanzeigen"]
+    elif source in ("both", "all"):
+        active_sources = ["kleinanzeigen", "shpock", "marktde"]
+    else:
+        active_sources = ["kleinanzeigen"]
+
+    try:
+        price_min_f = float(args["price_min"]) if args["price_min"] else None
+        price_max_f = float(args["price_max"]) if args["price_max"] else None
+    except Exception:
+        price_min_f = None
+        price_max_f = None
+
+    if not active_sources:
+        return current_items
+
+    current_app.logger.debug(
+        "Calling merge_all_marketplaces with active_sources=%s",
+        active_sources,
+    )
+
+    merged_items: List[Dict[str, Any]] = []
+    terms = args["terms"] if args["terms"] else [args["q"]]
+
+    if "kleinanzeigen" in active_sources:
+        for term in terms:
+            res = merge_all_marketplaces(
+                term=term,
+                current_results=[],
+                price_min=price_min_f,
+                price_max=price_max_f,
+                location=None,
+                max_per_source=20,
+                verbose=True,
+                active_sources=["kleinanzeigen"],
+            )
+            merged_items.extend(res)
+
+        merged_items = _dedupe_items(merged_items)
+
+        other_sources = [src for src in active_sources if src != "kleinanzeigen"]
+        if other_sources:
+            other_items = merge_all_marketplaces(
+                term=args["q"],
+                current_results=[],
+                price_min=price_min_f,
+                price_max=price_max_f,
+                location=None,
+                max_per_source=20,
+                verbose=True,
+                active_sources=other_sources,
+            )
+            merged_items.extend(other_items)
+    else:
+        merged_items = merge_all_marketplaces(
+            term=args["q"],
+            current_results=[],
+            price_min=price_min_f,
+            price_max=price_max_f,
+            location=None,
+            max_per_source=20,
+            verbose=True,
+            active_sources=active_sources,
+        )
+
+    all_items = list(current_items)
+    all_items.extend(merged_items)
+    all_items = _dedupe_items(all_items)
+
+    current_app.logger.info("After merge: %d total items", len(all_items))
+    return all_items
 
 
 # =============================================================================
@@ -312,17 +387,19 @@ def search_page():
     args = _parse_args()
     plan_info = _get_plan_info()
 
-    # Serverseitige Begrenzung der Anzahl Suchbegriffe je nach Plan
     max_terms = plan_info.get("max_terms") if plan_info else MAX_TERMS_FREE
     orig_terms_len = len(args.get("terms", []))
     terms_trimmed = False
     if orig_terms_len > max_terms:
         args["terms"] = args["terms"][:max_terms]
-        args["q"] = " ".join(args["terms"])  # für eBay-Zusammenfassung
+        args["q"] = " ".join(args["terms"])
         terms_trimmed = True
         current_app.logger.debug("Terms begrenzt auf %d aufgrund des Plans", max_terms)
         try:
-            flash(f"Hinweis: In deinem aktuellen Tarif werden nur die ersten {max_terms} Suchbegriffe berücksichtigt.", "info")
+            flash(
+                f"Hinweis: In deinem aktuellen Tarif werden nur die ersten {max_terms} Suchbegriffe berücksichtigt.",
+                "info",
+            )
         except Exception:
             pass
 
@@ -330,7 +407,6 @@ def search_page():
     args["source"] = source
     current_app.logger.debug("Parsed search args: %r", args)
 
-    # Prüfen, ob irgendein Suchbegriff vorhanden ist (q oder q1/q2/q3)
     has_search_term = bool(
         args["q"]
         or request.args.get("q1")
@@ -339,12 +415,15 @@ def search_page():
         or request.form.get("q")
     )
 
-    # 1. Nur Formular anzeigen (erste Aufrufe ohne Suchbegriff)
     if request.method == "GET" and not has_search_term:
         current_app.logger.debug("No search term detected - showing empty form")
-        return render_template("search.html", plan_info=plan_info, source=source, terms_trimmed=False)
+        return render_template(
+            "search.html",
+            plan_info=plan_info,
+            source=source,
+            terms_trimmed=False,
+        )
 
-    # 2. Kein Suchbegriff -> Hinweis & zurück
     if not args["q"]:
         current_app.logger.warning("Search submitted but no term found after parsing")
         flash("Bitte mindestens einen Suchbegriff angeben.", "warning")
@@ -354,111 +433,17 @@ def search_page():
 
     items: List[Dict[str, Any]] = []
 
-    # -------------------------------------------------------------------------
-    # 3. eBay-Suche – nur wenn eBay Teil der Auswahl ist
-    # -------------------------------------------------------------------------
     if source in ("ebay", "both", "all"):
         try:
             current_app.logger.debug("Calling eBay API...")
-            payload = ebay_search(
-                args["q"],
-                limit=int(args["per_page"] or 24),
-                sort=args["sort"],
-                category_ids=args["category_ids"],
-                filter_str=args["filter_str"],
-                country_code=args["location_country"],
-            )
-            items = _to_view_items(payload)
-            for it in items:
-                it["term"] = args["q"]
+            items = _search_ebay_terms(args)
             current_app.logger.info("eBay returned %d items", len(items))
         except Exception as e:
             current_app.logger.error("eBay-Suche fehlgeschlagen: %s", e, exc_info=True)
             flash(f"eBay-Suche fehlgeschlagen: {e}", "danger")
 
-    # -------------------------------------------------------------------------
-    # 4. Weitere Marktplätze (Kleinanzeigen + Quoka + Shpock + Markt.de)
-    # -------------------------------------------------------------------------
-    # Mapping von UI-"source" zu externen Marktplätzen (Quoka deaktiviert)
-    src = source
-    if src == "ebay":
-        active_sources: List[str] = []
-    elif src in ("kleinanzeigen", "shpock", "marktde"):
-        active_sources = [src]
-    elif src == "quoka":
-        active_sources = ["kleinanzeigen"]
-    elif src in ("both", "all"):
-        # "Alle Portale" -> eBay + alle weiteren Marktplätze (ohne Quoka)
-        active_sources = ["kleinanzeigen", "shpock", "marktde"]
-    else:
-        # Fallback: Kleinanzeigen als zusätzliche Quelle
-        active_sources = ["kleinanzeigen"]
-
     try:
-        price_min_f = float(args["price_min"]) if args["price_min"] else None
-        price_max_f = float(args["price_max"]) if args["price_max"] else None
-
-        if active_sources:
-            current_app.logger.debug(
-                "Calling merge_all_marketplaces with active_sources=%s",
-                active_sources,
-            )
-            merged_items = []
-            # Für Kleinanzeigen einzeln, andere wie gewohnt
-            if "kleinanzeigen" in active_sources:
-                for term in args["terms"]:
-                    res = merge_all_marketplaces(
-                        term=term,
-                        current_results=[],
-                        price_min=price_min_f,
-                        price_max=price_max_f,
-                        location=None,
-                        max_per_source=20,
-                        verbose=True,
-                        active_sources=["kleinanzeigen"],
-                    )
-                    merged_items.extend(res)
-                # Optional: Doppelte entfernen (z.B. über die URL oder eine eindeutige ID)
-                seen = set()
-                unique_items = []
-                for item in merged_items:
-                    key = item.get("url") or item.get("item_id")
-                    if key and key not in seen:
-                        seen.add(key)
-                        unique_items.append(item)
-                merged_items = unique_items
-                # Andere Marktplätze ggf. noch abfragen und dazugeben:
-                other_sources = [src for src in active_sources if src != "kleinanzeigen"]
-                if other_sources:
-                    other_items = merge_all_marketplaces(
-                        term=args["q"],
-                        current_results=[],
-                        price_min=price_min_f,
-                        price_max=price_max_f,
-                        location=None,
-                        max_per_source=20,
-                        verbose=True,
-                        active_sources=other_sources,
-                    )
-                    merged_items.extend(other_items)
-                items = merged_items
-            else:
-                # Kein Kleinanzeigen, normal verarbeiten
-                items = merge_all_marketplaces(
-                    term=args["q"],
-                    current_results=items,
-                    price_min=price_min_f,
-                    price_max=price_max_f,
-                    location=None,
-                    max_per_source=20,
-                    verbose=True,
-                    active_sources=active_sources,
-                )
-            current_app.logger.info("After merge: %d total items", len(items))
-        else:
-            current_app.logger.debug(
-                "No external marketplaces requested (source=%s)", src
-            )
+        items = _search_external_marketplaces(args, items)
     except Exception as e:
         current_app.logger.error(
             "Fehler beim Marketplace-Merge: %s",
@@ -466,7 +451,6 @@ def search_page():
             exc_info=True,
         )
 
-    # 🧠 Smart-Filter: Zubehör/Reparatur/Schrott raus, wenn aktiviert
     if args.get("only_main_product"):
         before = len(items)
         sf = SmartFilter()
@@ -478,7 +462,6 @@ def search_page():
             len(items),
         )
 
-    # Preise verfolgen
     for item in items:
         try:
             track_item_price(item)
@@ -487,9 +470,6 @@ def search_page():
 
     current_app.logger.debug("Total items after merge & filtering: %d", len(items))
 
-    # -------------------------------------------------------------------------
-    # 5. Template-Daten vorbereiten
-    # -------------------------------------------------------------------------
     terms = args["terms"]
     base_qs = {
         "q1": terms[0] if len(terms) > 0 else "",
@@ -521,7 +501,6 @@ def search_page():
         "only_main_product": args["only_main_product"],
     }
 
-    # (Pagination kannst du später richtig bauen)
     pagination = {
         "page": 1,
         "has_prev": False,
@@ -550,7 +529,6 @@ def search_page():
 # =============================================================================
 @bp_search.route("/export-csv", methods=["POST"])
 def export_csv():
-    """Exportiert aktuelle Suchergebnisse als CSV"""
     items = request.json.get("items", [])
 
     if not items:
@@ -561,17 +539,12 @@ def export_csv():
     response = make_response(csv_content)
     response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
-
     return response
 
 
 # =============================================================================
-# 2) LEGACY-ROUTE: /search-legacy -> nutzt jetzt dieselbe Logik
+# 2) LEGACY-ROUTE
 # =============================================================================
 @bp_search.route("/search-legacy", methods=["GET", "POST"])
 def search_legacy():
-    """
-    Alte Links /search-legacy verwenden jetzt exakt die gleiche Logik wie /search.
-    Dadurch ist es egal, ob irgendwo noch /search-legacy verlinkt ist.
-    """
     return search_page()
