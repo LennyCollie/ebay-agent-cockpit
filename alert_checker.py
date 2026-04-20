@@ -391,17 +391,13 @@ def send_email_alert(user_email: str, alert: Dict, new_items: List[Dict], source
 def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
     """
     Führt Kleinanzeigen-Suche für einen Alert aus.
-    Nutzt die HTML-Scraping-Funktion aus services/kleinanzeigen.py
-    und wandelt das Ergebnis in das Standard-Item-Format um.
+    Sucht pro Begriff getrennt und dedupliziert die Ergebnisse.
     """
     try:
         from services.kleinanzeigen import search_kleinanzeigen
     except Exception as e:
         print(f"      [!] Kleinanzeigen-Modul nicht importierbar: {e}")
         return []
-
-    # Suchbegriff & Preisgrenzen vorbereiten
-    query = " ".join(terms)
 
     def _parse_price(val):
         if val is None:
@@ -420,57 +416,64 @@ def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict
     price_min = _parse_price(filters.get("price_min"))
     price_max = _parse_price(filters.get("price_max"))
 
+    search_terms = [t.strip() for t in terms if t and t.strip()]
+    if not search_terms:
+        return []
+
+    all_items: List[Dict] = []
+    seen = set()
+    per_term_limit = max(1, 20 // max(1, len(search_terms)))
+
     try:
-        results = search_kleinanzeigen(
-            query=query,
-            price_min=price_min,
-            price_max=price_max,
-            limit=20,
-        )
+        for term in search_terms:
+            results = search_kleinanzeigen(
+                query=term,
+                price_min=price_min,
+                price_max=price_max,
+                limit=per_term_limit,
+            )
+
+            for raw in results:
+                item_id = raw.get("item_id") or raw.get("id") or raw.get("url")
+                if not item_id:
+                    continue
+
+                key = str(item_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                raw_price = raw.get("price")
+                if isinstance(raw_price, (int, float)):
+                    price_text = f"{float(raw_price):.2f} EUR"
+                elif isinstance(raw_price, str) and raw_price.strip():
+                    price_text = raw_price.strip()
+                else:
+                    price_text = "VB"
+
+                all_items.append(
+                    {
+                        "id": key,
+                        "title": raw.get("title") or "Ohne Titel",
+                        "price": price_text,
+                        "url": raw.get("url"),
+                        "img": raw.get("image_url"),
+                        "image_url": raw.get("image_url"),
+                        "location": raw.get("location"),
+                        "condition": raw.get("condition"),
+                        "src": "kleinanzeigen",
+                        "term": term,
+                    }
+                )
+
+        print(f"      [OK] Kleinanzeigen-Wrapper: {len(all_items)} Items zurückgegeben")
+        return all_items
+
     except Exception as e:
         print(f"      [!] Kleinanzeigen-Suche Fehler: {e}")
         import traceback
-
         traceback.print_exc()
         return []
-
-    items: List[Dict] = []
-
-    for raw in results:
-        # Robuste ID
-        item_id = (
-            raw.get("item_id")
-            or raw.get("id")
-            or raw.get("url")
-        )
-        if not item_id:
-            continue
-
-        # Preis hübsch formatieren
-        raw_price = raw.get("price")
-        if isinstance(raw_price, (int, float)):
-            price_text = f"{float(raw_price):.2f} EUR"
-        elif isinstance(raw_price, str) and raw_price.strip():
-            price_text = raw_price.strip()
-        else:
-            price_text = "VB"
-
-        items.append(
-            {
-                "id": str(item_id),
-                "title": raw.get("title") or "Ohne Titel",
-                "price": price_text,
-                "url": raw.get("url"),
-                "img": raw.get("image_url"),
-                "image_url": raw.get("image_url"),
-                "location": raw.get("location"),
-                "condition": raw.get("condition"),
-                "src": "kleinanzeigen",
-            }
-        )
-
-    print(f"      [OK] Kleinanzeigen-Wrapper: {len(items)} Items zurückgegeben")
-    return items
 
 
 # ---------------------------------------------------------------------------
@@ -479,22 +482,102 @@ def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict
 def search_ebay_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
     """
     Führt eBay-Suche für einen Alert aus.
-    Nutzt die bestehende _backend_search_ebay Funktion aus app.py.
+    Nutzt direkt services.ebay_api.ebay_search und sucht pro Begriff getrennt.
     """
     try:
-        from app import _backend_search_ebay
+        from services.ebay_api import ebay_search
+    except Exception as e:
+        print(f"      [!] eBay-Modul nicht importierbar: {e}")
+        return []
 
-        items, total = _backend_search_ebay(terms, filters, page=1, per_page=10)
-        return items
+    search_terms = [t.strip() for t in terms if t and t.strip()]
+    if not search_terms:
+        return []
+
+    def _build_filter_str(filters: Dict) -> str | None:
+        parts = []
+
+        price_min = filters.get("price_min")
+        price_max = filters.get("price_max")
+        if price_min or price_max:
+            lo = str(price_min).strip() if price_min not in (None, "") else "*"
+            hi = str(price_max).strip() if price_max not in (None, "") else "*"
+            parts.append(f"price:[{lo}..{hi}]")
+
+        conditions = filters.get("conditions") or []
+        if isinstance(conditions, str):
+            conditions = [c.strip().upper() for c in conditions.split(",") if c.strip()]
+        else:
+            conditions = [str(c).strip().upper() for c in conditions if str(c).strip()]
+
+        if conditions:
+            parts.append("conditions:{" + ",".join(conditions) + "}")
+
+        return ",".join(parts) if parts else None
+
+    filter_str = _build_filter_str(filters)
+    sort = filters.get("sort") or "bestMatch"
+    category_ids = filters.get("category_ids")
+    country_code = filters.get("location_country")
+
+    all_items: List[Dict] = []
+    seen = set()
+    per_term_limit = max(1, 10 // max(1, len(search_terms)))
+
+    try:
+        for term in search_terms:
+            payload = ebay_search(
+                term,
+                limit=per_term_limit,
+                sort=sort,
+                category_ids=category_ids,
+                filter_str=filter_str,
+                country_code=country_code,
+            )
+
+            for raw in (payload or {}).get("itemSummaries", []) or []:
+                item_id = (
+                    raw.get("itemId")
+                    or raw.get("legacyItemId")
+                    or raw.get("itemWebUrl")
+                    or raw.get("title")
+                )
+                if not item_id:
+                    continue
+
+                key = str(item_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                price_text = "–"
+                price_obj = raw.get("price") or {}
+                if price_obj.get("value") is not None and price_obj.get("currency"):
+                    price_text = f"{price_obj.get('value')} {price_obj.get('currency')}"
+
+                all_items.append(
+                    {
+                        "id": key,
+                        "title": raw.get("title") or "Ohne Titel",
+                        "price": price_text,
+                        "url": raw.get("itemWebUrl"),
+                        "img": (raw.get("image") or {}).get("imageUrl"),
+                        "image_url": (raw.get("image") or {}).get("imageUrl"),
+                        "condition": raw.get("condition"),
+                        "src": "ebay",
+                        "term": term,
+                    }
+                )
+
+        print(f"      [OK] eBay-Wrapper: {len(all_items)} Items zurückgegeben")
+        return all_items
+
     except Exception as e:
         print(f"      [!] eBay-Suche Fehler: {e}")
         import traceback
-
         traceback.print_exc()
         return []
 
-
-# ---------------------------------------------------------------------------
 # NEUE ITEMS DETEKTIEREN (mit Source-Unterstützung)
 # ---------------------------------------------------------------------------
 def find_new_items(
@@ -552,7 +635,6 @@ def find_new_items(
         pass
 
     return new_items
-
 
 # ---------------------------------------------------------------------------
 # TELEGRAM-NACHRICHT (mit Source-Badge)

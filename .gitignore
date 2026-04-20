@@ -36,3 +36,9 @@ node_modules/
 backups/
 dist/
 build/
+
+.continue/
+.env
+.env.*
+__pycache__/
+*.pyc
