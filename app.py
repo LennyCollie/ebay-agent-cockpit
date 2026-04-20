@@ -69,7 +69,10 @@ try:
     from routes.ml_analytics import ml_bp
 except ImportError:
     ml_bp = None
-from flasgger import Flasgger
+try:
+    from flasgger import Flasgger
+except ImportError:
+    Flasgger = None
 
 
 
@@ -208,7 +211,9 @@ for bp in [
 
 Base.metadata.create_all(bind=engine)
 
-swagger = Flasgger(app)
+swagger = None
+if Flasgger is not None:
+    swagger = Flasgger(app)
 
 app.config.from_object(Config)
 app.config["STRIPE_PRICE"] = STRIPE_PRICE
