@@ -199,7 +199,7 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
 
     stats["alerts_checked"] += 1
 
-    grace_seconds = 10
+    grace_seconds = 20
     if now - last_run < (check_interval_seconds - grace_seconds):
         time_left = (check_interval_seconds - grace_seconds) - (now - last_run)
         print(
