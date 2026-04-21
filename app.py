@@ -3012,7 +3012,7 @@ def admin_login_form():
     if session.get("is_admin"):
         return redirect("/admin/dashboard")
 
-    return """
+    return f"""
     <div style="max-width:400px;margin:50px auto;font-family:Arial">
         <h2>Admin Login</h2>
         <form method="post" action="/admin/login">
