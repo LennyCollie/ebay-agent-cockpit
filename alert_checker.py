@@ -1,7 +1,6 @@
-# alert_checker.py
 """
 Automatische Alert-Prüfung für eBay & Kleinanzeigen
-====================================================
+===================================================
 Prüft alle aktiven Search-Alerts und sendet Benachrichtigungen
 (Telegram / E-Mail) bei neuen Treffern.
 
@@ -9,9 +8,11 @@ Prüft alle aktiven Search-Alerts und sendet Benachrichtigungen
 - Pro Alert konfigurierbare Kanäle:
     - notify_telegram (0/1)
     - notify_email (0/1)
-- Nutzt die zentrale DB-Anbindung aus database.py (PostgreSQL/SQLite)
+- Nutzt die zentrale DB-Anbindung aus database.py
 - Nutzt Telegram-Bot (telegram_bot.py) und Mail-API (agent.py)
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -21,10 +22,10 @@ from typing import Dict, List
 
 from dotenv import load_dotenv
 
-from telegram_bot import send_new_item_alert
-from database import dict_cursor, get_placeholder, get_db
 from agent import get_mail_settings, send_mail
+from database import dict_cursor, get_db, get_placeholder
 from smart_filters import SmartFilter
+from telegram_bot import send_new_item_alert
 
 load_dotenv()
 
@@ -32,9 +33,9 @@ load_dotenv()
 # Konfiguration
 # ---------------------------------------------------------------------------
 ALERT_CHECK_INTERVAL = int(os.getenv("ALERT_CHECK_INTERVAL", "3"))  # Minuten
-PH = get_placeholder()
 ALERT_INTERVAL_FREE = int(os.getenv("ALERT_INTERVAL_FREE", "30"))
 ALERT_INTERVAL_PREMIUM = int(os.getenv("ALERT_INTERVAL_PREMIUM", "3"))
+PH = get_placeholder()
 
 
 # ---------------------------------------------------------------------------
@@ -43,13 +44,6 @@ ALERT_INTERVAL_PREMIUM = int(os.getenv("ALERT_INTERVAL_PREMIUM", "3"))
 def check_all_alerts(db_connection) -> Dict[str, int]:
     """
     Hauptfunktion: Prüft alle aktiven Alerts und sendet Benachrichtigungen.
-
-    - Quelle pro Alert über Spalte `source`:
-        - "ebay"
-        - "kleinanzeigen"
-    - Kanäle pro Alert:
-        - notify_telegram (0/1)
-        - notify_email (0/1)
     """
     print(f"\n{'=' * 70}")
     print(f"🔔 ALERT-CHECK GESTARTET: {datetime.now().strftime('%H:%M:%S')}")
@@ -58,15 +52,13 @@ def check_all_alerts(db_connection) -> Dict[str, int]:
     stats = {
         "alerts_checked": 0,
         "new_items_found": 0,
-        "notifications_sent": 0,   # Telegram + E-Mail zusammen
+        "notifications_sent": 0,
         "errors": 0,
         "ebay_alerts": 0,
         "kleinanzeigen_alerts": 0,
     }
 
     cur = dict_cursor(db_connection)
-
-    # Neue Spalten: source, notify_telegram, notify_email
     cur.execute(
         """
         SELECT
@@ -94,26 +86,25 @@ def check_all_alerts(db_connection) -> Dict[str, int]:
         try:
             process_single_alert(alert_row, cur, db_connection, stats)
         except Exception as e:
+            aid = "?"
             try:
-                aid = alert_row["id"] if isinstance(alert_row, dict) else alert_row[0]
+                aid = dict(alert_row).get("id", "?")
             except Exception:
-                aid = "?"
+                pass
             print(f"[!] Fehler bei Alert {aid}: {e}")
             stats["errors"] += 1
             import traceback
-
             traceback.print_exc()
 
     try:
         db_connection.commit()
     except Exception:
-        # bei Postgres kann die Connection ggf. schon weg sein
         pass
 
     print(f"\n{'=' * 70}")
-    print(f"[OK] ALERT-CHECK ABGESCHLOSSEN")
+    print("[OK] ALERT-CHECK ABGESCHLOSSEN")
     print(f"{'=' * 70}")
-    print(f"[*] Statistik:")
+    print("[*] Statistik:")
     print(f"   - Alerts geprüft: {stats['alerts_checked']}")
     print(f"   - eBay Alerts: {stats['ebay_alerts']}")
     print(f"   - Kleinanzeigen Alerts: {stats['kleinanzeigen_alerts']}")
@@ -128,8 +119,8 @@ def check_all_alerts(db_connection) -> Dict[str, int]:
 # ---------------------------------------------------------------------------
 # EINZELNER ALERT
 # ---------------------------------------------------------------------------
-def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
-    """Verarbeitet einen einzelnen Alert (eBay ODER Kleinanzeigen)"""
+def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -> None:
+    """Verarbeitet einen einzelnen Alert."""
 
     alert = dict(alert_row)
     alert_id = alert["id"]
@@ -147,21 +138,16 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
 
     last_run = int(alert.get("last_run_ts") or 0)
 
-    # Quelle: ebay / kleinanzeigen
     source = (alert.get("source") or "ebay").strip().lower()
     if source not in ("ebay", "kleinanzeigen"):
         source = "ebay"
 
-    # Benachrichtigungs-Kanäle aus der DB (0/1 -> bool)
     notify_telegram = bool(alert.get("notify_telegram", 1))
     notify_email = bool(alert.get("notify_email", 0))
 
     agent_name = f"Alert #{alert_id} ({source.upper()})"
     now = int(time.time())
 
-    # ------------------------------------------------------------
-    # User-Daten laden (inkl. Plan & Premium-Flag)
-    # ------------------------------------------------------------
     cursor.execute(
         f"""
         SELECT
@@ -178,7 +164,7 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
     user_row = cursor.fetchone()
 
     if not user_row:
-        print("   [!]  User nicht in DB gefunden")
+        print("   [!] User nicht in DB gefunden")
         update_alert_timestamp(alert_id, now, cursor)
         return
 
@@ -187,32 +173,21 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
     telegram_chat_id = user_row.get("telegram_chat_id")
     telegram_enabled = bool(user_row.get("telegram_enabled"))
     telegram_verified = bool(user_row.get("telegram_verified"))
-
-    # Plan & Premium sauber initialisieren
     plan_type = (user_row.get("plan_type") or "").strip().lower()
     is_premium = bool(user_row.get("is_premium"))
 
-    # ------------------------------------------------------------
-    # Plan-Logik: welche Kanäle sind erlaubt?
-    # ------------------------------------------------------------
+    # FREE-Plan: Telegram deaktivieren
     if not (plan_type in ("pro", "premium") or is_premium):
-        # FREE-Plan: Telegram abschalten
         if notify_telegram:
-            print("   ℹ️  Telegram ist im FREE-Plan nicht erlaubt – deaktiviere für diesen Alert.")
+            print("   ℹ️ Telegram ist im FREE-Plan nicht erlaubt – deaktiviere für diesen Alert.")
         notify_telegram = False
-        # notify_email lassen wir an – das ist dein „Freemium“-Channel
 
-    # ------------------------------------------------------------
-    # Intervall je nach Plan bestimmen
-    # ------------------------------------------------------------
-    if plan_type in ("pro", "premium") or is_premium:
-        alert_interval_min = ALERT_INTERVAL_PREMIUM
-    else:
-        alert_interval_min = ALERT_INTERVAL_FREE
-
+    alert_interval_min = (
+        ALERT_INTERVAL_PREMIUM if (plan_type in ("pro", "premium") or is_premium)
+        else ALERT_INTERVAL_FREE
+    )
     check_interval_seconds = alert_interval_min * 60
 
-    # Debug-Ausgabe
     print(f"[*] Alert {alert_id} ({agent_name})")
     print(f"   User: {user_email}")
     print(f"   Suchbegriffe: {terms}")
@@ -222,11 +197,9 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
         f"Intervall={alert_interval_min} Min"
     )
     print(f"   Kanäle: Telegram={notify_telegram}, E-Mail={notify_email}")
+
     stats["alerts_checked"] += 1
 
-    # ------------------------------------------------------------
-    # Rate-Limiting basierend auf Plan (Free vs. Premium/Pro)
-    # ------------------------------------------------------------
     if now - last_run < check_interval_seconds:
         time_left = check_interval_seconds - (now - last_run)
         print(
@@ -235,21 +208,13 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
         )
         return
 
-    # ------------------------------------------------------------
-    # Telegram-Status hart prüfen, falls der Alert Telegram nutzen will
-    # ------------------------------------------------------------
     if notify_telegram and not (telegram_chat_id and telegram_enabled and telegram_verified):
-        print("   ℹ️  Telegram nicht aktiviert/verifiziert – Telegram wird für diesen Alert deaktiviert")
+        print("   ℹ️ Telegram nicht aktiviert/verifiziert – Telegram wird für diesen Alert deaktiviert")
         notify_telegram = False
 
-    # Wenn weder Telegram noch Mail aktiv sind, trotzdem suchen (damit Items ggf. als gesehen markiert werden),
-    # aber nichts verschicken.
     if not notify_telegram and not notify_email:
-        print("   ℹ️  Keine Benachrichtigungskanäle aktiv – es wird nichts gesendet.")
+        print("   ℹ️ Keine Benachrichtigungskanäle aktiv – es wird nichts gesendet.")
 
-    # -----------------------------------------------------------------------
-    # SUCHE AUSFÜHREN (abhängig von Source)
-    # -----------------------------------------------------------------------
     print(f"   🔎 Führe {source.upper()}-Suche durch...")
 
     try:
@@ -260,7 +225,6 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
             items = search_ebay_for_alert(terms, filters)
             stats["ebay_alerts"] += 1
 
-        # 🧠 Smart-Filter: Zubehör/Reparatur/Schrott raus, wenn aktiviert
         if filters.get("only_main_product") or filters.get("smart_filter"):
             before = len(items)
             sf = SmartFilter()
@@ -276,9 +240,6 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
         update_alert_timestamp(alert_id, now, cursor)
         return
 
-    # -----------------------------------------------------------------------
-    # NEUE ITEMS FINDEN
-    # -----------------------------------------------------------------------
     new_items = find_new_items(items, alert_id, user_email, source, cursor, connection)
 
     if not new_items:
@@ -290,9 +251,6 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
     print(f"   🎯 {len(new_items)} NEUE Item(s)!")
     stats["new_items_found"] += len(new_items)
 
-    # -----------------------------------------------------------------------
-    # TELEGRAM-BENACHRICHTIGUNGEN
-    # -----------------------------------------------------------------------
     if notify_telegram:
         for item in new_items[:5]:
             success = send_telegram_alert(
@@ -307,32 +265,124 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict) -> None:
             time.sleep(1)
 
         if len(new_items) > 5:
-            print(f"   ℹ️  {len(new_items) - 5} weitere Items nicht per Telegram gesendet (Spam-Schutz)")
+            print(f"   ℹ️ {len(new_items) - 5} weitere Items nicht per Telegram gesendet (Spam-Schutz)")
 
-    # -----------------------------------------------------------------------
-    # E-MAIL-BENACHRICHTIGUNG (einmal pro Alert-Lauf)
-    # -----------------------------------------------------------------------
     if notify_email:
         email_ok = send_email_alert(user_email, alert, new_items, source)
         if email_ok:
             stats["notifications_sent"] += 1
         else:
-            print("   [!]  E-Mail-Versand für diesen Alert fehlgeschlagen")
+            print("   [!] E-Mail-Versand für diesen Alert fehlgeschlagen")
 
     update_alert_timestamp(alert_id, now, cursor)
     print()
 
 
 # ---------------------------------------------------------------------------
-# E-MAIL-BENACHRICHTIGUNG
+# SUCHE
+# ---------------------------------------------------------------------------
+def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
+    """
+    Führt Kleinanzeigen-Suche für einen Alert aus.
+    Nutzt den unabhängigen Service aus services/kleinanzeigen_backend.py.
+    """
+    try:
+        from services.kleinanzeigen_backend import backend_search_kleinanzeigen
+
+        items = backend_search_kleinanzeigen(terms, filters, per_page=20)
+        print(f"      [OK] Kleinanzeigen-Wrapper: {len(items)} Items zurückgegeben")
+        return items
+    except Exception as e:
+        print(f"      [!] Kleinanzeigen-Suche Fehler: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+def search_ebay_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
+    """
+    Führt eBay-Suche für einen Alert aus.
+    Nutzt den unabhängigen Service aus services/ebay_backend.py.
+    """
+    try:
+        from services.ebay_backend import backend_search_ebay
+
+        items, _total = backend_search_ebay(terms, filters, page=1, per_page=10)
+        print(f"      [OK] eBay-Wrapper: {len(items)} Items zurückgegeben")
+        return items
+    except Exception as e:
+        print(f"      [!] eBay-Suche Fehler: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+# ---------------------------------------------------------------------------
+# NEUE ITEMS DETEKTIEREN
+# ---------------------------------------------------------------------------
+def find_new_items(
+    items: List[Dict],
+    alert_id: int,
+    user_email: str,
+    source: str,
+    cursor,
+    connection,
+) -> List[Dict]:
+    """
+    Filtert neue Items heraus und markiert sie in alert_seen.
+    """
+    new_items: List[Dict] = []
+    now = int(time.time())
+
+    for item in items:
+        item_id = str(item.get("id") or item.get("url", "") or item.get("title", ""))[:200]
+        if not item_id:
+            continue
+
+        cursor.execute(
+            f"""
+            SELECT item_id
+            FROM alert_seen
+            WHERE user_email = {PH}
+              AND search_hash = {PH}
+              AND src = {PH}
+              AND item_id = {PH}
+            """,
+            (user_email, str(alert_id), source, item_id),
+        )
+
+        if cursor.fetchone():
+            continue
+
+        new_items.append(item)
+
+        cursor.execute(
+            f"""
+            INSERT INTO alert_seen
+                (user_email, search_hash, src, item_id, first_seen, last_sent)
+            VALUES
+                ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+            """,
+            (user_email, str(alert_id), source, item_id, now, now),
+        )
+
+    try:
+        connection.commit()
+    except Exception:
+        pass
+
+    return new_items
+
+
+# ---------------------------------------------------------------------------
+# E-MAIL
 # ---------------------------------------------------------------------------
 def send_email_alert(user_email: str, alert: Dict, new_items: List[Dict], source: str) -> bool:
     """
-    Baut eine HTML-Mail mit den neuen Items und verschickt sie über Postmark/SMTP,
-    basierend auf agent.get_mail_settings / agent.send_mail.
+    Baut eine HTML-Mail mit den neuen Items und verschickt sie.
     """
     if not user_email or "@" not in user_email:
-        print("   [!]  Ungültige E-Mail-Adresse, überspringe E-Mail-Versand.")
+        print("   [!] Ungültige E-Mail-Adresse, überspringe E-Mail-Versand.")
         return False
 
     try:
@@ -350,7 +400,7 @@ def send_email_alert(user_email: str, alert: Dict, new_items: List[Dict], source
         "<ul>",
     ]
 
-    for item in new_items[:30]:  # Sicherheitslimit
+    for item in new_items[:30]:
         title = item.get("title") or "Ohne Titel"
         price = str(item.get("price") or item.get("price_text") or "")
         url = item.get("url") or item.get("item_url") or "#"
@@ -380,288 +430,22 @@ def send_email_alert(user_email: str, alert: Dict, new_items: List[Dict], source
     except Exception as e:
         print(f"   [!] Exception beim E-Mail-Versand: {e}")
         import traceback
-
         traceback.print_exc()
         return False
 
 
 # ---------------------------------------------------------------------------
-# Kleinanzeigen-SUCHE für Alerts (Wrapper um services.kleinanzeigen)
-# ---------------------------------------------------------------------------
-def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
-    """
-    Führt Kleinanzeigen-Suche für einen Alert aus.
-    Nutzt den unabhängigen Service aus services/kleinanzeigen_backend.py.
-    """
-    try:
-        from services.kleinanzeigen_backend import backend_search_kleinanzeigen
-
-        items = backend_search_kleinanzeigen(terms, filters, per_page=20)
-        print(f"      [OK] Kleinanzeigen-Wrapper: {len(items)} Items zurückgegeben")
-        return items
-    except Exception as e:
-        print(f"      [!] Kleinanzeigen-Suche Fehler: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-    def _parse_price(val):
-        if val is None:
-            return None
-        if isinstance(val, (int, float)):
-            return float(val)
-        s = str(val).strip()
-        if not s:
-            return None
-        s = s.replace("€", "").replace(".", "").replace(",", ".")
-        try:
-            return float(s)
-        except Exception:
-            return None
-
-    price_min = _parse_price(filters.get("price_min"))
-    price_max = _parse_price(filters.get("price_max"))
-
-    search_terms = [t.strip() for t in terms if t and t.strip()]
-    if not search_terms:
-        return []
-
-    all_items: List[Dict] = []
-    seen = set()
-    per_term_limit = max(1, 20 // max(1, len(search_terms)))
-
-    try:
-        for term in search_terms:
-            results = search_kleinanzeigen(
-                query=term,
-                price_min=price_min,
-                price_max=price_max,
-                limit=per_term_limit,
-            )
-
-            for raw in results:
-                item_id = raw.get("item_id") or raw.get("id") or raw.get("url")
-                if not item_id:
-                    continue
-
-                key = str(item_id)
-                if key in seen:
-                    continue
-                seen.add(key)
-
-                raw_price = raw.get("price")
-                if isinstance(raw_price, (int, float)):
-                    price_text = f"{float(raw_price):.2f} EUR"
-                elif isinstance(raw_price, str) and raw_price.strip():
-                    price_text = raw_price.strip()
-                else:
-                    price_text = "VB"
-
-                all_items.append(
-                    {
-                        "id": key,
-                        "title": raw.get("title") or "Ohne Titel",
-                        "price": price_text,
-                        "url": raw.get("url"),
-                        "img": raw.get("image_url"),
-                        "image_url": raw.get("image_url"),
-                        "location": raw.get("location"),
-                        "condition": raw.get("condition"),
-                        "src": "kleinanzeigen",
-                        "term": term,
-                    }
-                )
-
-        print(f"      [OK] Kleinanzeigen-Wrapper: {len(all_items)} Items zurückgegeben")
-        return all_items
-
-    except Exception as e:
-        print(f"      [!] Kleinanzeigen-Suche Fehler: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-
-# ---------------------------------------------------------------------------
-# eBay-SUCHE für Alerts (ruft dein Backend auf)
-# ---------------------------------------------------------------------------
-def search_ebay_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
-    """
-    Führt eBay-Suche für einen Alert aus.
-    Nutzt den unabhängigen Service aus services/ebay_backend.py.
-    """
-    try:
-        from services.ebay_backend import backend_search_ebay
-
-        items, _total = backend_search_ebay(terms, filters, page=1, per_page=10)
-        print(f"      [OK] eBay-Wrapper: {len(items)} Items zurückgegeben")
-        return items
-    except Exception as e:
-        print(f"      [!] eBay-Suche Fehler: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-    search_terms = [t.strip() for t in terms if t and t.strip()]
-    if not search_terms:
-        return []
-
-    def _build_filter_str(filters: Dict) -> str | None:
-        parts = []
-
-        price_min = filters.get("price_min")
-        price_max = filters.get("price_max")
-        if price_min or price_max:
-            lo = str(price_min).strip() if price_min not in (None, "") else "*"
-            hi = str(price_max).strip() if price_max not in (None, "") else "*"
-            parts.append(f"price:[{lo}..{hi}]")
-
-        conditions = filters.get("conditions") or []
-        if isinstance(conditions, str):
-            conditions = [c.strip().upper() for c in conditions.split(",") if c.strip()]
-        else:
-            conditions = [str(c).strip().upper() for c in conditions if str(c).strip()]
-
-        if conditions:
-            parts.append("conditions:{" + ",".join(conditions) + "}")
-
-        return ",".join(parts) if parts else None
-
-    filter_str = _build_filter_str(filters)
-    sort = filters.get("sort") or "bestMatch"
-    category_ids = filters.get("category_ids")
-    country_code = filters.get("location_country")
-
-    all_items: List[Dict] = []
-    seen = set()
-    per_term_limit = max(1, 10 // max(1, len(search_terms)))
-
-    try:
-        for term in search_terms:
-            payload = ebay_search(
-                term,
-                limit=per_term_limit,
-                sort=sort,
-                category_ids=category_ids,
-                filter_str=filter_str,
-                country_code=country_code,
-            )
-
-            for raw in (payload or {}).get("itemSummaries", []) or []:
-                item_id = (
-                    raw.get("itemId")
-                    or raw.get("legacyItemId")
-                    or raw.get("itemWebUrl")
-                    or raw.get("title")
-                )
-                if not item_id:
-                    continue
-
-                key = str(item_id)
-                if key in seen:
-                    continue
-                seen.add(key)
-
-                price_text = "–"
-                price_obj = raw.get("price") or {}
-                if price_obj.get("value") is not None and price_obj.get("currency"):
-                    price_text = f"{price_obj.get('value')} {price_obj.get('currency')}"
-
-                all_items.append(
-                    {
-                        "id": key,
-                        "title": raw.get("title") or "Ohne Titel",
-                        "price": price_text,
-                        "url": raw.get("itemWebUrl"),
-                        "img": (raw.get("image") or {}).get("imageUrl"),
-                        "image_url": (raw.get("image") or {}).get("imageUrl"),
-                        "condition": raw.get("condition"),
-                        "src": "ebay",
-                        "term": term,
-                    }
-                )
-
-        print(f"      [OK] eBay-Wrapper: {len(all_items)} Items zurückgegeben")
-        return all_items
-
-    except Exception as e:
-        print(f"      [!] eBay-Suche Fehler: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-# NEUE ITEMS DETEKTIEREN (mit Source-Unterstützung)
-# ---------------------------------------------------------------------------
-def find_new_items(
-    items: List[Dict],
-    alert_id: int,
-    user_email: str,
-    source: str,
-    cursor,
-    connection,
-) -> List[Dict]:
-    """
-    Filtert neue Items heraus (eBay ODER Kleinanzeigen).
-    Markiert gesehene Items in alert_seen mit richtigem `src`.
-    """
-    new_items: List[Dict] = []
-    now = int(time.time())
-
-    for item in items:
-        item_id = str(item.get("id") or item.get("url", "") or item.get("title", ""))[:200]
-        if not item_id:
-            continue
-
-        # Prüfen, ob schon gesehen (für diesen Alert & Source)
-        cursor.execute(
-            f"""
-            SELECT item_id
-            FROM alert_seen
-            WHERE user_email = {PH}
-              AND search_hash = {PH}
-              AND src = {PH}
-              AND item_id = {PH}
-            """,
-            (user_email, str(alert_id), source, item_id),
-        )
-
-        if cursor.fetchone():
-            continue
-
-        # Neues Item -> merken & in DB eintragen
-        new_items.append(item)
-
-        cursor.execute(
-            f"""
-            INSERT INTO alert_seen
-                (user_email, search_hash, src, item_id, first_seen, last_sent)
-            VALUES
-                ({PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-            """,
-            (user_email, str(alert_id), source, item_id, now, now),
-        )
-
-    try:
-        connection.commit()
-    except Exception:
-        pass
-
-    return new_items
-
-# ---------------------------------------------------------------------------
-# TELEGRAM-NACHRICHT (mit Source-Badge)
+# TELEGRAM
 # ---------------------------------------------------------------------------
 def send_telegram_alert(
     chat_id: str,
     item: Dict,
     agent_name: str,
     source: str = "ebay",
-    alert_id: int = None,
+    alert_id: int | None = None,
 ) -> bool:
     """
     Sendet Telegram-Benachrichtigung.
-    Zeigt Badge für Source (eBay = 🔵, Kleinanzeigen = 🟢).
-    Inline-Buttons ermöglichen Pause/Delete direkt im Chat.
     """
     try:
         badge = "🟢" if source == "kleinanzeigen" else "🔵"
@@ -681,7 +465,7 @@ def send_telegram_alert(
         if formatted_item["image_url"]:
             print(f"      🖼️  Bild-URL: {formatted_item['image_url'][:60]}...")
         else:
-            print("      ℹ️  Kein Bild verfügbar")
+            print("      ℹ️ Kein Bild verfügbar")
 
         success = send_new_item_alert(
             chat_id=chat_id,
@@ -694,23 +478,22 @@ def send_telegram_alert(
         if success:
             print("      [OK] Telegram-Nachricht gesendet")
         else:
-            print("      [!]  Telegram-Nachricht fehlgeschlagen")
+            print("      [!] Telegram-Nachricht fehlgeschlagen")
 
         return success
 
     except Exception as e:
         print(f"      [!] Fehler beim Senden: {e}")
         import traceback
-
         traceback.print_exc()
         return False
 
 
 # ---------------------------------------------------------------------------
-# last_run_ts aktualisieren
+# TIMESTAMP / LOGGING
 # ---------------------------------------------------------------------------
 def update_alert_timestamp(alert_id: int, timestamp: int, cursor) -> None:
-    """Aktualisiert den last_run_ts eines Alerts"""
+    """Aktualisiert den last_run_ts eines Alerts."""
     cursor.execute(
         f"""
         UPDATE search_alerts
@@ -721,13 +504,9 @@ def update_alert_timestamp(alert_id: int, timestamp: int, cursor) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Cron-Lauf in alert_runs protokollieren
-# ---------------------------------------------------------------------------
 def _log_alert_run(start_ts: int, end_ts: int, success: bool, stats: Dict | None) -> None:
     """
     Schreibt einen Eintrag in die Tabelle alert_runs.
-    Läuft bewusst 'best effort' – Fehler beim Loggen sollen den Cron nicht killen.
     """
     stats = stats or {}
     conn = None
@@ -768,7 +547,7 @@ def _log_alert_run(start_ts: int, end_ts: int, success: bool, stats: Dict | None
         conn.commit()
         print("   📝 Cron-Lauf in alert_runs protokolliert.")
     except Exception as e:
-        print(f"   [!]  Konnte alert_runs nicht loggen: {e}")
+        print(f"   [!] Konnte alert_runs nicht loggen: {e}")
     finally:
         if conn is not None:
             try:
@@ -778,17 +557,14 @@ def _log_alert_run(start_ts: int, end_ts: int, success: bool, stats: Dict | None
 
 
 # ---------------------------------------------------------------------------
-# Entry-Point für Cron / HTTP-Trigger
+# ENTRYPOINT
 # ---------------------------------------------------------------------------
 def run_alert_check():
     """
     Entry-Point für Cron-Job.
-    Prüft ALLE Alerts (eBay + Kleinanzeigen) und loggt den Lauf in alert_runs.
-    Zusätzlich: Importiert E-Mail-Alerts (mobile.de / autoscout24).
     """
     start_ts = int(time.time())
 
-    # 1. E-Mail-Alerts importieren (mobile.de / autoscout24)
     try:
         from services.email_alert_importer import check_and_import_email_alerts
         print("🔎 Prüfe auf neue E-Mail-Alerts (mobile.de / autoscout24)...")
@@ -796,7 +572,6 @@ def run_alert_check():
     except Exception as e:
         print(f"[!] Fehler beim E-Mail-Import: {e}")
 
-    # 2. Reguläre Alert-Prüfung (eBay / Kleinanzeigen)
     try:
         conn = get_db()
         stats = check_all_alerts(conn)
@@ -813,7 +588,6 @@ def run_alert_check():
 
     except Exception as e:
         end_ts = int(time.time())
-        # Beim Fehler haben wir evtl. keine Stats – dann alles 0, aber success=0
         _log_alert_run(start_ts, end_ts, False, None)
 
         print(f"\n[!] KRITISCHER FEHLER im Alert-Check: {e}")
@@ -828,7 +602,7 @@ def run_alert_check():
 
 
 # ---------------------------------------------------------------------------
-# DIREKTSTART (lokaler Test)
+# DIREKTSTART
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print("🔔 Alert-Checker Direktstart (eBay + Kleinanzeigen)\n")
