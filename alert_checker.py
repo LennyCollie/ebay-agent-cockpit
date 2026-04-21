@@ -482,12 +482,18 @@ def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict
 def search_ebay_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
     """
     Führt eBay-Suche für einen Alert aus.
-    Nutzt direkt services.ebay_api.ebay_search und sucht pro Begriff getrennt.
+    Nutzt den unabhängigen Service aus services/ebay_backend.py.
     """
     try:
-        from services.ebay_api import ebay_search
+        from services.ebay_backend import backend_search_ebay
+
+        items, _total = backend_search_ebay(terms, filters, page=1, per_page=10)
+        print(f"      [OK] eBay-Wrapper: {len(items)} Items zurückgegeben")
+        return items
     except Exception as e:
-        print(f"      [!] eBay-Modul nicht importierbar: {e}")
+        print(f"      [!] eBay-Suche Fehler: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
     search_terms = [t.strip() for t in terms if t and t.strip()]
