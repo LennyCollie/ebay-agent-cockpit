@@ -176,7 +176,6 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
     plan_type = (user_row.get("plan_type") or "").strip().lower()
     is_premium = bool(user_row.get("is_premium"))
 
-    # FREE-Plan: Telegram deaktivieren
     if not (plan_type in ("pro", "premium") or is_premium):
         if notify_telegram:
             print("   ℹ️ Telegram ist im FREE-Plan nicht erlaubt – deaktiviere für diesen Alert.")
@@ -200,8 +199,9 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
 
     stats["alerts_checked"] += 1
 
-    if now - last_run < check_interval_seconds:
-        time_left = check_interval_seconds - (now - last_run)
+    grace_seconds = 10
+    if now - last_run < (check_interval_seconds - grace_seconds):
+        time_left = (check_interval_seconds - grace_seconds) - (now - last_run)
         print(
             f"⏭️  Alert {alert_id} ({agent_name}): Übersprungen "
             f"(noch {time_left}s, Intervall={alert_interval_min} Min, Plan='{plan_type or 'free'}')"
@@ -277,7 +277,6 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
     update_alert_timestamp(alert_id, now, cursor)
     print()
 
-
 # ---------------------------------------------------------------------------
 # SUCHE
 # ---------------------------------------------------------------------------
@@ -334,14 +333,19 @@ def find_new_items(
     new_items: List[Dict] = []
     now = int(time.time())
 
+    print(f"      [DEBUG] Prüfe {len(items)} Items auf Neuheit für Alert {alert_id} ({source})")
+
     for item in items:
         item_id = str(item.get("id") or item.get("url", "") or item.get("title", ""))[:200]
+        title = str(item.get("title") or "Ohne Titel")[:80]
+
         if not item_id:
+            print(f"      [DEBUG] Überspringe Item ohne ID: {title}")
             continue
 
         cursor.execute(
             f"""
-            SELECT item_id
+            SELECT item_id, first_seen, last_sent
             FROM alert_seen
             WHERE user_email = {PH}
               AND search_hash = {PH}
@@ -351,9 +355,17 @@ def find_new_items(
             (user_email, str(alert_id), source, item_id),
         )
 
-        if cursor.fetchone():
+        row = cursor.fetchone()
+
+        if row:
+            row = dict(row)
+            print(
+                f"      [DEBUG] Bereits bekannt: {title} | item_id={item_id} | "
+                f"first_seen={row.get('first_seen')} | last_sent={row.get('last_sent')}"
+            )
             continue
 
+        print(f"      [DEBUG] NEU erkannt: {title} | item_id={item_id}")
         new_items.append(item)
 
         cursor.execute(
@@ -371,6 +383,7 @@ def find_new_items(
     except Exception:
         pass
 
+    print(f"      [DEBUG] Neu erkannt insgesamt: {len(new_items)}")
     return new_items
 
 
