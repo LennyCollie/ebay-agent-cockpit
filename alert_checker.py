@@ -391,12 +391,18 @@ def send_email_alert(user_email: str, alert: Dict, new_items: List[Dict], source
 def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
     """
     Führt Kleinanzeigen-Suche für einen Alert aus.
-    Sucht pro Begriff getrennt und dedupliziert die Ergebnisse.
+    Nutzt den unabhängigen Service aus services/kleinanzeigen_backend.py.
     """
     try:
-        from services.kleinanzeigen import search_kleinanzeigen
+        from services.kleinanzeigen_backend import backend_search_kleinanzeigen
+
+        items = backend_search_kleinanzeigen(terms, filters, per_page=20)
+        print(f"      [OK] Kleinanzeigen-Wrapper: {len(items)} Items zurückgegeben")
+        return items
     except Exception as e:
-        print(f"      [!] Kleinanzeigen-Modul nicht importierbar: {e}")
+        print(f"      [!] Kleinanzeigen-Suche Fehler: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
     def _parse_price(val):
