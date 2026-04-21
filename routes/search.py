@@ -16,12 +16,12 @@ from flask import (
 from flask_login import current_user
 
 from alert_checker import ALERT_INTERVAL_FREE, ALERT_INTERVAL_PREMIUM
-from services.ebay_api import ebay_search
 from services.price_tracker import track_item_price
 from services.kleinanzeigen import search_kleinanzeigen
-from services.search_integration import merge_all_marketplaces
 from services.csv_exporter import export_search_results_to_csv
 from smart_filters import SmartFilter
+from services.ebay_backend import backend_search_ebay
+from services.kleinanzeigen_backend import backend_search_kleinanzeigen
 
 bp_search = Blueprint("search", __name__)
 
@@ -262,116 +262,8 @@ def filter_main_products(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # SEARCH HELPERS
 # =============================================================================
 
-def _search_ebay_terms(args: Dict[str, Any]) -> List[Dict[str, Any]]:
-    search_terms = args["terms"] if args["terms"] else [args["q"]]
-    if not search_terms:
-        return []
-
-    per_page = int(args["per_page"] or 20)
-    per_term_limit = max(1, per_page // max(1, len(search_terms)))
-
-    ebay_items: List[Dict[str, Any]] = []
-    seen = set()
-
-    for term in search_terms:
-        payload = ebay_search(
-            term,
-            limit=per_term_limit,
-            sort=args["sort"],
-            category_ids=args["category_ids"],
-            filter_str=args["filter_str"],
-            country_code=args["location_country"],
-        )
-        part_items = _to_view_items(payload, term=term)
-        for item in part_items:
-            key = item.get("url") or item.get("title")
-            if key and key not in seen:
-                seen.add(key)
-                ebay_items.append(item)
-
-    return ebay_items[:per_page]
 
 
-def _search_external_marketplaces(args: Dict[str, Any], current_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    source = (args.get("source") or "both").strip().lower()
-
-    if source == "ebay":
-        return current_items
-
-    if source in ("kleinanzeigen", "shpock", "marktde"):
-        active_sources = [source]
-    elif source == "quoka":
-        active_sources = ["kleinanzeigen"]
-    elif source in ("both", "all"):
-        active_sources = ["kleinanzeigen", "shpock", "marktde"]
-    else:
-        active_sources = ["kleinanzeigen"]
-
-    try:
-        price_min_f = float(args["price_min"]) if args["price_min"] else None
-        price_max_f = float(args["price_max"]) if args["price_max"] else None
-    except Exception:
-        price_min_f = None
-        price_max_f = None
-
-    if not active_sources:
-        return current_items
-
-    current_app.logger.debug(
-        "Calling merge_all_marketplaces with active_sources=%s",
-        active_sources,
-    )
-
-    merged_items: List[Dict[str, Any]] = []
-    terms = args["terms"] if args["terms"] else [args["q"]]
-
-    if "kleinanzeigen" in active_sources:
-        for term in terms:
-            res = merge_all_marketplaces(
-                term=term,
-                current_results=[],
-                price_min=price_min_f,
-                price_max=price_max_f,
-                location=None,
-                max_per_source=20,
-                verbose=True,
-                active_sources=["kleinanzeigen"],
-            )
-            merged_items.extend(res)
-
-        merged_items = _dedupe_items(merged_items)
-
-        other_sources = [src for src in active_sources if src != "kleinanzeigen"]
-        if other_sources:
-            other_items = merge_all_marketplaces(
-                term=args["q"],
-                current_results=[],
-                price_min=price_min_f,
-                price_max=price_max_f,
-                location=None,
-                max_per_source=20,
-                verbose=True,
-                active_sources=other_sources,
-            )
-            merged_items.extend(other_items)
-    else:
-        merged_items = merge_all_marketplaces(
-            term=args["q"],
-            current_results=[],
-            price_min=price_min_f,
-            price_max=price_max_f,
-            location=None,
-            max_per_source=20,
-            verbose=True,
-            active_sources=active_sources,
-        )
-
-    all_items = list(current_items)
-    all_items.extend(merged_items)
-    all_items = _dedupe_items(all_items)
-
-    current_app.logger.info("After merge: %d total items", len(all_items))
-    return all_items
 
 
 # =============================================================================
@@ -433,24 +325,53 @@ def search_page():
 
     items: List[Dict[str, Any]] = []
 
+    # -------------------------------------------------------------------------
+    # 1. eBay
+    # -------------------------------------------------------------------------
     if source in ("ebay", "both", "all"):
         try:
-            current_app.logger.debug("Calling eBay API...")
-            items = _search_ebay_terms(args)
-            current_app.logger.info("eBay returned %d items", len(items))
+            current_app.logger.debug("Calling NEW eBay backend...")
+
+            ebay_items, _ = backend_search_ebay(
+                terms=args["terms"],
+                filters=args,
+                page=1,
+                per_page=int(args["per_page"] or 20),
+            )
+
+            items.extend(ebay_items)
+            current_app.logger.info("eBay returned %d items", len(ebay_items))
+
         except Exception as e:
             current_app.logger.error("eBay-Suche fehlgeschlagen: %s", e, exc_info=True)
-            flash(f"eBay-Suche fehlgeschlagen: {e}", "danger")
 
-    try:
-        items = _search_external_marketplaces(args, items)
-    except Exception as e:
-        current_app.logger.error(
-            "Fehler beim Marketplace-Merge: %s",
-            e,
-            exc_info=True,
-        )
+    # -------------------------------------------------------------------------
+    # 2. Kleinanzeigen
+    # -------------------------------------------------------------------------
+    if source in ("kleinanzeigen", "both", "all"):
+        try:
+            current_app.logger.debug("Calling NEW Kleinanzeigen backend...")
 
+            ka_items = backend_search_kleinanzeigen(
+                terms=args["terms"],
+                filters=args,
+                per_page=20,
+            )
+
+            items.extend(ka_items)
+            current_app.logger.info("Kleinanzeigen returned %d items", len(ka_items))
+
+        except Exception as e:
+            current_app.logger.error("Kleinanzeigen-Suche fehlgeschlagen: %s", e, exc_info=True)
+
+    # -------------------------------------------------------------------------
+    # 3. Dedupe
+    # -------------------------------------------------------------------------
+    items = _dedupe_items(items)
+
+    # -------------------------------------------------------------------------
+    # 4. Smart-Filter
+    # -------------------------------------------------------------------------
     if args.get("only_main_product"):
         before = len(items)
         sf = SmartFilter()
@@ -462,6 +383,9 @@ def search_page():
             len(items),
         )
 
+    # -------------------------------------------------------------------------
+    # 5. Preise tracken
+    # -------------------------------------------------------------------------
     for item in items:
         try:
             track_item_price(item)
