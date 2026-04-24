@@ -199,15 +199,6 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
 
     stats["alerts_checked"] += 1
 
-    grace_seconds = 20
-    if now - last_run < (check_interval_seconds - grace_seconds):
-        time_left = (check_interval_seconds - grace_seconds) - (now - last_run)
-        print(
-            f"⏭️  Alert {alert_id} ({agent_name}): Übersprungen "
-            f"(noch {time_left}s, Intervall={alert_interval_min} Min, Plan='{plan_type or 'free'}')"
-        )
-        return
-
     if notify_telegram and not (telegram_chat_id and telegram_enabled and telegram_verified):
         print("   ℹ️ Telegram nicht aktiviert/verifiziert – Telegram wird für diesen Alert deaktiviert")
         notify_telegram = False
