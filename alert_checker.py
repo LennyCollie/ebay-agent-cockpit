@@ -233,6 +233,12 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
 
     new_items = find_new_items(items, alert_id, user_email, source, cursor, connection)
 
+    if last_run == 0:
+        print("   ℹ️ Erstlauf: vorhandene Treffer wurden nur vorgemerkt, keine Benachrichtigung.")
+        update_alert_timestamp(alert_id, now, cursor)
+        print()
+        return
+
     if not new_items:
         print("   [+] Keine neuen Items")
         update_alert_timestamp(alert_id, now, cursor)
