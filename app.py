@@ -1848,6 +1848,61 @@ def email_test():
 
     return redirect(url_for("search.search_page"))
 
+def _normalize_alert_terms(terms):
+    return [str(t).strip() for t in (terms or []) if str(t).strip()]
+
+
+def _normalize_alert_filters(filters):
+    filters = filters or {}
+    return {
+        "price_min": str(filters.get("price_min") or "").strip(),
+        "price_max": str(filters.get("price_max") or "").strip(),
+        "sort": str(filters.get("sort") or "best").strip(),
+        "conditions": sorted(
+            [str(c).strip().upper() for c in (filters.get("conditions") or []) if str(c).strip()]
+        ),
+        "location_country": str(filters.get("location_country") or "DE").strip().upper(),
+        "listing_type": str(filters.get("listing_type") or "all").strip().lower(),
+    }
+
+
+def _find_existing_active_alert(cur, user_email, source, terms, filters):
+    wanted_terms = _normalize_alert_terms(terms)
+    wanted_filters = _normalize_alert_filters(filters)
+
+    cur.execute(
+        """
+        SELECT id, terms_json, filters_json, source
+        FROM search_alerts
+        WHERE user_email = %s
+          AND is_active = 1
+        """,
+        (user_email,),
+    )
+    rows = cur.fetchall()
+
+    for row in rows:
+        row_source = (row["source"] or "ebay").strip().lower() if row["source"] else "ebay"
+
+        try:
+            row_terms = json.loads(row["terms_json"] or "[]")
+        except Exception:
+            row_terms = []
+
+        try:
+            row_filters = json.loads(row["filters_json"] or "{}")
+        except Exception:
+            row_filters = {}
+
+        if (
+            row_source == source
+            and _normalize_alert_terms(row_terms) == wanted_terms
+            and _normalize_alert_filters(row_filters) == wanted_filters
+        ):
+            return row["id"]
+
+    return None
+
 
 
 
@@ -1863,13 +1918,12 @@ def alerts_subscribe():
         flash("Bitte einloggen, um Alarme zu speichern.", "warning")
         return redirect(url_for("login"))
 
-    # --- Begriffe sammeln ---
     terms = [
         t.strip()
         for t in [
             request.form.get("q1", ""),
             request.form.get("q2", ""),
-            request.form.get("q3", "")
+            request.form.get("q3", ""),
         ]
         if t.strip()
     ]
@@ -1877,14 +1931,13 @@ def alerts_subscribe():
         flash("Keine Suchbegriffe übergeben.", "warning")
         return redirect(url_for("search.search_page"))
 
-    # --- Filter speichern ---
     filters = {
         "price_min": (request.form.get("price_min") or "").strip(),
         "price_max": (request.form.get("price_max") or "").strip(),
         "sort": (request.form.get("sort") or "best").strip(),
         "conditions": request.form.getlist("condition"),
-        "location_country": request.form.get("location_country", "DE"),
-        "listing_type": request.form.get("listing_type", "all"),
+        "location_country": (request.form.get("location_country") or "DE").strip(),
+        "listing_type": (request.form.get("listing_type") or "all").strip(),
     }
 
     per_page = 30
@@ -1893,29 +1946,45 @@ def alerts_subscribe():
     except Exception:
         pass
 
-    # --- Quelle (ebay / kleinanzeigen / both) ---
-    source = request.form.get("source", "ebay").lower()
-    if source not in ["ebay", "kleinanzeigen", "both"]:
+    source = (request.form.get("source") or "ebay").strip().lower()
+    if source not in ["ebay", "kleinanzeigen"]:
         source = "ebay"
 
-    # --- Benachrichtigungskanäle ---
     notify_email = 1 if request.form.get("notify_email") else 0
     notify_telegram = 1 if request.form.get("notify_telegram") else 0
 
-    # --- In DB speichern ---
     conn = get_db()
-    cur = conn.cursor()
+    cur = dict_cursor(conn)
+
+    existing_id = _find_existing_active_alert(
+        cur=cur,
+        user_email=user_email,
+        source=source,
+        terms=terms,
+        filters=filters,
+    )
+
+    if existing_id:
+        conn.close()
+        flash(f"⚠️ Dieser Alert existiert bereits (ID {existing_id}).", "info")
+        return redirect(
+            url_for(
+                "search.search_page",
+                **request.form.to_dict(flat=True),
+            )
+        )
+
     cur.execute(
         """
         INSERT INTO search_alerts
             (user_email, terms_json, filters_json, per_page, is_active,
              last_run_ts, source, notify_email, notify_telegram)
-        VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)
-        """.replace("?", "%s"),  # wichtig für PostgreSQL
+        VALUES (%s, %s, %s, %s, 1, 0, %s, %s, %s)
+        """,
         (
             user_email,
-            json.dumps(terms, ensure_ascii=False),
-            json.dumps(filters, ensure_ascii=False),
+            json.dumps(_normalize_alert_terms(terms), ensure_ascii=False),
+            json.dumps(_normalize_alert_filters(filters), ensure_ascii=False),
             per_page,
             source,
             notify_email,
@@ -1926,8 +1995,26 @@ def alerts_subscribe():
     conn.close()
 
     flash("🔔 Alert gespeichert – neue Treffer werden automatisch geprüft.", "success")
-    return redirect(url_for("search", **{**request.form}))
+    return redirect(
+        url_for(
+            "search.search_page",
+            **request.form.to_dict(flat=True),
+        )
+    )
 
+
+    flash("🔔 Alert gespeichert – neue Treffer werden automatisch geprüft.", "success")
+    return redirect(
+        url_for(
+            "search.search_page",
+            **request.form.to_dict(flat=True),
+        )
+    )
+    conn.commit()
+    conn.close()
+
+    flash("🔔 Alert gespeichert – neue Treffer werden automatisch geprüft.", "success")
+    return redirect(url_for("search.search_page", **request.form.to_dict(flat=True)))
 
 
 @app.post("/alerts/send-now")
@@ -2070,26 +2157,7 @@ def create_agent():
     }
 
     # In DB speichern
-    cur.execute(
-        """
-        INSERT INTO search_alerts (user_email, terms_json, filters_json, per_page, is_active, last_run_ts)
-        VALUES (?, ?, ?, ?, 1, 0)
-        """,
-        (
-            user["email"],
-            json.dumps(terms, ensure_ascii=False),
-            json.dumps(filters, ensure_ascii=False),
-            30,
-        ),
-    )
-    conn.commit()
-    conn.close()
 
-    flash(
-        f"Suchagent erfolgreich erstellt! ({active_count + 1}/{limit} verwendet)",
-        "success",
-    )
-    return redirect(url_for("dashboard"))
 
 
 
