@@ -79,7 +79,7 @@ ebay-agent-cockpit/
 
 ```env
 TELEGRAM_BOT_TOKEN=XXXX              # Telegram Bot Token
-DATABASE_URL=postgresql://...        # PostgreSQL
+DATABASE_URL=postgresql://username:password@hostname:5432/database        # PostgreSQL
 STRIPE_API_KEY=sk_live_...
 EBAY_CLIENT_ID=XXXX
 EBAY_CLIENT_SECRET=XXXX

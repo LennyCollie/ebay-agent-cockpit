@@ -22,7 +22,7 @@ except ImportError:
 # -------------------------------------------------
 # DB-URL aus der Umgebung lesen
 #   -> für Postgres z.B.:
-#      DATABASE_URL=postgresql://user:pass@host:5432/dbname
+#      DATABASE_URL muss als Environment-Variable gesetzt sein
 # -------------------------------------------------
 DB_URL = (
     os.getenv("DATABASE_URL")

@@ -1,4 +1,5 @@
 import feedparser
+import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import time
@@ -366,7 +367,9 @@ class KleinanzeigenScraper:
 # ========================================
 
 if __name__ == "__main__":
-    DATABASE_URL = "postgresql://agent_db_final_user:7FfbPfBywc3Xd0qCDWSwCT3cxl7NSMvt@dpg-d1ua2849c44c73cp4cag-a.oregon-postgres.render.com/agent_db_final"
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL ist nicht konfiguriert.")
 
     scraper = KleinanzeigenScraper(DATABASE_URL)
 

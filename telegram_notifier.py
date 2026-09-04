@@ -39,16 +39,10 @@ logger = logging.getLogger(__name__)
 # KONFIGURATION
 # ========================================
 
-# Aus Umgebungsvariablen laden (empfohlen) oder direkt hier eintragen
-DATABASE_URL = os.environ.get(
-    'DATABASE_URL',
-    "postgresql://agent_db_final_user:7FfbPfBywc3Xd0qCDWSwCT3cxl7NSMvt@dpg-d1ua2849c44c73cp4cag-a.oregon-postgres.render.com/agent_db_final"
-)
+# Aus Umgebungsvariablen laden
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
-TELEGRAM_BOT_TOKEN = os.environ.get(
-    'TELEGRAM_BOT_TOKEN',
-    '8367205938:AAFE59s0DGWy3x-XFpt2_60g4hZJ7X4nQb8'  # WICHTIG: Ersetzen!
-)
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 
 # Intervalle in Sekunden
 SCRAPER_INTERVAL = int(os.environ.get('SCRAPER_INTERVAL', 300))  # 5 Minuten
@@ -151,7 +145,7 @@ class EbayAgentService:
         logger.info(f"[*] Konfiguration:")
         logger.info(f"   - Scraper-Interval: {SCRAPER_INTERVAL}s ({SCRAPER_INTERVAL/60:.1f} Minuten)")
         logger.info(f"   - Notifier-Interval: {NOTIFIER_INTERVAL}s ({NOTIFIER_INTERVAL/60:.1f} Minuten)")
-        logger.info(f"   - Datenbank: {DATABASE_URL.split('@')[1].split('/')[0]}")
+        logger.info(f"   - Datenbank konfiguriert: {bool(DATABASE_URL)}")
 
         self.running = True
 
