@@ -893,14 +893,14 @@ def search_kleinanzeigen(
     per_term = max(1, per_page // max(1, len(search_terms)))
 
     for term in search_terms:
-        results = ka_search(
+        search_result = ka_search(
             query=term,
             price_min=float(filters.get("price_min") or 0) if filters.get("price_min") else None,
             price_max=float(filters.get("price_max") or 0) if filters.get("price_max") else None,
             limit=per_term
         )
 
-        for item in results:
+        for item in search_result.results:
             key = item.get("item_id") or item.get("url") or item.get("title")
             if not key or key in seen:
                 continue

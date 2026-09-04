@@ -17,7 +17,7 @@ from flask_login import current_user
 
 from alert_checker import ALERT_INTERVAL_FREE, ALERT_INTERVAL_PREMIUM
 from services.price_tracker import track_item_price
-from services.kleinanzeigen import search_kleinanzeigen
+from services.kleinanzeigen import KleinanzeigenSearchStatus
 from services.csv_exporter import export_search_results_to_csv
 from smart_filters import SmartFilter
 from services.ebay_backend import backend_search_ebay
@@ -272,9 +272,9 @@ def filter_main_products(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 @bp_search.route("/search", methods=["GET", "POST"])
 def search_page():
     current_app.logger.debug("=== /search called, method=%s ===", request.method)
-    current_app.logger.debug("request.args: %s", dict(request.args))
+    current_app.logger.debug("request argument keys: %s", sorted(request.args.keys()))
     if request.method == "POST":
-        current_app.logger.debug("request.form: %s", dict(request.form))
+        current_app.logger.debug("request form keys: %s", sorted(request.form.keys()))
 
     args = _parse_args()
     plan_info = _get_plan_info()
@@ -297,7 +297,11 @@ def search_page():
 
     source = (args.get("source") or request.args.get("source") or "both").strip().lower()
     args["source"] = source
-    current_app.logger.debug("Parsed search args: %r", args)
+    current_app.logger.debug(
+        "Parsed search args: source=%s term_count=%d",
+        source,
+        len(args.get("terms", [])),
+    )
 
     has_search_term = bool(
         args["q"]
@@ -321,9 +325,14 @@ def search_page():
         flash("Bitte mindestens einen Suchbegriff angeben.", "warning")
         return redirect(url_for("search.search_page"))
 
-    current_app.logger.info("Searching for: %s (source: %s)", args["q"], source)
+    current_app.logger.info(
+        "Search started: source=%s term_count=%d",
+        source,
+        len(args.get("terms", [])),
+    )
 
     items: List[Dict[str, Any]] = []
+    kleinanzeigen_status = None
 
     # -------------------------------------------------------------------------
     # 1. eBay
@@ -352,17 +361,24 @@ def search_page():
         try:
             current_app.logger.debug("Calling NEW Kleinanzeigen backend...")
 
-            ka_items = backend_search_kleinanzeigen(
+            ka_result = backend_search_kleinanzeigen(
                 terms=args["terms"],
                 filters=args,
                 per_page=20,
             )
+            kleinanzeigen_status = ka_result.status.value
+            items.extend(ka_result.results)
+            current_app.logger.info(
+                "Kleinanzeigen classification=%s items=%d",
+                kleinanzeigen_status,
+                len(ka_result.results),
+            )
 
-            items.extend(ka_items)
-            current_app.logger.info("Kleinanzeigen returned %d items", len(ka_items))
-
-        except Exception as e:
-            current_app.logger.error("Kleinanzeigen-Suche fehlgeschlagen: %s", e, exc_info=True)
+        except Exception:
+            kleinanzeigen_status = KleinanzeigenSearchStatus.SOURCE_UNAVAILABLE.value
+            current_app.logger.error(
+                "Kleinanzeigen-Suche fehlgeschlagen: classification=source_unavailable"
+            )
 
     # -------------------------------------------------------------------------
     # 3. Dedupe
@@ -372,7 +388,14 @@ def search_page():
     # -------------------------------------------------------------------------
     # 4. Smart-Filter
     # -------------------------------------------------------------------------
-    if args.get("only_main_product"):
+    kleinanzeigen_failed = kleinanzeigen_status not in (
+        None,
+        KleinanzeigenSearchStatus.SUCCESS_WITH_RESULTS.value,
+        KleinanzeigenSearchStatus.SUCCESS_EMPTY.value,
+    )
+    if args.get("only_main_product") and not (
+        source == "kleinanzeigen" and kleinanzeigen_failed
+    ):
         before = len(items)
         sf = SmartFilter()
         res = sf.filter_items(items, search_terms=args["terms"])
@@ -444,6 +467,7 @@ def search_page():
         filters=filters,
         pagination=pagination,
         source=source,
+        kleinanzeigen_status=kleinanzeigen_status,
         terms_trimmed=terms_trimmed,
     )
 

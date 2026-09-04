@@ -25,6 +25,10 @@ from dotenv import load_dotenv
 from agent import get_mail_settings, send_mail
 from database import dict_cursor, get_db, get_placeholder
 from smart_filters import SmartFilter
+from services.kleinanzeigen import (
+    KleinanzeigenSearchResult,
+    KleinanzeigenSearchStatus,
+)
 from telegram_bot import send_new_item_alert
 
 load_dotenv()
@@ -189,7 +193,7 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
 
     print(f"[*] Alert {alert_id} ({agent_name})")
     print(f"   User: {user_email}")
-    print(f"   Suchbegriffe: {terms}")
+    print(f"   Suchbegriffe: {len(terms)} konfiguriert")
     print(f"   Quelle: {source.upper()}")
     print(
         f"   Plan: '{plan_type or 'free'}', PremiumFlag={is_premium}, "
@@ -210,8 +214,20 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
 
     try:
         if source == "kleinanzeigen":
-            items = search_kleinanzeigen_for_alert(terms, filters)
+            kleinanzeigen_result = search_kleinanzeigen_for_alert(terms, filters)
             stats["kleinanzeigen_alerts"] += 1
+            if kleinanzeigen_result.status not in {
+                KleinanzeigenSearchStatus.SUCCESS_WITH_RESULTS,
+                KleinanzeigenSearchStatus.SUCCESS_EMPTY,
+            }:
+                print(
+                    "   [!] Kleinanzeigen ist derzeit nicht verfügbar "
+                    f"({kleinanzeigen_result.status.value})."
+                )
+                stats["errors"] += 1
+                update_alert_timestamp(alert_id, now, cursor)
+                return
+            items = kleinanzeigen_result.results
         else:
             items = search_ebay_for_alert(terms, filters)
             stats["ebay_alerts"] += 1
@@ -225,8 +241,8 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
 
         print(f"   [+] Gefunden: {len(items)} Items")
 
-    except Exception as e:
-        print(f"   [!] Suche fehlgeschlagen: {e}")
+    except Exception:
+        print("   [!] Suche fehlgeschlagen: classification=search_error")
         stats["errors"] += 1
         update_alert_timestamp(alert_id, now, cursor)
         return
@@ -277,7 +293,10 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
 # ---------------------------------------------------------------------------
 # SUCHE
 # ---------------------------------------------------------------------------
-def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
+def search_kleinanzeigen_for_alert(
+    terms: List[str],
+    filters: Dict,
+) -> KleinanzeigenSearchResult:
     """
     Führt Kleinanzeigen-Suche für einen Alert aus.
     Nutzt den unabhängigen Service aus services/kleinanzeigen_backend.py.
@@ -285,14 +304,23 @@ def search_kleinanzeigen_for_alert(terms: List[str], filters: Dict) -> List[Dict
     try:
         from services.kleinanzeigen_backend import backend_search_kleinanzeigen
 
-        items = backend_search_kleinanzeigen(terms, filters, per_page=20)
-        print(f"      [OK] Kleinanzeigen-Wrapper: {len(items)} Items zurückgegeben")
-        return items
-    except Exception as e:
-        print(f"      [!] Kleinanzeigen-Suche Fehler: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
+        result = backend_search_kleinanzeigen(terms, filters, per_page=20)
+        print(
+            "      [OK] Kleinanzeigen-Wrapper: "
+            f"classification={result.status.value} items={len(result.results)}"
+        )
+        return result
+    except Exception:
+        print(
+            "      [!] Kleinanzeigen-Suche Fehler: "
+            "classification=source_unavailable"
+        )
+        return KleinanzeigenSearchResult(
+            results=[],
+            status=KleinanzeigenSearchStatus.SOURCE_UNAVAILABLE,
+            reason="alert_wrapper_error",
+            retryable=True,
+        )
 
 
 def search_ebay_for_alert(terms: List[str], filters: Dict) -> List[Dict]:
@@ -627,4 +655,3 @@ if __name__ == "__main__":
 
     print("\n[*] Ergebnis:")
     print(json.dumps(result, indent=2, ensure_ascii=False))
-

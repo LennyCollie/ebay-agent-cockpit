@@ -313,8 +313,11 @@ def alert_results(alert_id: int):
     # Suche ausführen (aktuelle Angebote)
     # ------------------------------------------------------------
     source_norm = (source or "ebay").strip().lower()
+    kleinanzeigen_status = None
     if source_norm == "kleinanzeigen":
-        items = search_kleinanzeigen_for_alert(terms, filters)
+        kleinanzeigen_result = search_kleinanzeigen_for_alert(terms, filters)
+        kleinanzeigen_status = kleinanzeigen_result.status.value
+        items = kleinanzeigen_result.results
     else:
         items = search_ebay_for_alert(terms, filters)
 
@@ -397,6 +400,7 @@ def alert_results(alert_id: int):
         "alerts/results.html",
         alert=alert_ctx,
         items=enriched_items,
+        kleinanzeigen_status=kleinanzeigen_status,
     )
 
 
@@ -576,4 +580,3 @@ def alerts_subscribe():
         flash("Fehler beim Anlegen des Alerts.", "danger")
 
     return redirect(request.referrer or url_for("search.search_page", q1=q1))
-

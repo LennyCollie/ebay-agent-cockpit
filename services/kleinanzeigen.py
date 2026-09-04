@@ -18,7 +18,9 @@ import hashlib
 import logging
 import os
 import re
+from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode, urljoin, urlparse
 
@@ -45,6 +47,27 @@ DEBUG_HTML = os.getenv(
     "yes",
     "on",
 }
+
+
+class KleinanzeigenSearchStatus(str, Enum):
+    SUCCESS_WITH_RESULTS = "success_with_results"
+    SUCCESS_EMPTY = "success_empty"
+    SOURCE_UNAVAILABLE = "source_unavailable"
+    HTTP_FORBIDDEN = "http_forbidden"
+    RATE_LIMITED = "rate_limited"
+    CONSENT_REQUIRED = "consent_required"
+    CAPTCHA_OR_CHALLENGE = "captcha_or_challenge"
+    BLOCKED = "blocked"
+    INVALID_RESPONSE = "invalid_response"
+
+
+@dataclass(frozen=True)
+class KleinanzeigenSearchResult:
+    results: List[Dict[str, Any]]
+    status: KleinanzeigenSearchStatus
+    reason: Optional[str] = None
+    http_status: Optional[int] = None
+    retryable: bool = False
 
 
 # =============================================================================
@@ -79,7 +102,7 @@ def _create_session() -> requests.Session:
         read=2,
         status=2,
         backoff_factor=0.8,
-        status_forcelist=(429, 500, 502, 503, 504),
+        status_forcelist=(500, 502, 503, 504),
         allowed_methods=frozenset({"GET"}),
         raise_on_status=False,
     )
@@ -126,7 +149,7 @@ def search_kleinanzeigen(
     location: Optional[str] = None,
     radius_km: Optional[int] = None,
     limit: int = 50,
-) -> List[Dict[str, Any]]:
+) -> KleinanzeigenSearchResult:
     """
     Sucht Angebote auf Kleinanzeigen.
 
@@ -145,14 +168,18 @@ def search_kleinanzeigen(
             Maximale Anzahl zurückgegebener Angebote.
 
     Returns:
-        Liste normalisierter Angebots-Dictionaries.
+        Status und normalisierte Angebots-Dictionaries.
     """
 
     clean_query = str(query or "").strip()
 
     if not clean_query:
         logger.warning("Kleinanzeigen-Suche ohne Suchbegriff abgebrochen.")
-        return []
+        return KleinanzeigenSearchResult(
+            results=[],
+            status=KleinanzeigenSearchStatus.INVALID_RESPONSE,
+            reason="empty_query",
+        )
 
     try:
         safe_limit = max(1, min(int(limit or 50), 100))
@@ -171,8 +198,7 @@ def search_kleinanzeigen(
     print("=" * 60)
     print("[*] KLEINANZEIGEN HTML SCRAPING")
     print("=" * 60)
-    print(f"URL: {url}")
-    print(f"Query: {clean_query}")
+    print("Ziel: kleinanzeigen.de/s-suchanfrage.html")
     print("=" * 60)
 
     session = _create_session()
@@ -184,6 +210,32 @@ def search_kleinanzeigen(
             allow_redirects=True,
         )
 
+        if response.status_code == 403:
+            logger.warning(
+                "Kleinanzeigen-Abruf fehlgeschlagen: status=403 "
+                "classification=http_forbidden"
+            )
+            return KleinanzeigenSearchResult(
+                results=[],
+                status=KleinanzeigenSearchStatus.HTTP_FORBIDDEN,
+                reason="http_403",
+                http_status=403,
+                retryable=False,
+            )
+
+        if response.status_code == 429:
+            logger.warning(
+                "Kleinanzeigen-Abruf fehlgeschlagen: status=429 "
+                "classification=rate_limited"
+            )
+            return KleinanzeigenSearchResult(
+                results=[],
+                status=KleinanzeigenSearchStatus.RATE_LIMITED,
+                reason="http_429",
+                http_status=429,
+                retryable=True,
+            )
+
         response.raise_for_status()
 
         # Kleinanzeigen liefert UTF-8, teilweise aber ohne eindeutige
@@ -194,54 +246,55 @@ def search_kleinanzeigen(
         html = response.text or ""
 
         print(f"[OK] Status: {response.status_code}")
-        print(f"[DEBUG] Final URL: {response.url}")
         print(f"[DEBUG] Content-Type: {content_type}")
         print(f"[DEBUG] HTML-Länge: {len(html)}")
+        print(f"[DEBUG] Redirect: {bool(response.history)}")
 
         if "text/html" not in content_type.lower():
             logger.warning(
                 "Kleinanzeigen lieferte keinen HTML-Inhalt: %s",
                 content_type,
             )
-            return []
+            return KleinanzeigenSearchResult(
+                results=[],
+                status=KleinanzeigenSearchStatus.INVALID_RESPONSE,
+                reason="unexpected_content_type",
+                http_status=response.status_code,
+            )
 
         if not html.strip():
             logger.warning("Kleinanzeigen lieferte eine leere HTML-Seite.")
-            return []
-
-        if DEBUG_HTML:
-            _write_debug_html(html)
+            return KleinanzeigenSearchResult(
+                results=[],
+                status=KleinanzeigenSearchStatus.INVALID_RESPONSE,
+                reason="empty_response",
+                http_status=response.status_code,
+            )
 
         soup = BeautifulSoup(html, "html.parser")
 
-        page_title = (
-            soup.title.get_text(" ", strip=True)
-            if soup.title
-            else ""
-        )
-
-        print(f"[DEBUG] Seitentitel: {page_title}")
-
         offer_links = soup.select('a[href*="/s-anzeige/"]')
 
-        block_reason = _detect_real_block_page(
+        page_status, page_reason = _classify_special_page(
             soup=soup,
             html=html,
             offer_link_count=len(offer_links),
         )
 
-        if block_reason:
+        if page_status:
             logger.warning(
-                "Kleinanzeigen Block-/Fehlerseite erkannt: %s; URL=%s",
-                block_reason,
-                response.url,
+                "Kleinanzeigen-Sonderseite erkannt: classification=%s",
+                page_status.value,
+            )
+            return KleinanzeigenSearchResult(
+                results=[],
+                status=page_status,
+                reason=page_reason,
+                http_status=response.status_code,
             )
 
-            print(
-                "[WARNUNG] Kleinanzeigen Block-/Fehlerseite erkannt: "
-                f"{block_reason}"
-            )
-            return []
+        if DEBUG_HTML:
+            _write_debug_html(html)
 
         article_nodes = _find_article_nodes(soup)
 
@@ -252,6 +305,7 @@ def search_kleinanzeigen(
 
         results: List[Dict[str, Any]] = []
         seen_ids: set[str] = set()
+        parsed_count = 0
 
         for article in article_nodes:
             if len(results) >= safe_limit:
@@ -277,6 +331,8 @@ def search_kleinanzeigen(
             if not item_id:
                 continue
 
+            parsed_count += 1
+
             if item_id in seen_ids:
                 continue
 
@@ -290,19 +346,11 @@ def search_kleinanzeigen(
             seen_ids.add(item_id)
             results.append(item)
 
-            if len(results) <= 3:
-                print(f"[+] Item {len(results)}:")
-                print(f"    Title: {item['title'][:80]}")
-                print(f"    Price: {item.get('price', 'N/A')}")
-                print(f"    URL: {item['url'][:100]}...")
-
         if not article_nodes:
             logger.warning(
                 "HTTP 200, aber keine Anzeigenstruktur erkannt. "
-                "Seitentitel=%r, HTML-Länge=%d, Final-URL=%s",
-                page_title,
+                "HTML-Länge=%d",
                 len(html),
-                response.url,
             )
 
             print(
@@ -312,9 +360,14 @@ def search_kleinanzeigen(
                 "[WARNUNG] Möglicherweise wurde die HTML-Struktur geändert."
             )
             print(f"[DEBUG] Anzeigenlinks im HTML: {len(offer_links)}")
-            print(f"[DEBUG] HTML-Anfang: {html[:600]!r}")
+            return KleinanzeigenSearchResult(
+                results=[],
+                status=KleinanzeigenSearchStatus.INVALID_RESPONSE,
+                reason="unrecognized_search_html",
+                http_status=response.status_code,
+            )
 
-        elif article_nodes and not results:
+        elif article_nodes and parsed_count == 0:
             logger.warning(
                 "%d mögliche Anzeigen-Container gefunden, "
                 "aber kein vollständiger Artikel konnte geparst werden.",
@@ -325,36 +378,63 @@ def search_kleinanzeigen(
                 "[WARNUNG] Anzeigen-Container vorhanden, "
                 "aber keine vollständigen Angebote geparst."
             )
+            return KleinanzeigenSearchResult(
+                results=[],
+                status=KleinanzeigenSearchStatus.INVALID_RESPONSE,
+                reason="articles_not_parseable",
+                http_status=response.status_code,
+            )
 
         print(f"[OK] Gefunden: {len(results)} Kleinanzeigen")
         print()
 
-        return results
+        status = (
+            KleinanzeigenSearchStatus.SUCCESS_WITH_RESULTS
+            if results
+            else KleinanzeigenSearchStatus.SUCCESS_EMPTY
+        )
+        return KleinanzeigenSearchResult(
+            results=results,
+            status=status,
+            http_status=response.status_code,
+        )
 
     except requests.Timeout:
         logger.error(
             "Kleinanzeigen-Anfrage nach %s Sekunden abgebrochen.",
             DEFAULT_TIMEOUT,
         )
-        return []
+        return KleinanzeigenSearchResult(
+            results=[],
+            status=KleinanzeigenSearchStatus.SOURCE_UNAVAILABLE,
+            reason="timeout",
+            retryable=True,
+        )
 
     except requests.RequestException as exc:
         status_code = getattr(exc.response, "status_code", None)
-        response_text = getattr(exc.response, "text", "") or ""
-
         logger.error(
-            "Kleinanzeigen HTTP-Fehler: status=%s, fehler=%s, antwort=%r",
+            "Kleinanzeigen HTTP-Fehler: status=%s "
+            "classification=source_unavailable",
             status_code,
-            exc,
-            response_text[:500],
         )
-        return []
+        return KleinanzeigenSearchResult(
+            results=[],
+            status=KleinanzeigenSearchStatus.SOURCE_UNAVAILABLE,
+            reason="request_error",
+            http_status=status_code,
+            retryable=True,
+        )
 
     except Exception:
         logger.exception(
             "Unerwarteter Fehler bei der Kleinanzeigen-Suche."
         )
-        return []
+        return KleinanzeigenSearchResult(
+            results=[],
+            status=KleinanzeigenSearchStatus.INVALID_RESPONSE,
+            reason="unexpected_error",
+        )
 
     finally:
         session.close()
@@ -412,11 +492,11 @@ def _build_search_url(
 # =============================================================================
 # BLOCK-/FEHLERSEITEN ERKENNEN
 # =============================================================================
-def _detect_real_block_page(
+def _classify_special_page(
     soup: BeautifulSoup,
     html: str,
     offer_link_count: int,
-) -> Optional[str]:
+) -> tuple[Optional[KleinanzeigenSearchStatus], Optional[str]]:
     """
     Erkennt nur eindeutige Block- oder Fehlerseiten.
 
@@ -426,7 +506,7 @@ def _detect_real_block_page(
     """
 
     if offer_link_count > 0:
-        return None
+        return None, None
 
     page_title = (
         soup.title.get_text(" ", strip=True).lower()
@@ -439,45 +519,59 @@ def _detect_real_block_page(
         strip=True,
     ).lower()
 
-    strong_title_markers = (
+    consent_markers = (
+        "cookie-einstellungen",
+        "datenschutzeinstellungen",
+        "consent required",
+        "zustimmung erforderlich",
+    )
+    if any(marker in page_title or marker in visible_text for marker in consent_markers):
+        return KleinanzeigenSearchStatus.CONSENT_REQUIRED, "consent_page"
+
+    challenge_markers = (
+        "robot verification",
+        "sicherheitsüberprüfung",
+        "verify you are human",
+        "bitte bestätigen sie, dass sie kein roboter sind",
+        "captcha",
+        "challenge-platform",
+        "cf-chl-",
+    )
+    html_lower = html.lower()
+    if any(
+        marker in page_title or marker in visible_text or marker in html_lower
+        for marker in challenge_markers
+    ):
+        return KleinanzeigenSearchStatus.CAPTCHA_OR_CHALLENGE, "challenge_page"
+
+    block_markers = (
         "access denied",
         "zugriff verweigert",
         "forbidden",
         "service unavailable",
-        "robot verification",
-        "sicherheitsüberprüfung",
-    )
-
-    for marker in strong_title_markers:
-        if marker in page_title:
-            return marker
-
-    strong_text_markers = (
         "ungewöhnlicher datenverkehr wurde erkannt",
         "automatisierte zugriffe wurden erkannt",
         "ihre anfrage wurde blockiert",
         "your request has been blocked",
-        "verify you are human",
-        "bitte bestätigen sie, dass sie kein roboter sind",
-    )
-
-    for marker in strong_text_markers:
-        if marker in visible_text:
-            return marker
-
-    html_lower = html.lower()
-
-    technical_markers = (
-        "cf-chl-",
-        "challenge-platform",
+        "ip-bereich vorübergehend gesperrt",
         "cloudflare ray id",
     )
+    if any(
+        marker in page_title or marker in visible_text or marker in html_lower
+        for marker in block_markers
+    ):
+        return KleinanzeigenSearchStatus.BLOCKED, "blocked_page"
 
-    for marker in technical_markers:
-        if marker in html_lower:
-            return marker
+    empty_markers = (
+        "keine ergebnisse",
+        "keine anzeigen gefunden",
+        "leider nichts gefunden",
+        "0 ergebnisse",
+    )
+    if any(marker in visible_text for marker in empty_markers):
+        return KleinanzeigenSearchStatus.SUCCESS_EMPTY, "no_results"
 
-    return None
+    return None, None
 
 
 # =============================================================================
@@ -1171,15 +1265,16 @@ def test_search() -> None:
 
     print("[OK] Dependencies verfügbar.")
 
-    results = search_kleinanzeigen(
+    search_result = search_kleinanzeigen(
         query="Wohnwagen",
         limit=10,
     )
 
-    print(f"[TEST] Ergebnisanzahl: {len(results)}")
+    print(f"[TEST] Status: {search_result.status.value}")
+    print(f"[TEST] Ergebnisanzahl: {len(search_result.results)}")
 
     for index, item in enumerate(
-        results[:5],
+        search_result.results[:5],
         1,
     ):
         if isinstance(

@@ -64,9 +64,13 @@ def main():
     print()
     
     try:
-        results = search_kleinanzeigen(search_term, max_results=max_results)
+        search_result = search_kleinanzeigen(search_term, limit=max_results)
+        results = search_result.results
         
-        print(f"3. Results: Found {len(results)} items")
+        print(
+            f"3. Status: {search_result.status.value}; "
+            f"found {len(results)} items"
+        )
         print("="*70)
         print()
         
@@ -87,7 +91,7 @@ def main():
         for i, item in enumerate(results, 1):
             print(f"\n{i}. {item['title']}")
             print(f"   ID:       {item['id']}")
-            print(f"   Price:    {item['price']} {item['currency']}")
+            print(f"   Price:    {item['price']} EUR")
             print(f"   URL:      {item['url']}")
             print(f"   Image:    {item['img'] or 'N/A'}")
             print(f"   Source:   {item['source']}")

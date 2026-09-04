@@ -254,12 +254,23 @@ def merge_all_marketplaces(
             logger.info("[*] Fetching Kleinanzeigen for: %s", term)
 
         try:
-            ka_items = search_kleinanzeigen(
+            ka_result = search_kleinanzeigen(
                 query=term,
                 price_min=price_min,
                 price_max=price_max,
                 location=location,
-            ) or []
+            )
+            ka_items = ka_result.results
+
+            if ka_result.status.value not in {
+                "success_with_results",
+                "success_empty",
+            }:
+                logger.warning(
+                    "Kleinanzeigen unavailable: classification=%s",
+                    ka_result.status.value,
+                )
+                ka_items = []
 
             # sicherstellen, dass 'source' gesetzt ist
             for it in ka_items:

@@ -3,6 +3,12 @@
   ← Zurück zu deinen Alerts
 </a>
 
+{% if kleinanzeigen_status and kleinanzeigen_status not in ('success_with_results', 'success_empty') %}
+<div class="alert alert-warning" role="alert">
+  Kleinanzeigen ist derzeit nicht verfügbar. Bitte versuche es später erneut.
+</div>
+{% endif %}
+
 <div class="row g-3 mb-4">
   <div class="col-lg-8">
     <div class="card">
