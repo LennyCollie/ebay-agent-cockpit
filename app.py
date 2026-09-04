@@ -166,20 +166,6 @@ def load_user(user_id):
         print(f"[user_loader] Fehler: {e}")
     return None
 
-# Debug-Ausgabe beim Start
-IS_PRODUCTION = bool(os.getenv('RENDER'))
-print(f"[Session] {'Production' if IS_PRODUCTION else 'Development'} Mode")
-print(f"[Session] SESSION_COOKIE_SECURE = True (dank ProxyFix)")
-print(f"[Session] SECRET_KEY = {'SET' if os.getenv('SECRET_KEY') else 'MISSING!!!'}")
-print("\n" + "="*50)
-print("ENV VARS DEBUG:")
-print(f"LIVE_SEARCH = {os.getenv('LIVE_SEARCH')}")
-print(f"EBAY_CLIENT_ID = {os.getenv('EBAY_CLIENT_ID', 'MISSING')}")
-print(f"EBAY_CLIENT_SECRET = {os.getenv('EBAY_CLIENT_SECRET', 'MISSING')}")
-print(f"EBAY_MARKETPLACE_ID = {os.getenv('EBAY_MARKETPLACE_ID')}")
-print(f"DATABASE = {'PostgreSQL' if IS_POSTGRES else 'SQLite'}")
-print("="*50 + "\n")
-
 # -------------------------------------------------------------------
 # Blueprints & weitere Config (unverändert)
 # -------------------------------------------------------------------

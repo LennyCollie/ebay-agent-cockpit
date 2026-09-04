@@ -12,14 +12,6 @@ from typing import Union
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("DB_PATH")
 IS_POSTGRES = DATABASE_URL and DATABASE_URL.startswith("postgresql")
 
-print(f"[Database] Using: {'PostgreSQL' if IS_POSTGRES else 'SQLite'}")
-if DATABASE_URL:
-    safe_url = DATABASE_URL[:50] + "..." if len(DATABASE_URL) > 50 else DATABASE_URL
-    print(f"[Database] URL: {safe_url}")
-else:
-    print("[Database] No URL set")
-
-
 # ===================================================================
 # DATABASE CONNECTION FUNCTIONS
 # ===================================================================
