@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-🧪 ULTIMATE TEST SUITE für alle Scraper
-Testet alle Portale einzeln und dann zusammen
-"""
+"""Manual live runner for all marketplace scrapers."""
 import logging
 import sys
 import os
