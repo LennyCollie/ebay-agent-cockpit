@@ -201,6 +201,16 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
     )
     print(f"   Kanäle: Telegram={notify_telegram}, E-Mail={notify_email}")
 
+    if last_run > 0:
+        elapsed_seconds = now - last_run
+        if elapsed_seconds < check_interval_seconds:
+            remaining_seconds = check_interval_seconds - elapsed_seconds
+            print(
+                f"   Alert {alert_id} noch nicht faellig "
+                f"(noch {remaining_seconds}s, Intervall={alert_interval_min} Min)"
+            )
+            return
+
     stats["alerts_checked"] += 1
 
     if notify_telegram and not (telegram_chat_id and telegram_enabled and telegram_verified):
