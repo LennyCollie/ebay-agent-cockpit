@@ -3,7 +3,11 @@
   ← Zurück zu deinen Alerts
 </a>
 
-{% if kleinanzeigen_status and kleinanzeigen_status not in ('success_with_results', 'success_empty') %}
+{% if alert.source_paused or kleinanzeigen_status == 'source_disabled' %}
+<div class="alert alert-info" role="status">
+  Kleinanzeigen ist vorübergehend pausiert. Dein Suchauftrag bleibt gespeichert.
+</div>
+{% elif kleinanzeigen_status and kleinanzeigen_status not in ('success_with_results', 'success_empty') %}
 <div class="alert alert-warning" role="alert">
   Kleinanzeigen ist derzeit nicht verfügbar. Bitte versuche es später erneut.
 </div>
@@ -75,7 +79,9 @@
 
           <div>
             <div class="small text-muted">Status</div>
-            {% if alert.is_active %}
+            {% if alert.source_paused %}
+            <span class="badge rounded-pill bg-warning text-dark">Quelle pausiert</span>
+            {% elif alert.is_active %}
             <span class="badge rounded-pill bg-success">🟢 Aktiv</span>
             {% else %}
             <span class="badge rounded-pill bg-secondary">⏸️ Pausiert</span>
@@ -177,11 +183,18 @@
 {% else %}
 <div class="card">
   <div class="card-body text-center py-5">
+    {% if alert.source_paused or kleinanzeigen_status == 'source_disabled' %}
+    <p class="lead mb-2">Die Kleinanzeigen-Suche ist pausiert.</p>
+    <p class="text-muted mb-0">Während der Pause werden keine Angebote geprüft oder Benachrichtigungen gesendet.</p>
+    {% elif kleinanzeigen_status and kleinanzeigen_status not in ('success_with_results', 'success_empty') %}
+    <p class="lead mb-2">Aktuelle Kleinanzeigen-Angebote konnten nicht abgerufen werden.</p>
+    {% else %}
     <p class="lead mb-2">Aktuell gibt es keine passenden Angebote.</p>
     <p class="text-muted mb-0">
       Sobald neue Artikel auftauchen, erhältst du wieder Alerts – und sie erscheinen hier in der
       Übersicht.
     </p>
+    {% endif %}
   </div>
 </div>
 {% endif %} {% endblock %}

@@ -36,6 +36,11 @@
 
 
   {# kleine Legende / Filter für Kanäle #} {% if alerts|length > 0 %}
+  {% if not kleinanzeigen_enabled and alerts|selectattr('source', 'equalto', 'kleinanzeigen')|list %}
+  <div class="alert alert-info" role="status">
+    Kleinanzeigen ist vorübergehend pausiert. Deine Suchaufträge bleiben gespeichert.
+  </div>
+  {% endif %}
   <div class="alert alert-light border mb-3">
     <div class="d-flex flex-wrap align-items-center gap-2">
       <div class="me-3">
@@ -124,7 +129,9 @@
 
           <!-- Aktiv? -->
           <td>
-            {% if alert.is_active %}
+            {% if alert.source == 'kleinanzeigen' and not kleinanzeigen_enabled %}
+            <span class="badge bg-warning text-dark">Quelle pausiert</span>
+            {% elif alert.is_active %}
             <span class="badge bg-success">Aktiv</span>
             {% else %}
             <span class="badge bg-danger">Inaktiv</span>

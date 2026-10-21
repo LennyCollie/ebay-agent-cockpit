@@ -10,7 +10,8 @@ and the user sees the unified single-page UI. #}
 'total_pages': None}) %}
 {% set terms = terms|default([]) %}
 {% set results = results|default([]) %}
-{% set source = request.args.get('source', base_qs.get('source', 'ebay')) %}
+{% set source = source|default(request.args.get('source', base_qs.get('source', 'ebay')), true) %}
+{% set ka_paused = kleinanzeigen_enabled is defined and not kleinanzeigen_enabled %}
 
 <div class="container py-4">
   <div class="text-center mb-4">
@@ -399,6 +400,13 @@ Apple iPhone 12 Smartphone"></textarea>
     </div>
   </form>
 
+  {% if ka_paused and source in ('kleinanzeigen', 'both', 'all') %}
+  <div class="alert alert-info py-2" role="status">
+    Kleinanzeigen ist vorübergehend pausiert. Dein Suchauftrag bleibt gespeichert.
+    {% if source in ('both', 'all') %}Die eBay-Suche bleibt verfügbar.{% endif %}
+  </div>
+  {% endif %}
+
   {# ---------- Ergebnisse ---------- #}
   {% if results and results|length %}
 
@@ -429,11 +437,11 @@ Apple iPhone 12 Smartphone"></textarea>
     {% endif %}
   </div>
 
-  {% if source == 'kleinanzeigen' %}
+  {% if source == 'kleinanzeigen' and not ka_paused %}
   <div class="alert alert-warning py-2 small">
     Aktuell werden Kleinanzeigen-Treffer als Live-Daten angezeigt.
   </div>
-  {% elif source == 'both' %}
+  {% elif source in ('both', 'all') and not ka_paused %}
   <div class="alert alert-info py-2 small">
     Es werden sowohl eBay als auch eBay-Kleinanzeigen-Daten angezeigt.
     Kleinanzeigen-Treffer sind Live-Daten.
@@ -544,6 +552,8 @@ Apple iPhone 12 Smartphone"></textarea>
     </ul>
   </nav>
 
+  {% elif source == 'kleinanzeigen' and ka_paused %}
+  {# The pause notice replaces an empty-results claim. #}
   {% else %}
   <div class="alert alert-info mt-3">
     Noch keine Treffer – bitte Begriffe eingeben und Suchen klicken.

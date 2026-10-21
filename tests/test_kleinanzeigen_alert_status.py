@@ -6,7 +6,8 @@ import alert_checker
 from services.kleinanzeigen import KleinanzeigenSearchResult, KleinanzeigenSearchStatus
 
 
-def test_alert_failure_skips_smart_filter_and_novelty_check():
+def test_alert_failure_skips_smart_filter_and_novelty_check(monkeypatch):
+    monkeypatch.setenv("ENABLE_KLEINANZEIGEN", "1")
     cursor = Mock()
     cursor.fetchone.return_value = {
         "telegram_chat_id": None,
@@ -49,6 +50,7 @@ def test_alert_failure_skips_smart_filter_and_novelty_check():
 
     smart_filter.assert_not_called()
     find_new_items.assert_not_called()
-    update_timestamp.assert_called_once()
+    # A failed first run retains last_run_ts=0, as in the existing checker.
+    update_timestamp.assert_not_called()
     assert stats["errors"] == 1
     assert stats["kleinanzeigen_alerts"] == 1

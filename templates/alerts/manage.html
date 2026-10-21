@@ -8,6 +8,11 @@
 </div>
 
 {% if alerts %}
+{% if alerts|selectattr('source_paused')|list %}
+<div class="alert alert-info" role="status">
+  Kleinanzeigen ist vorübergehend pausiert. Deine Suchaufträge bleiben gespeichert.
+</div>
+{% endif %}
 <div class="card alerts-card">
   <div class="card-body p-0">
     <div class="table-responsive">
@@ -25,7 +30,7 @@
         </thead>
         <tbody>
           {% for a in alerts %}
-          <tr class="alert-row {% if not a.is_active %}alert-row-paused{% endif %}">
+          <tr class="alert-row {% if not a.is_active or a.source_paused %}alert-row-paused{% endif %}">
             {# --- Suchbegriffe + Kurz-Filter #}
             <td>
               {% if a.terms %}
@@ -92,7 +97,9 @@
 
             {# --- Status (Aktiv / Pausiert) #}
             <td>
-              {% if a.is_active %}
+              {% if a.source_paused %}
+              <span class="badge rounded-pill bg-warning text-dark">Quelle pausiert</span>
+              {% elif a.is_active %}
               <span class="badge rounded-pill bg-success">🟢 Aktiv</span>
               {% else %}
               <span class="badge rounded-pill bg-secondary">⏸️ Pausiert</span>

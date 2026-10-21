@@ -20,6 +20,11 @@ FIXTURE = (
 ).read_text(encoding="utf-8")
 
 
+@pytest.fixture(autouse=True)
+def enable_source(monkeypatch):
+    monkeypatch.setenv("ENABLE_KLEINANZEIGEN", "1")
+
+
 class FakeResponse:
     def __init__(
         self,

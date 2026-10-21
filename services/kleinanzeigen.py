@@ -52,6 +52,7 @@ DEBUG_HTML = os.getenv(
 class KleinanzeigenSearchStatus(str, Enum):
     SUCCESS_WITH_RESULTS = "success_with_results"
     SUCCESS_EMPTY = "success_empty"
+    SOURCE_DISABLED = "source_disabled"
     SOURCE_UNAVAILABLE = "source_unavailable"
     HTTP_FORBIDDEN = "http_forbidden"
     RATE_LIMITED = "rate_limited"
@@ -68,6 +69,11 @@ class KleinanzeigenSearchResult:
     reason: Optional[str] = None
     http_status: Optional[int] = None
     retryable: bool = False
+
+
+def is_kleinanzeigen_enabled() -> bool:
+    """Allow searches only when the source is explicitly enabled."""
+    return os.getenv("ENABLE_KLEINANZEIGEN") == "1"
 
 
 # =============================================================================
@@ -170,6 +176,14 @@ def search_kleinanzeigen(
     Returns:
         Status und normalisierte Angebots-Dictionaries.
     """
+
+    if not is_kleinanzeigen_enabled():
+        return KleinanzeigenSearchResult(
+            results=[],
+            status=KleinanzeigenSearchStatus.SOURCE_DISABLED,
+            reason="disabled_by_config",
+            retryable=False,
+        )
 
     clean_query = str(query or "").strip()
 

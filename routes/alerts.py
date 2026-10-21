@@ -24,6 +24,7 @@ from alert_checker import (
     search_kleinanzeigen_for_alert,
 )
 from database import get_db, get_placeholder
+from services.kleinanzeigen import KleinanzeigenSearchStatus, is_kleinanzeigen_enabled
 
 bp = Blueprint("alerts", __name__)
 
@@ -165,6 +166,7 @@ def manage_alerts():
 
     alerts = []
     now_ts = int(time.time())
+    kleinanzeigen_enabled = is_kleinanzeigen_enabled()
 
     for row in rows:
         (
@@ -218,12 +220,15 @@ def manage_alerts():
             else:
                 next_run_in_min = 0
 
+        source_norm = (source or "ebay").strip().lower()
+        source_paused = source_norm == "kleinanzeigen" and not kleinanzeigen_enabled
         alerts.append(
             {
                 "id": alert_id,
                 "terms": terms,
                 "filters": filters,
-                "source": (source or "ebay"),
+                "source": source_norm,
+                "source_paused": source_paused,
                 "is_active": bool(is_active),
                 "notify_email": bool(notify_email),
                 "notify_telegram": bool(notify_telegram),
@@ -233,7 +238,7 @@ def manage_alerts():
                 "is_premium": is_premium_flag,
                 "interval_min": interval_min,
                 "last_run_dt": last_run_dt,
-                "next_run_in_min": next_run_in_min,
+                "next_run_in_min": None if source_paused else next_run_in_min,
             }
         )
 
@@ -313,10 +318,12 @@ def alert_results(alert_id: int):
     # Suche ausführen (aktuelle Angebote)
     # ------------------------------------------------------------
     source_norm = (source or "ebay").strip().lower()
+    source_paused = source_norm == "kleinanzeigen" and not is_kleinanzeigen_enabled()
     kleinanzeigen_status = None
     if source_norm == "kleinanzeigen":
         kleinanzeigen_result = search_kleinanzeigen_for_alert(terms, filters)
         kleinanzeigen_status = kleinanzeigen_result.status.value
+        source_paused = source_paused or kleinanzeigen_result.status == KleinanzeigenSearchStatus.SOURCE_DISABLED
         items = kleinanzeigen_result.results
     else:
         items = search_ebay_for_alert(terms, filters)
@@ -394,7 +401,10 @@ def alert_results(alert_id: int):
         "notify_autoscout": bool(notify_autoscout),
         "last_run_dt": last_run_dt,
         **plan_info,
+        "source_paused": source_paused,
     }
+    if source_paused:
+        alert_ctx["next_run_in_min"] = None
 
     return render_template(
         "alerts/results.html",
@@ -573,7 +583,13 @@ def alerts_subscribe():
         else:
             source_name = source_label.get(sources[0], "eBay")
 
-        flash(f"[OK] {source_name}-Alarm gespeichert! Du wirst bei neuen Treffern benachrichtigt.", "success")
+        if "kleinanzeigen" in sources and not is_kleinanzeigen_enabled():
+            message = "Kleinanzeigen ist vorübergehend pausiert. Dein Suchauftrag bleibt gespeichert."
+            if "ebay" in sources:
+                message = "eBay-Alarm gespeichert. " + message
+            flash(message, "info")
+        else:
+            flash(f"[OK] {source_name}-Alarm gespeichert! Du wirst bei neuen Treffern benachrichtigt.", "success")
 
     except Exception as e:
         current_app.logger.error(f"[alerts_subscribe] Fehler: {e}", exc_info=True)

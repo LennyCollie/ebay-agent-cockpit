@@ -17,7 +17,7 @@ from flask_login import current_user
 
 from alert_checker import ALERT_INTERVAL_FREE, ALERT_INTERVAL_PREMIUM
 from services.price_tracker import track_item_price
-from services.kleinanzeigen import KleinanzeigenSearchStatus
+from services.kleinanzeigen import KleinanzeigenSearchStatus, is_kleinanzeigen_enabled
 from services.csv_exporter import export_search_results_to_csv
 from smart_filters import SmartFilter
 from services.ebay_backend import backend_search_ebay
@@ -278,6 +278,7 @@ def search_page():
 
     args = _parse_args()
     plan_info = _get_plan_info()
+    kleinanzeigen_enabled = is_kleinanzeigen_enabled()
 
     max_terms = plan_info.get("max_terms") if plan_info else MAX_TERMS_FREE
     orig_terms_len = len(args.get("terms", []))
@@ -317,6 +318,7 @@ def search_page():
             "search.html",
             plan_info=plan_info,
             source=source,
+            kleinanzeigen_enabled=kleinanzeigen_enabled,
             terms_trimmed=False,
         )
 
@@ -468,6 +470,7 @@ def search_page():
         pagination=pagination,
         source=source,
         kleinanzeigen_status=kleinanzeigen_status,
+        kleinanzeigen_enabled=kleinanzeigen_enabled,
         terms_trimmed=terms_trimmed,
     )
 

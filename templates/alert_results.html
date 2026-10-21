@@ -6,6 +6,12 @@ Letzte Ergebnisse – Alert #{{ alert_id }}
 
 {% block content %}
 <div class="container mt-4">
+  {% if source_paused %}
+  <div class="alert alert-info" role="status">
+    Kleinanzeigen ist vorübergehend pausiert. Dein Suchauftrag bleibt gespeichert.
+    Angezeigt werden ausschließlich früher gespeicherte Ergebnisse.
+  </div>
+  {% endif %}
 
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>

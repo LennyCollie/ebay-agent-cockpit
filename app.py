@@ -17,7 +17,11 @@ from alert_checker import run_alert_check
 from database import get_db, dict_cursor, init_db, IS_POSTGRES, get_placeholder
 from werkzeug.middleware.proxy_fix import ProxyFix
 from models import Base, engine
-from services.kleinanzeigen import search_kleinanzeigen, check_dependencies as ka_check_dependencies
+from services.kleinanzeigen import (
+    search_kleinanzeigen,
+    check_dependencies as ka_check_dependencies,
+    is_kleinanzeigen_enabled,
+)
 from typing import List, Dict, Tuple, Optional
 
 
@@ -1990,7 +1994,10 @@ def alerts_subscribe():
     conn.commit()
     conn.close()
 
-    flash("🔔 Alert gespeichert – neue Treffer werden automatisch geprüft.", "success")
+    if source == "kleinanzeigen" and not is_kleinanzeigen_enabled():
+        flash("Kleinanzeigen ist vorübergehend pausiert. Dein Suchauftrag bleibt gespeichert.", "info")
+    else:
+        flash("🔔 Alert gespeichert – neue Treffer werden automatisch geprüft.", "success")
     return redirect(
         url_for(
             "search.search_page",
@@ -3450,6 +3457,7 @@ def alerts_manage():
         title="Meine Such-Alerts",
         alerts=alerts,
         is_admin=is_admin,
+        kleinanzeigen_enabled=is_kleinanzeigen_enabled(),
     )
 
 
@@ -3695,6 +3703,7 @@ def alert_results(alert_id: int):
         alert_id=alert_id,
         alert_source=alert_source,
         alert_source_label=source_label,
+        source_paused=alert_source == "kleinanzeigen" and not is_kleinanzeigen_enabled(),
         terms_display=terms_display,
         items=items,
         page=page,

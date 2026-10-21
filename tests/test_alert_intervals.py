@@ -1,4 +1,4 @@
-"""Offline tests for per-alert due-time enforcement."""
+"""Offline due-time tests, including the existing 20-second Cron tolerance."""
 
 from unittest.mock import ANY, Mock, patch
 
@@ -6,6 +6,11 @@ import pytest
 
 import alert_checker
 from services.kleinanzeigen import KleinanzeigenSearchResult, KleinanzeigenSearchStatus
+
+
+@pytest.fixture(autouse=True)
+def enable_source(monkeypatch):
+    monkeypatch.setenv("ENABLE_KLEINANZEIGEN", "1")
 
 
 def _stats():
@@ -75,7 +80,7 @@ def _run(alert, cursor, stats, *, now, result=None):
 
 @pytest.mark.parametrize(
     ("elapsed", "is_due"),
-    ((1799, False), (1800, True), (1801, True)),
+    ((1779, False), (1780, True), (1799, True), (1800, True), (1801, True)),
 )
 def test_free_alert_before_and_after_interval(elapsed, is_due):
     now = 10_000
@@ -99,7 +104,7 @@ def test_free_alert_before_and_after_interval(elapsed, is_due):
     ("plan_type", "is_premium"),
     (("premium", False), ("pro", False), ("free", True)),
 )
-@pytest.mark.parametrize(("elapsed", "is_due"), ((179, False), (180, True)))
+@pytest.mark.parametrize(("elapsed", "is_due"), ((159, False), (160, True), (179, True), (180, True)))
 def test_premium_and_pro_alert_before_and_after_interval(
     plan_type,
     is_premium,
@@ -146,7 +151,7 @@ def test_source_failure_is_timestamped_and_then_throttled(status):
     now = 10_000
     first_stats = _stats()
     first = _run(
-        _alert(last_run_ts=0),
+        _alert(last_run_ts=now - 1800),
         _cursor(),
         first_stats,
         now=now,

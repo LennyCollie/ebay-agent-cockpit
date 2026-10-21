@@ -33,6 +33,7 @@ from smart_filters import SmartFilter
 from services.kleinanzeigen import (
     KleinanzeigenSearchResult,
     KleinanzeigenSearchStatus,
+    is_kleinanzeigen_enabled,
 )
 from telegram_bot import send_new_item_alert
 
@@ -160,6 +161,15 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
     alert_id = alert["id"]
     user_email = alert["user_email"]
 
+    source = (alert.get("source") or "ebay").strip().lower()
+    if source not in ("ebay", "kleinanzeigen"):
+        source = "ebay"
+
+    # A source pause must not touch user settings, seen items or first-run state.
+    if source == "kleinanzeigen" and not is_kleinanzeigen_enabled():
+        print(f"   [Kleinanzeigen] Alert {alert_id} übersprungen: source_disabled")
+        return
+
     try:
         terms = json.loads(alert.get("terms_json") or "[]")
     except Exception:
@@ -171,10 +181,6 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
         filters = {}
 
     last_run = int(alert.get("last_run_ts") or 0)
-
-    source = (alert.get("source") or "ebay").strip().lower()
-    if source not in ("ebay", "kleinanzeigen"):
-        source = "ebay"
 
     notify_telegram = bool(alert.get("notify_telegram", 1))
     notify_email = bool(alert.get("notify_email", 0))
@@ -257,6 +263,13 @@ def process_single_alert(alert_row, cursor, connection, stats: Dict[str, int]) -
         if source == "kleinanzeigen":
             stats["kleinanzeigen_alerts"] += 1
             ka_result = search_kleinanzeigen_for_alert(terms, filters)
+
+            if ka_result.status == KleinanzeigenSearchStatus.SOURCE_DISABLED:
+                # Also handle a pause detected by the shared search layer.
+                stats["alerts_checked"] -= 1
+                stats["kleinanzeigen_alerts"] -= 1
+                print(f"   [Kleinanzeigen] Alert {alert_id} übersprungen: source_disabled")
+                return
 
             if ka_result.status not in KA_OK_STATUS:
                 print(
@@ -369,7 +382,7 @@ def search_kleinanzeigen_for_alert(
 
         result = backend_search_kleinanzeigen(terms, filters, per_page=20)
         print(
-            "      [OK] Kleinanzeigen-Wrapper: "
+            "      [Kleinanzeigen] Suchstatus: "
             f"classification={result.status.value} items={len(result.results)}"
         )
         return result

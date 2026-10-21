@@ -28,7 +28,8 @@ def search_args():
     }
 
 
-def test_route_propagates_failure_and_skips_smart_filter():
+def test_route_propagates_failure_and_skips_smart_filter(monkeypatch):
+    monkeypatch.setenv("ENABLE_KLEINANZEIGEN", "1")
     app = Flask(__name__)
     app.secret_key = "test"
     failure = KleinanzeigenSearchResult(
