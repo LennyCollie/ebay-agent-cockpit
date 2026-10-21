@@ -867,7 +867,10 @@ def search_kleinanzeigen(
     per_page: int
 ) -> Tuple[List[Dict], Optional[int]]:
     """Wrapper für die echte Kleinanzeigen-Suche - getrennt pro Suchbegriff"""
-    from services.kleinanzeigen import search_kleinanzeigen as ka_search
+    from services.kleinanzeigen import (
+        search_kleinanzeigen as ka_search,
+        KleinanzeigenSearchStatus,
+    )
 
     all_items: List[Dict] = []
     seen = set()
@@ -886,16 +889,24 @@ def search_kleinanzeigen(
             limit=per_term
         )
 
+        if search_result.status not in (
+            KleinanzeigenSearchStatus.SUCCESS_WITH_RESULTS,
+            KleinanzeigenSearchStatus.SUCCESS_EMPTY,
+        ):
+            print(f"[Kleinanzeigen] '{term}': {search_result.status.value} ({search_result.reason})")
+            continue
+
         for item in search_result.results:
             key = item.get("item_id") or item.get("url") or item.get("title")
             if not key or key in seen:
                 continue
             seen.add(key)
 
+            price = item.get("price")
             all_items.append({
                 "id": item.get("item_id"),
                 "title": item.get("title"),
-                "price": f"{item.get('price'):.2f} EUR" if item.get('price') else "VB",
+                "price": f"{price:.2f} EUR" if price is not None else "VB",
                 "url": item.get("url"),
                 "img": item.get("image_url"),
                 "term": term,
@@ -903,7 +914,6 @@ def search_kleinanzeigen(
             })
 
     return all_items[:per_page], None
-
 
 
 
